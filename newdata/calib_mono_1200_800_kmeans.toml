@@ -1,0 +1,24 @@
+[calibration]
+camera_matrix = [ [ 586.2882498482957, 0.0, 623.805848827769,], [ 0.0, 589.2410317114507, 465.9564755315956,], [ 0.0, 0.0, 1.0,],]
+dist_coeffs = [ [ -0.023316209313599633,], [ -0.03511687765111203,], [ 0.03711137480546168,], [ -0.015431026810520849,],]
+reprojection_error = 0.618311473454879
+method = "fisheye"
+pattern_size = [ 6, 4,]
+notes = "Calibrated using k-means sampled frames from OV9281 160° FOV camera"
+
+[aruco]
+marker_length = 0.05
+marker_spacing = 0.01
+
+[camera]
+resolution = [ 1280, 800,]
+model = "OV9281"
+fov = 160
+
+[stream_data]
+udp = false
+ip = "localhost"
+port = 12345
+
+[display]
+display = false
