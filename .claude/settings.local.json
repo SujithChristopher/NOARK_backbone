@@ -9,7 +9,10 @@
       "Read(//home/sujith/Documents/NOARK/reference_frames/**)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(tree:*)",
+      "Bash(python3:*)",
+      "Bash(source /home/sujith/Documents/NOARK_backbone/venv/bin/activate:*)"
     ],
     "deny": []
   }
