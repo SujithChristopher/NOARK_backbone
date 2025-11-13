@@ -5,7 +5,7 @@ import platform
 import socket
 import toml
 import os
-from filters import ExponentialMovingAverageFilter3D
+from GameStream.filters import ExponentialMovingAverageFilter3D
 import struct
 import csv
 from datetime import datetime
