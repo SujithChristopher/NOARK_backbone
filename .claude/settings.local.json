@@ -16,7 +16,8 @@
       "Bash(C:UsersPintuminiconda3envspy13python.exe explore_chessboard_data.py)",
       "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" explore_chessboard_data.py)",
       "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" fisheye_calibration_kmeans.py)",
-      "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" visualize_calibration.py)"
+      "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" visualize_calibration.py)",
+      "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" visualize_clusters.py)"
     ],
     "deny": []
   }
