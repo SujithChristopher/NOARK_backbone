@@ -4,7 +4,7 @@ import threading
 import time
 
 def test_read_angles():
-    camera = RpiCamera().start_thread()
+    camera = RpiCamera(debug=True).start_thread()
     for i in range(10):
         camera.get_pose()  # Allow camera to initialize
         

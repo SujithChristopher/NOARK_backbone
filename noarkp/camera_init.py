@@ -21,7 +21,7 @@ board = aruco.GridBoard(
     dictionary=ARUCO_DICT,
 )
 
-frame_size = (1200, 800)
+frame_size = (1280, 800)
 
 def estimate_pose_single_markers(
     corners, marker_size, camera_matrix, distortion_coefficients
