@@ -47,7 +47,7 @@ def estimate_pose_single_markers(
 
 
 class RpiCamera:
-    def __init__(self, cameraMatrix = np.eye(3), distCoeffs = np.zeros((5, 1))):
+    def __init__(self, cameraMatrix = np.eye(3), distCoeffs = np.zeros((5, 1)), debug=False):
         self.cameraMatrix = cameraMatrix
         self.distCoeffs = distCoeffs
         
@@ -67,7 +67,7 @@ class RpiCamera:
         self.default_ids = [12, 88, 89, 14, 20]
         
         self.FIRST_FRAME = True
-        
+        self.debug = debug
         
     def run_detection(self):
         gray = self.video_frame.copy()
@@ -77,6 +77,8 @@ class RpiCamera:
         )
         self.rvecs = rvecs
         self.tvecs = tvecs
+        if self.debug:
+            print(self.tvecs)
         
 
     def run_camera(self):
@@ -85,6 +87,7 @@ class RpiCamera:
         while True:
             self.video_frame = self.picam2.capture_array()
             self.video_frame = self.video_frame[:HEIGHT, :WIDTH]
+            self.run_detection()
         
 if __name__ == "__main__":
-    RpiCamera().run_camera()
+    RpiCamera(debug=True).run_camera()
