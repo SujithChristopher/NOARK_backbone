@@ -12,7 +12,7 @@ MOTOR_R_TO_RP1 = 0.05  # Distance from motor R to right pulley 1
 MOTOR_R_TO_RP2 = 0.05  # Distance from motor R to
 
 class NoarkKinematics:
-    def __init__(self, serial_port=None, baudrate=9600, debug=False):
+    def __init__(self, serial_port=None, baudrate=115200, debug=False):
         self.serial_port = serial_port
         self.baudrate = baudrate
         self.debug = debug
@@ -38,7 +38,7 @@ class NoarkKinematics:
             
 if __name__ == "__main__":
     
-    kinematics = NoarkKinematics(serial_port='COM3', baudrate=9600)
+    kinematics = NoarkKinematics(serial_port='/dev/ttyACM0', baudrate=115200, debug=True)
     kinematics.start_thread()
     
             
