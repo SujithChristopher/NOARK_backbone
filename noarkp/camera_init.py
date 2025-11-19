@@ -4,6 +4,7 @@ import cv2
 import math
 from picamera2 import Picamera2
 import libcamera
+import threading
 
 ARUCO_PARAMETERS = aruco.DetectorParameters()
 ARUCO_PARAMETERS.useAruco3Detection = 1
@@ -80,7 +81,10 @@ class RpiCamera:
         if self.debug:
             print(self.tvecs)
         
-
+    def start_thread(self): threading.Thread(target=self.run_camera).start()
+    
+    def get_pose(self): return [self.rvecs, self.tvecs]
+    
     def run_camera(self):
         WIDTH = frame_size[0]
         HEIGHT = frame_size[1]
@@ -90,4 +94,4 @@ class RpiCamera:
             self.run_detection()
         
 if __name__ == "__main__":
-    RpiCamera(debug=True).run_camera()
+    RpiCamera(debug=True).start_thread()

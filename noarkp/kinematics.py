@@ -1,3 +1,4 @@
+import threading
 import numpy as np
 import math
 import serial
@@ -17,18 +18,20 @@ class NoarkKinematics:
         self.debug = debug
         if serial_port:
             self.ser = serial.Serial(serial_port, baudrate)
-            time.sleep(2)  # Wait for the serial connection to initialize
 
-            
-    def read_angles(self):
+    def start_thread(self): threading.Thread(target=self.start_serial).start()
+
+    def get_angles(self): return [self.enc1, self.enc2] # Returns the latest read angles
+    
+    def start_serial(self):
         
         while True:
             if not self.serial_port:
                 raise ValueError("Serial port not initialized.")
             line = self.ser.readline().decode('utf-8').strip().split(",")
             
-            self.enc1 = line[0].split(":")[1]
-            self.enc2 = line[1].split(":")[1]
+            self.enc1 = float(line[0].split(":")[1])
+            self.enc2 = float(line[1].split(":")[1])
             
             if self.debug:
                 print(f"Encoder 1: {self.enc1}, Encoder 2: {self.enc2}")
@@ -36,5 +39,6 @@ class NoarkKinematics:
 if __name__ == "__main__":
     
     kinematics = NoarkKinematics(serial_port='COM3', baudrate=9600)
-    kinematics.read_angles()
+    kinematics.start_thread()
+    
             
