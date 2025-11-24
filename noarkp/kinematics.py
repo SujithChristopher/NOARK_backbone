@@ -1,44 +1,77 @@
-import threading
-import numpy as np
+
 import math
-import serial
-from scipy.spatial.transform import Rotation as R
-import time
-
-MOTOR_L_TO_LP1 = 0.05  # Distance from motor L to left pulley 1
-MOTOR_L_TO_LP2 = 0.05  # Distance from motor L to left pulley 2
-
-MOTOR_R_TO_RP1 = 0.05  # Distance from motor R to right pulley 1
-MOTOR_R_TO_RP2 = 0.05  # Distance from motor R to
 
 class NoarkKinematics:
-    def __init__(self, serial_port=None, baudrate=115200, debug=False):
-        self.serial_port = serial_port
-        self.baudrate = baudrate
-        self.debug = debug
-        if serial_port:
-            self.ser = serial.Serial(serial_port, baudrate)
+    
+    def internal_tangent_slopes(self, r1, r2, L, t, tol=1e-12):
+        """
+        Compute slopes (m) of the internal tangents
+        Returns the two slopes (m) of the internal tangents between:
+        C1 at (0,0), radius r1
+        C2 at (L,t), radius r2
+        """
+        R = r1 + r2
+        denom = L*L - R*R
+        inside = L*L + t*t - R*R
 
-    def start_thread(self): threading.Thread(target=self.start_serial).start()
+        if inside < -tol:
+            raise ValueError("No real internal tangents exist.")
+        inside = max(inside, 0.0)
 
-    def get_angles(self): return [self.enc1, self.enc2] # Returns the latest read angles
-    
-    def start_serial(self):
-        
-        while True:
-            if not self.serial_port:
-                raise ValueError("Serial port not initialized.")
-            line = self.ser.readline().decode('utf-8').strip().split(",")
-            
-            self.enc1 = float(line[0].split(":")[1])
-            self.enc2 = float(line[1].split(":")[1])
-            
-            if self.debug:
-                print(f"Encoder 1: {self.enc1}, Encoder 2: {self.enc2}")
-            
-if __name__ == "__main__":
-    
-    kinematics = NoarkKinematics(serial_port='/dev/ttyACM0', baudrate=115200, debug=True)
-    kinematics.start_thread()
-    
-            
+        if abs(denom) < tol:
+            raise ValueError("Degenerate case: vertical tangent only.")
+
+        sqrt_term = math.sqrt(inside)
+
+        m_plus  = (L*t + R*sqrt_term) / denom
+        m_minus = (L*t - R*sqrt_term) / denom
+
+        return m_plus, m_minus
+
+    def compute_b(self, m, r1, r2, L, t):
+        """
+        Compute intercept b for a given m
+        b = r1 * (t - mL) / (r1 + r2)
+        """
+        return r1 * (t - m * L) / (r1 + r2)
+
+
+    def tangent_point(self, xc, yc, r, m, b):
+        """
+        Compute tangent point for circle at (xc, yc), radius r
+        Returns tangent point (xp, yp) for circle (xc, yc, r)
+        and line y = m x + b.
+        """
+        k = math.sqrt(1 + m*m)
+
+        # Sign chosen so distance = +r or -r depending on which side
+        # General formula:
+        xp = xc - m * (m*xc - yc + b) / (1 + m*m)
+        yp = yc + (m*xc - yc + b) / (1 + m*m)
+
+        return xp, yp
+
+    def internal_tangents(self, r1, r2, L, t):
+        """
+        Returns both internal tangent lines and tangent points.
+        Wrapper to compute the two complete tangent solutions
+        """
+        m1, m2 = self.internal_tangent_slopes(r1, r2, L, t)
+        solutions = []
+
+        for m in (m1, m2):
+            b = self.compute_b(m, r1, r2, L, t)
+            # Tangent point on circle C1 = (0,0)
+            t1 = self.tangent_point(0, 0, r1, m, b)
+
+            # Tangent point on circle C2 = (L, t)
+            t2 = self.tangent_point(L, t, r2, m, b)
+
+            solutions.append({
+                "m": m,
+                "b": b,
+                "tC1": t1,
+                "tC2": t2
+            })
+
+        return solutions       
