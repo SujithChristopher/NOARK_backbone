@@ -3,6 +3,14 @@ import math
 
 class NoarkKinematics:
     
+    def __init__(self, debug=False) -> None:
+        self.debug = debug
+    
+    def camera_to_motor_offset(self, vec):
+        if self.debug:
+            print(f"Camera to motor offset vector: {vec}")
+        pass
+        
     def internal_tangent_slopes(self, r1, r2, L, t, tol=1e-12):
         """
         Compute slopes (m) of the internal tangents

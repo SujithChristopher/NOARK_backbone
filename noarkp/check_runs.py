@@ -18,16 +18,19 @@ MOTOR_RADIUS = 0.01      # Radius of the motor pulley
 PULLEY_RADIUS = 0.01    # Radius of the cable pulley
 
 
-
-
 class AssessCableLength:
     def __init__(self):
         self.camera = RpiCamera(debug=True)
         self.camera.start_thread()
         time.sleep(0.5)  # Allow camera to initialize
-        self.kinematics = NoarkKinematics(serial_port='/dev/ttyACM0', baudrate=115200, debug=True)
-        self.kinematics.start_thread()
+        
+        self.encoder = MotorEncoder(serial_port='/dev/ttyACM0', baudrate=115200, debug=True)
+        self.encoder.start_thread()
+        time.sleep(0.5)  # Allow encoder to initialize
+        
+        self.kinematics = NoarkKinematics(debug=True)
         time.sleep(0.5)  # Allow kinematics to initialize
+        
         
     
     def get_camera_coordinates(self):
