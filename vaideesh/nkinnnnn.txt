@@ -1,0 +1,156 @@
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+from camera import MainClass
+from pyteensy import TeensyPort
+import time
+import numpy as np
+from math import sqrt
+# from uncertainties import ufloat
+
+# Parameters for kinematics 
+ML_TO_P1 = 0.38  # Center to Center distance from motor L to left pulley 1 
+P1_TO_P2 = 0.62  # Distance from pulley 1 to pulley 2
+Offset_t1 = 0.05  # offset from tabletop corner to motor pulley center 70mm
+r_ML = r_MR = 0.02 # radius of motors in meters
+r_p1 = r_p2 = r_p3 = rp_4 = 0.01  # radius of pulleys in meters
+
+
+
+class XYPlot:
+    def __init__(self):
+        calib_path = '/home/sujith/Documents/NOARK_backbone/old_calibration/optimized_fisheye_160.toml'
+        table_calib_path = '/home/sujith/Documents/NOARK_backbone/table_frame_extrinsics.toml'
+        self.cam = MainClass(calib_path,table_calib_path)
+        self.enc = TeensyPort()
+        self.enc.start()
+    
+        # self.enc_value = EncoderProcessor(self.enc)
+        self.start_time = time.time()
+    def parse_encoder_value(self, value):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+    def run(self):
+        # Create figure and subplots
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        
+        # XY plot
+        xy_line, = axes[0, 0].plot([], [], 'ro', markersize=8)
+        axes[0, 0].set_xlabel("X")
+        axes[0, 0].set_ylabel("Y")
+        axes[0, 0].set_title("XY Plot")
+        axes[0, 0].set_xlim(-50, 50)
+        axes[0, 0].set_ylim(-40, 40)
+        # axes[0, 0].grid(True)
+
+        # Encoder 1
+        enc1_line, = axes[0, 1].plot([], [], 'b-', lw=2)
+        axes[0, 1].set_xlabel("Time (s)")
+        axes[0, 1].set_ylabel("Encoder Value")
+        axes[0, 1].set_title("Encoder 1")
+        axes[0, 1].set_xlim(0, 100)  # Initial window: 0 to 10 seconds
+        # axes[0, 1].grid(True)
+        x_data_1 = []
+        y_data_1 = []
+
+        # Encoder 2
+        enc2_line, = axes[1, 0].plot([], [], 'g-', lw=2)
+        axes[1, 0].set_xlabel("Time (s)")
+        axes[1, 0].set_ylabel("Encoder Value")
+        axes[1, 0].set_title("Encoder 2")
+        axes[1, 0].set_xlim(0, 100)  # Initial window: 0 to 10 seconds
+        # axes[1, 0].grid(True)
+        x_data_2 = []
+        y_data_2 = []
+
+        # Hide the empty subplot
+        axes[1, 1].axis('off')
+
+        # plt.ion()  # Turn on interactive mode
+        # plt.tight_layout()
+        # plt.show()
+
+        window_size = 10 #Fixed window size in seconds
+        # sampling_rate = 100 #Hz
+
+        # window_size = sampling_rate * 10  # 10 seconds window
+
+        while True:
+            # Get current time
+            current_time = time.time() - self.start_time
+
+            # XY Data
+            self.cam.process_frame()
+            noark__pos = self.final_pos
+            N_Pos = self.noark_in_table_frame
+            print("Noark_Table_Frame:",N_Pos * 100)
+            if N_Pos is not None and len(N_Pos) >= 3:
+                x = round(N_Pos[0])  # NOARK Position X from camera
+                y = round(N_Pos[2])  # NOARK Position Z used as Y from camera
+                # xy_line.set_data([x], [y])
+
+            # Encoder 1 data
+            # enc_1_offset = self.parse_encoder_value(self.enc.e1)
+            enc_value_1 = self.parse_encoder_value(self.enc.e1)
+            # print(enc_value_1)
+            x_data_1.append(current_time)
+            y_data_1.append(enc_value_1)
+            enc1_line.set_data(x_data_1, y_data_1)
+            
+            # Dynamic x-axis limit for Encoder 1
+            if current_time > window_size:
+                axes[0, 1].set_xlim(current_time - window_size, current_time)
+            else:
+                axes[0, 1].set_xlim(0, window_size)
+            
+            # Auto-scale y-axis for Encoder 1
+            if y_data_1:
+                y_min, y_max = min(y_data_1), max(y_data_1)
+                y_range = y_max - y_min
+                if y_range > 0:
+                    axes[0, 1].set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
+                else:
+                    # If all values are the same, set a default range
+                    axes[0, 1].set_ylim(y_min - 1, y_max + 1)
+
+            # Encoder 2 data
+            enc_value_2 = self.parse_encoder_value(self.enc.e2)
+            x_data_2.append(current_time)
+            y_data_2.append(enc_value_2)
+            enc2_line.set_data(x_data_2, y_data_2)
+             
+            # print("E1:,E2:",enc_value_1,enc_value_2)
+            # Dynamic x-axis limit for Encoder 2
+            if current_time > window_size:
+                axes[1, 0].set_xlim(current_time - window_size, current_time)
+            else:
+                axes[1, 0].set_xlim(0, window_size)
+            
+            # Auto-scale y-axis for Encoder 2
+            if y_data_2:
+                y_min, y_max = min(y_data_2), max(y_data_2)
+                y_range = y_max - y_min
+                if y_range > 0:
+                    axes[1, 0].set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
+                else:
+                    # If all values are the same, set a default range
+                    axes[1, 0].set_ylim(y_min - 1, y_max + 1)
+
+            # plt.pause(0.01)  # Small pause to update the plot
+    # def cable_length(self, enc1, enc2):
+      
+    #     l1 = sqrt(ML_TO_P1**2 - Offset_t1**2)   # Distance from motor L to pulley 1
+    #     # m = ML_TO_P1 * Offset_t1 ufloat(sqrt(r_ML + r_p1) * sqrt(ML_TO_P1**2 + Offset_t1**2 - (r_ML+ r_p1)**2))
+            
+
+if __name__ == "__main__":
+    graph = XYPlot()
+    try:
+        graph.run()
+
+        
+    except KeyboardInterrupt:
+        print("\nExiting...")
+        graph.stop() 

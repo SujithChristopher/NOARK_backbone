@@ -1,0 +1,54 @@
+import matplotlib.pyplot as plt
+from camera import MainClass
+from pyteensy import TeensyPort
+
+cam = MainClass()
+teensy = TeensyPort()
+
+print(cam.tvec_dist)
+print(teensy.enc1, teensy.enc2)
+# class NkinProcessor:
+
+#     def __init__(self):
+#         self.cam = MainClass()
+#         self.teensy = TeensyPort()
+
+#         # Table Dimensions (in cm)
+#         self.width = 100
+#         self.length = 80
+#         # Motor and pulley positions
+#         self.m1 = (40,75)
+#         self.p1 =(100,80)
+#         self.p2 = (60,75)        
+
+#     def __init__plot(self):
+#         plt.ion()
+#         self.fig, self.ax = plt.subplots()
+#         self.x_data, self.y_data = [], []
+#         self.line = self.ax.plot(self.x_data, self.y_data, 'b-')
+#         self.ax.set_xlim(-100, 100)
+#         self.ax.set_ylim(-50, 50)
+#         self.ax.set_xlabel('X(cm)')
+#         self.ax.set_ylabel('Y(cm)')
+#         self.ax.set_title('NOARK + Position')
+#         self.plot_initialized = True
+
+#     def update_plot(self):
+#         if not self.plot_initialized:
+#             self._init_plot()
+
+#         self.x_data.append(self.tvec_dist[0])  
+#         self.y_data.append(self.tvec_dist[1])   
+
+#         max_points = 100
+#         if len(self.x_data) > max_points:
+#             self.x_data.pop(0)
+#             self.y_data.pop(0)
+#         self.line.set_data(self.x_data, self.y_data)
+#         self.ax.relim()
+#         self.ax.autoscale_view()
+#         self.fig.canvas.draw()
+#         self.fig.canvas.flush_events()
+#         plt.pause(0.01)   
+
+        
