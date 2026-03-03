@@ -79,7 +79,7 @@ class MainClass:
             np.zeros(4),  # Use zero distortion for drawing axes
             rvec,
             tvec,
-            0.048,
+            0.049,
         )
 
  
@@ -119,7 +119,7 @@ class MainClass:
 
 if __name__ == "__main__":
     if platform.system() == "Linux":
-        CAMERA_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/old_calibration/fisheye.toml"
+        CAMERA_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/calibration_toml/old/calib_mono_faith3D.toml"
         TABLE_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/vaideesh/table_frame_data.toml"
     
     main = MainClass(cam_calib_path=CAMERA_CALIB_PATH,table_calib_path=TABLE_CALIB_PATH)
