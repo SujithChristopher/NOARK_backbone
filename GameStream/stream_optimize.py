@@ -12,7 +12,7 @@ from datetime import datetime
 # from rpy_helper import rtime
 
 class Config:
-    FRAME_SIZE = (1200, 800)
+    FRAME_SIZE = (1280, 800)
     MARKER_LENGTH = 0.05
     MARKER_SEPARATION = 0.01
     UDP_IP = "localhost"

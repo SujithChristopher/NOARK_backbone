@@ -26,13 +26,13 @@ class RecordData:
         self,
         _pth=None,
         record_camera=True,
-        fps_value=100,
+        fps_value=60,
         isColor=True,
         default_res=False,
     ):
         self.picam2 = Picamera2()
         main = {"format": "YUV420", "size": (WIDTH, HEIGHT)}
-        _c = {"FrameRate": 100, "ExposureTime": 3000}
+        _c = {"FrameRate": 100, "ExposureTime": 5000}
         config = self.picam2.create_video_configuration(
             main, controls=_c, transform=libcamera.Transform(vflip=1)
         )

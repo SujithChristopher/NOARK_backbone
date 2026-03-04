@@ -87,9 +87,11 @@ class MainClass:
         self.picam2.start()
 
         # Load fisheye calibration
-        fish_params = toml.load("/home/sujith/Documents/NOARK_backbone/old_calibration/fisheye_re.toml")
+        fish_params = toml.load("/home/sujith/Documents/NOARK_backbone/calibration_toml/old/calib_mono_faith2D.toml")
         fish_matrix = np.array(fish_params["calibration"]["camera_matrix"]).reshape(3, 3)
         fish_dist = np.array(fish_params["calibration"]["dist_coeffs"])
+
+        print(fish_matrix, fish_dist, type(fish_matrix))
         self.map1, self.map2 = cv2.fisheye.initUndistortRectifyMap(
             fish_matrix,
             fish_dist,
@@ -218,7 +220,7 @@ class MainClass:
 
 if __name__ == "__main__":
     if platform.system() == "Linux":
-        CAMERA_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/old_calibration/fisheye_re.toml"
+        CAMERA_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/calibration_toml/old/calib_mono_faith2D.toml"
     else:
         CAMERA_CALIB_PATH = r"E:\CMC\pyprojects\programs_rpi\rpi_python\webcam_calib.toml"
     

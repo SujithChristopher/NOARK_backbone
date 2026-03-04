@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 class Config:
 
-    FRAME_SIZE = (1280, 800)
+    FRAME_SIZE = (1200, 800)
     MARKER_LENGTH = 0.049
     MARKER_SEPARATION = 0.01
     DEFAULT_IDS = [12, 14, 20]
@@ -119,7 +119,7 @@ class MainClass:
         self.picam2.start()
 
         # Load fisheye calibration
-        fish_params = toml.load("/home/sujith/Documents/NOARK_backbone/old_calibration/fisheye.toml")
+        fish_params = toml.load("/home/sujith/Documents/NOARK_backbone/calibration_toml/old/calib_mono_faith3D.toml")
         fish_matrix = np.array(fish_params["calibration"]["camera_matrix"]).reshape(3, 3)
         fish_dist = np.array(fish_params["calibration"]["dist_coeffs"]).flatten()[:4].reshape(4, 1)
         # self.map1, self.map2 = cv2.fisheye.initUndistortRectifyMap(
@@ -223,7 +223,7 @@ class MainClass:
    
     ret = None
     if platform.system() == "Linux":
-        self.video_frame = self.picam2.capture_array()[:800, :1280]
+        self.video_frame = self.picam2.capture_array()[:800, :1200]
         self.video_frame = cv2.flip(self.video_frame, 1)
         # print(self.video_frame.size)
     else:
@@ -278,7 +278,7 @@ class MainClass:
 
 if __name__ == "__main__":
     if platform.system() == "Linux":
-        CAMERA_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/old_calibration/fisheye_re.toml"
+        CAMERA_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/calibration_toml/old/calib_mono_faith3D.toml"
         TABLE_CALIB_PATH = "/home/sujith/Documents/NOARK_backbone/vaideesh/table_frame_data.toml"
     
     main = MainClass(cam_calib_path=CAMERA_CALIB_PATH,table_calib_path=TABLE_CALIB_PATH)
