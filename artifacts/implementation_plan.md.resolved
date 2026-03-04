@@ -1,0 +1,37 @@
+# Realtime AprilTag Detection with Fisheye Camera
+
+This plan outlines the implementation of [estimator/realtime_data.py](file:///e:/CMC/pyprojects/programs_rpi/NOARK_backbone/estimator/realtime_data.py) to perform real-time AprilTag detection using a Raspberry Pi with a Waveshare 9281 160 FOV camera.
+
+## User Review Required
+
+- **AprilTag Dictionary**: The plan assumes `DICT_APRILTAG_36h11` (the most common AprilTag family). Please let me know if you are using a different tag family (e.g., `DICT_APRILTAG_16h5`, `DICT_4X4_50`, etc.).
+- **Undistortion Strategy**: Because 160 FOV is extremely wide and fisheye distortion bends straight lines (which AprilTags rely on), the plan proposes **undistorting the entire image first** using `cv2.fisheye.initUndistortRectifyMap` and `cv2.remap` before running the detector. This ensures the tags are recognized even near the edges. The pose estimation will then use the *new* camera matrix with zero distortion. Is this acceptable? (The alternative is undistorting only the detected 2D corners, but this requires the detector to find warped tags first, which often fails at the edges of a fisheye lens).
+- **Target environment**: I assume [toml](file:///e:/CMC/pyprojects/programs_rpi/NOARK_backbone/notebooks/calibration/output/good.toml) and `cv2` (with Aruco support) are already installed in your Raspberry Pi environment.
+
+## Proposed Changes
+
+### Configuration & Data Flow
+#### [MODIFY] [realtime_data.py](file:///e:/CMC/pyprojects/programs_rpi/NOARK_backbone/estimator/realtime_data.py)
+Implementation of the main script:
+1. **Load Parameters**: Parse [notebooks/calibration/output/good.toml](file:///e:/CMC/pyprojects/programs_rpi/NOARK_backbone/notebooks/calibration/output/good.toml) using [toml](file:///e:/CMC/pyprojects/programs_rpi/NOARK_backbone/notebooks/calibration/output/good.toml) to extract `camera_matrix`, `dist_coeffs`, and `marker_length`.
+2. **Camera Initialization**: Initialize `Picamera2` identically to the reference script ([recorder.py](file:///e:/CMC/pyprojects/programs_rpi/NOARK_backbone/recorder/recorder.py)), setting the `YUV420` format, `1280x800` resolution, and `vflip=1`.
+3. **Fisheye Undistortion Maps**: Compute `new_camera_matrix` using `cv2.fisheye.estimateNewCameraMatrixForUndistortRectify` and generate lookup maps via `cv2.fisheye.initUndistortRectifyMap`.
+4. **Detector Setup**: Initialize `cv2.aruco.ArucoDetector`.
+5. **Main Processing Loop**:
+   - Capture the frame and extract the grayscale channel.
+   - Undistort the grayscale image using `cv2.remap`.
+   - Run `detectMarkers` on the undistorted image.
+   - For each detected marker, estimate its pose (translation and rotation vectors) using `cv2.solvePnP` with the defined `marker_length` and the `new_camera_matrix`.
+   - Display the frame with overlaid detection bounding boxes and axes (if display is enabled).
+
+## Verification Plan
+
+### Automated Tests
+- This is a hardware-dependent script (requires Picamera2 and physical camera). Automated unit tests cannot fully verify the video stream and GPIOs.
+
+### Manual Verification
+1. Run the script on the Raspberry Pi: `python estimator/realtime_data.py`
+2. Point the camera at an AprilTag (e.g., Tag36h11).
+3. Verify that the window displays the camera feed with the fisheye distortion corrected.
+4. Verify that a bounding box and 3D coordinate axes are drawn on the detected AprilTag.
+5. Verify the console outputs the estimated translation (`tvec`) and rotation (`rvec`) of the tag in real-time.
