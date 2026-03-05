@@ -4,8 +4,8 @@ import cv2
 # The units (meters, mm, etc.) don't affect the PNG generation directly but are stored in the board object.
 square_length = 0.026  # checker size
 marker_length = 0.019  # aruco size
-squares_x = 6          # columns
-squares_y = 4          # rows
+squares_x = 4          # columns
+squares_y = 6          # rows
 
 # 2. Select the ArUco Dictionary (4x4)
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -17,7 +17,7 @@ board = cv2.aruco.CharucoBoard((squares_y, squares_x), square_length, marker_len
 
 # 4. Generate the Image
 # Define the output image size in pixels (e.g., 1000x1500 for a 4x6 ratio)
-image_size = (400, 600)
+image_size = (800, 1200)
 charuco_image = board.generateImage(image_size)
 
 # 5. Save to PNG
