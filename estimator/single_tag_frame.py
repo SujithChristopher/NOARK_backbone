@@ -20,6 +20,10 @@ class RealtimeFisheyeAprilTagTracker:
         self._init_undistortion_maps()
         self._init_detector()
 
+        self.save_frame = False
+        self.ref_tvec = np.zeros(3)
+        self.ref_rvec = np.zeros(3)
+
     def _load_config(self):
         """Loads calibration and application settings from the TOML config file."""
         if not os.path.exists(self.config_path):
@@ -39,8 +43,8 @@ class RealtimeFisheyeAprilTagTracker:
         # Aruco/AprilTag Settings
         self.marker_length = self.config["aruco"]["marker_length"]
         # Use a default marker length if not properly set
-        if not isinstance(self.marker_length, (int, float)) or self.marker_length <= 0:
-             self.marker_length = 0.05 # 5cm default
+        # if not isinstance(self.marker_length, (int, float)) or self.marker_length <= 0:
+        self.marker_length = 0.07 # 5cm default
              
         # Display settings
         self.display = self.config.get("display", {}).get("display", True)
@@ -52,7 +56,7 @@ class RealtimeFisheyeAprilTagTracker:
         main_config = {"format": "YUV420", "size": (WIDTH, HEIGHT)}
         
         # Exposure / Framerate settings from reference
-        controls = {"FrameRate": 100, "ExposureTime": 3000}
+        controls = {"FrameRate": 100, "ExposureTime": 8000}
         
         config = self.picam2.create_video_configuration(
             main_config, 
@@ -105,9 +109,9 @@ class RealtimeFisheyeAprilTagTracker:
     def process_frame(self):
         """Main processing loop."""
         print("Starting real-time processing loop. Press 'q' to quit.")
-        
-        prev_time = time.time()
-        fps_filter = 0.0
+
+
+    
 
         try:
             while True:
@@ -157,6 +161,7 @@ class RealtimeFisheyeAprilTagTracker:
                             None, # No distortion coeffs, image is already undistorted
                             flags=cv2.SOLVEPNP_IPPE_SQUARE
                         )
+
                         
                         if success:
                             # Draw axis
@@ -171,8 +176,21 @@ class RealtimeFisheyeAprilTagTracker:
                             )
                             
                             # Print pose (optional, can be noisy in terminal)
-                            print(f"Marker {ids[i][0]}: tvec={tvec.ravel()}, rvec={rvec.ravel()}")
+                            # print(f"Marker {ids[i][0]}: tvec={tvec.ravel()}, rvec={rvec.ravel()}")
                 cv2.imshow('asdf',display_img)
+
+                # print(f"Marker {ids[i][0]}: tvec={tvec.ravel()}, rvec={rvec.ravel()}")
+
+                mat = cv2.Rodrigues(self.ref_rvec)[0]
+
+                table_vec = mat.T @ (tvec.reshape(3, 1) - self.ref_tvec.reshape(3, 1))
+                print(table_vec.T[0])
+
+
+                if cv2.waitKey(1) & 0xFF == ord('s'):
+                    self.ref_rvec = rvec
+                    self.ref_tvec = tvec
+
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
