@@ -180,6 +180,12 @@ class RealtimeFisheyeAprilTagTracker:
                             )
                             
                             # Print pose (optional, can be noisy in terminal)
+
+                            offset = np.array([0.,0,0.05]).reshape((3,1))
+
+                            tvec = cv2.Rodrigues(rvec)[0] @ offset + tvec.reshape((3,1))
+                            tvec = tvec.T[0]
+                            # transform to world frame
                             transformed_tvec = self.R.T @ (tvec.reshape((3,1)) - self.tvec.reshape((3,1)))
                             print(f"Marker {ids[i][0]}: tvec={transformed_tvec.ravel()}, rvec={rvec.ravel()}")
                 cv2.imshow('asdf',display_img)
