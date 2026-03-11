@@ -13,7 +13,7 @@ WIDTH = 1280
 HEIGHT = 800
 
 class RealtimeCharucoTracker:
-    def __init__(self, config_path, squares_x=4, squares_y=6, square_length=0.026, marker_length=0.019, dict_id=cv2.aruco.DICT_4X4_1000):
+    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.026, marker_length=0.019, dict_id=cv2.aruco.DICT_4X4_50):
         self.config_path = config_path
         
         # ChArUco Board Parameters
@@ -101,12 +101,12 @@ class RealtimeCharucoTracker:
         
         # Create the ChArUco Board object
         self.board = cv2.aruco.CharucoBoard(
-            (self.squares_x, self.squares_y), 
+            (6, 4), 
             self.square_length, 
             self.marker_length, 
             self.dictionary
         )
-        self.board.setLegacyPattern(True)
+        # self.board.setLegacyPattern(True)
         # Detector Parameters
         self.detector_params = cv2.aruco.DetectorParameters()
         self.detector = cv2.aruco.ArucoDetector(self.dictionary, self.detector_params)
@@ -148,9 +148,11 @@ class RealtimeCharucoTracker:
                 
                 # Interpolate Charuco Corners
                 # Notice we use the standard API for OpenCV 4.7+
+                # charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(undistorted_gray)
                 charuco_corners, charuco_ids, marker_corners, marker_ids = self.charuco_detector.detectBoard(undistorted_gray)
                 
-                print(charuco_ids)
+                # print(self.new_camera_matrix)
+                # print(charuco_ids)
                 if charuco_corners is not None and charuco_ids is not None and len(charuco_ids) >= 4:
                     # Draw the detected charuco corners
                     cv2.aruco.drawDetectedCornersCharuco(display_img, charuco_corners, charuco_ids, (0, 0, 255))
@@ -161,14 +163,11 @@ class RealtimeCharucoTracker:
                         charuco_corners, 
                         charuco_ids, 
                         self.board, 
-                        self.new_camera_matrix, 
-                        None, # No dist_coeffs
+                        self.new_camera_matrix,
+                        # np.eye(3), 
+                        np.zeros((4,1)), # No dist_coeffs
                         None, None
                     )
-
-                    print(success)
-                    print(self.rvec)
-                    print(self.tvec)
 
                     
                     if success:
@@ -183,7 +182,7 @@ class RealtimeCharucoTracker:
                             thickness=2
                         )
                         # Print pose
-                    print(success)
+                    # print(success)
                     print(f"ChArUco Pose: tvec={self.tvec.ravel().round(3)}, rvec={self.rvec.ravel().round(3)}")
 
 
@@ -208,6 +207,7 @@ class RealtimeCharucoTracker:
             "dist_coeffs": self.dist_coeffs.tolist(),
             "rvec": rvec.tolist(),
             "tvec": tvec.tolist(),
+            'rotation_matrix': cv2.Rodrigues(rvec)[0].tolist(),
         }
 
         output_dir = "/home/sujith/Documents/NOARK_backbone/estimator/charuco_pose"
