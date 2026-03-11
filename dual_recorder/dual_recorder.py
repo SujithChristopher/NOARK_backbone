@@ -27,7 +27,14 @@ class RecordData:
         default_res=False,
     ):
         # Initialize Camera 0 (IMX219)
-        self.picam0 = Picamera2(camera_num=0)
+        tuning_file = "/home/sujith/imx219_waveshare.json"
+        
+        if os.path.exists(tuning_file):
+            tuning0 = Picamera2.load_tuning_file(tuning_file)
+            self.picam0 = Picamera2(camera_num=0, tuning=tuning0)
+        else:
+            self.picam0 = Picamera2(camera_num=0)
+            
         main0 = {"format": "BGR888", "size": (1640, 1232)}
         _c0 = {"FrameRate": fps_value, "ExposureTime": 5000}
         config0 = self.picam0.create_video_configuration(
@@ -35,6 +42,12 @@ class RecordData:
         )
         self.picam0.configure(config0)
         self.picam0.start()
+
+        # Apply custom colour gains for IMX219 if available
+        self.picam0.set_controls({
+            "AwbEnable": False,
+            "ColourGains": (1.5, 1.8)
+        })
 
         # Initialize Camera 1 (OV9281)
         self.picam1 = Picamera2(camera_num=1)
