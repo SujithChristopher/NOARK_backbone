@@ -13,7 +13,7 @@ WIDTH = 1280
 HEIGHT = 800
 
 class RealtimeCharucoTracker:
-    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.026, marker_length=0.019, dict_id=cv2.aruco.DICT_4X4_50):
+    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.027, marker_length=0.02, dict_id=cv2.aruco.DICT_4X4_50):
         self.config_path = config_path
         
         # ChArUco Board Parameters
@@ -183,12 +183,12 @@ class RealtimeCharucoTracker:
                         )
                         # Print pose
                     # print(success)
-                    print(f"ChArUco Pose: tvec={self.tvec.ravel().round(3)}, rvec={self.rvec.ravel().round(3)}")
+                    print(f"ChArUco Pose: tvec={self.tvec.ravel()}")
 
 
             # Resize for display to avoid filling the screen
-            # display_img_resized = cv2.resize(display_img, (640, 400))
-            cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img)
+            display_img_resized = cv2.resize(display_img, (350, 200))
+            cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img_resized)
             if cv2.waitKey(1) & 0xFF == ord('s'):
                 print("Saving calibration data...")
                 self.save_calibration_data(self.rvec, self.tvec)

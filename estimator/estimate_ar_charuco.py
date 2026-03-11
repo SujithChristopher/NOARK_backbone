@@ -37,10 +37,10 @@ class RealtimeFisheyeAprilTagTracker:
         WIDTH, HEIGHT = self.resolution
 
         # Aruco/AprilTag Settings
-        self.marker_length = 0.07
+        self.marker_length = 0.05
         # Use a default marker length if not properly set
         if not isinstance(self.marker_length, (int, float)) or self.marker_length <= 0:
-             self.marker_length = 0.07 # 5cm default
+             self.marker_length = 0.05 # 5cm default
              
         # Display settings
         self.display = self.config.get("display", {}).get("display", True)
@@ -72,6 +72,11 @@ class RealtimeFisheyeAprilTagTracker:
         self.picam2.configure(config)
         self.picam2.start()
         print("Camera initialized and started.")
+        
+
+
+
+
 
     def _init_undistortion_maps(self):
         """Pre-computes the undistortion maps for the fisheye lens."""
@@ -178,17 +183,19 @@ class RealtimeFisheyeAprilTagTracker:
                                 length=marker_len * 0.5, 
                                 thickness=2
                             )
-                            
+                            print(tvec * 100)
                             # Print pose (optional, can be noisy in terminal)
 
-                            offset = np.array([0.,0,0.05]).reshape((3,1))
+                            offset = np.array([0.0,0.0,0.0]).reshape((3,1))
 
                             tvec = cv2.Rodrigues(rvec)[0] @ offset + tvec.reshape((3,1))
                             tvec = tvec.T[0]
                             # transform to world frame
                             transformed_tvec = self.R.T @ (tvec.reshape((3,1)) - self.tvec.reshape((3,1)))
-                            print(f"Marker {ids[i][0]}: tvec={transformed_tvec.ravel()}, rvec={rvec.ravel()}")
-                cv2.imshow('asdf',display_img)
+                            # print(f"Marker {ids[i][0]}: tvec={transformed_tvec.ravel()}, rvec={rvec.ravel()}")
+                display_img_resized = cv2.resize(display_img, (350, 200))
+                cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img_resized)
+                # cv2.imshow('asdf',display_img)
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
