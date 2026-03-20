@@ -14,7 +14,7 @@ class Config:
     MARKER_LENGTH = 0.049
     DEFAULT_IDS = [12, 14, 20]
     MARKER_OFFSETS = {
-        12: np.array([0, 0, -0.057]),
+        12: np.array([0, 0, -0.055]),
         # 12: np.array([0, 0, 0.0]),
         14: np.array([-0.126, 0, -0.054]),
         20: np.array([0.126, 0, -0.054]),
@@ -162,15 +162,15 @@ class MainClass:
                     tvecs[0], 
                     0.05)
             # --- PRINT RAW TVECS AT THE END OF PROCESSING ---
-            print("\n--- Raw Camera Frame Detections ---")
+            # print("\n--- Raw Camera Frame Detections ---")
             for i, marker_id in enumerate(ids.flatten()):
                 # raw_tvec is the [x, y, z] in meters from the camera lens center
                 raw_tvec_cm = tvecs[i] * 100 
-                print(f"Marker ID {marker_id}: {np.round(raw_tvec_cm, 2)} cm")
+                # print(f"Marker ID {marker_id}: {np.round(raw_tvec_cm, 2)} cm")
             
-            if self.noark_in_table_frame is not None:
-                print(f"RESULT -> NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
-            print("----------------------------------")
+            # if self.noark_in_table_frame is not None:
+                # print(f"RESULT -> NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
+            # print("----------------------------------")
         cv_show = cv2.resize(self.video_frame, (480, 320))
         cv2.imshow("Optimized Tracker", cv_show)
         return cv2.waitKey(1) & 0xFF != ord('q')
