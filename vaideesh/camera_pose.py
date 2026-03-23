@@ -15,7 +15,7 @@ class Config:
     DEFAULT_IDS = [12, 14, 20]
     MARKER_OFFSETS = {
         12: np.array([0, 0, -0.055]),
-        # 12: np.array([0, 0, 0.0]),
+        #12: np.array([0, 0, 0.0]),
         14: np.array([-0.126, 0, -0.054]),
         20: np.array([0.126, 0, -0.054]),
     }
@@ -144,11 +144,27 @@ class MainClass:
         
         corners, ids, _ = self.detector.detectMarkers(undistorted)
         self.video_frame = cv2.cvtColor(undistorted, cv2.COLOR_GRAY2BGR)
+        # --- Initialize per-marker storage (None if marker not detected) ---
+        self.marker_12 = {"id": 12, "tvec": None, "rvec": None}
+        self.marker_14 = {"id": 14, "tvec": None, "rvec": None}
+        self.marker_20 = {"id": 20, "tvec": None, "rvec": None}
+
+        marker_map = {
+            12: self.marker_12,
+            14: self.marker_14,
+            20: self.marker_20,
+        }
 
         if ids is not None:
             aruco.drawDetectedMarkers(self.video_frame, corners, ids)
             rvecs, tvecs = self.estimate_pose(corners)
-            
+
+             # --- Store tvec/rvec per marker ID ---
+            for i, marker_id in enumerate(ids.flatten()):
+                if marker_id in marker_map:
+                    marker_map[marker_id]["tvec"] = tvecs[i]  
+                    marker_map[marker_id]["rvec"] = rvecs[i]
+            # print(self.marker_12)
             self.noark_in_table_frame = self._get_local_coordinates(ids, rvecs, tvecs)
             
             if self.noark_in_table_frame is not None:
@@ -166,11 +182,12 @@ class MainClass:
             for i, marker_id in enumerate(ids.flatten()):
                 # raw_tvec is the [x, y, z] in meters from the camera lens center
                 raw_tvec_cm = tvecs[i] * 100 
+                raw_rvec_cm = rvecs[i] * 100
                 # print(f"Marker ID {marker_id}: {np.round(raw_tvec_cm, 2)} cm")
+                # print(f"Marker ID {marker_id}: {np.round(raw_rvec_cm, 2)} cm")
             
             # if self.noark_in_table_frame is not None:
-                # print(f"RESULT -> NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
-            # print("----------------------------------")
+            #     print(f"NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
         cv_show = cv2.resize(self.video_frame, (480, 320))
         cv2.imshow("Optimized Tracker", cv_show)
         return cv2.waitKey(1) & 0xFF != ord('q')

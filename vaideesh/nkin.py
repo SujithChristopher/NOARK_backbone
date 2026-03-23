@@ -10,6 +10,12 @@ import sys
 import select
 import termios 
 import tty 
+import csv
+from datetime import datetime
+import gpiod
+import msgpack as mp
+import msgpack_numpy as mpn
+
 # from uncertainties import ufloat
 
 # Parameters for kinematics 
@@ -42,7 +48,31 @@ class XYPlot:
         self.P2_to_NOARK_init = None
         self.P4_to_NOARK_init = None
         self.start_time = time.time()
-   
+
+        # Sync Pin Setup
+        sync_pin = 17
+        chip = gpiod.Chip("gpiochip4")
+        self.sync_line = chip.get_line(sync_pin)
+        self.sync_line.request(consumer="SyncPin", type=gpiod.LINE_REQ_DIR_IN)
+        #Recording state
+        self.start_recording = False
+
+        #CSV setup 
+        self.csv_path = "camera_data.csv"
+        with open(self.csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+            "timestamp", "sync_pin",
+            "marker_id",
+            "tvec_x", "tvec_y", "tvec_z",
+            "rvec_x", "rvec_y", "rvec_z"
+        ])
+        # Sensor CSV setup
+        self.sensor_csv_path = "sensor_data.csv"
+        with open(self.sensor_csv_path, "w", newline="") as f:
+            writer_sen = csv.writer(f)
+            writer_sen.writerow(["timestamp", "enc1", "enc2"])
+
     def parse_encoder_value(self, value):
         try:
             return float(value)
@@ -53,7 +83,30 @@ class XYPlot:
         if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
             return sys.stdin.read(1)
         return None
+    def _write_frame(self, timestamp):
+        sync = self.sync_line.get_value()
+        with open(self.csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            for marker in [self.cam.marker_12, self.cam.marker_14, self.cam.marker_20]:
+                if marker["tvec"] is not None and marker["rvec"] is not None:
+                    tx, ty, tz = float(marker["tvec"][0]), float(marker["tvec"][1]), float(marker["tvec"][2])
+                    rx, ry, rz = float(marker["rvec"][0]), float(marker["rvec"][1]), float(marker["rvec"][2])
+                else:
+                    tx = ty = tz = float("nan")
+                    rx = ry = rz = float("nan")
 
+                writer.writerow([
+                    timestamp, sync,
+                    marker["id"],
+                    tx, ty, tz,
+                    rx, ry, rz
+                ])
+    def _write_sensor_frame(self, timestamp, enc1, enc2):
+        with open(self.sensor_csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([timestamp, enc1, enc2])
+    def _close_files(self):
+        print("CSV saved and closed.")
     def run(self):
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
@@ -64,9 +117,11 @@ class XYPlot:
             while True:
                 self.cam.process_frame()
                 N_Pos = self.cam.noark_in_table_frame  # Noark position in table frame 
-               
+                  # --- Write to CSV ---
+                if self.start_recording:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    self._write_frame(timestamp)
                 
-
                 if N_Pos is None:
                     print("Camera: Searching for NOARK....")
                     time.sleep(0.1)
@@ -78,30 +133,38 @@ class XYPlot:
                 enc_value_1 = round(raw_e1 - self.enc1_offset, 2)
                 enc_value_2 = round(raw_e2 - self.enc2_offset, 2)
                 print("E1 , E2 :",enc_value_1, enc_value_2)
-            
+                # --- Write sensor data ---
+                if self.start_recording:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    self._write_sensor_frame(timestamp, enc_value_1, enc_value_2) 
                 # Use a loop to catch the key even if it was pressed 
                 key = self.get_key()
-                if key:
-                    if key == 'r':
-                        self.enc1_offset += enc_value_1 
-                        print("Reset R")
-                    elif key == 't':
-                        self.enc2_offset += enc_value_2
-                        print("Reset T")
-                    elif key == 'z':
-                        print(f"BEFORE zero: enc_value_1={enc_value_1}, enc_value_2={enc_value_2}")
-                        self.enc1_offset = raw_e1
-                        self.enc2_offset = raw_e2
-                        # Recompute enc_values immediately after zeroing
-                        enc_value_1 = round(raw_e1 - self.enc1_offset, 2)  # now = 0.0
-                        enc_value_2 = round(raw_e2 - self.enc2_offset, 2)  # now = 0.0
-                        # print(f"AFTER zero: enc_value_1={enc_value_1}, enc_value_2={enc_value_2}")  # must be 0.0
-    
-                        # Capture initial free lengths from camera at same moment
-                        self.P2_to_NOARK_init = sqrt((N_Pos[0] - P2[0])**2 + (N_Pos[2] - P2[2])**2)
-                        print(f"Captured P2_to_NOARK_init: {self.P2_to_NOARK_init*100:.2f}cm")
-                        self.P4_to_NOARK_init = sqrt((N_Pos[0] - P4[0])**2 + (N_Pos[2] - P4[2])**2)
-                        print("Zeroed All")
+                if key == 's':  
+                    self.start_recording = True
+                    print("Recording started...")
+                elif key == 'q':
+                    print("Recording stopped. Exiting...")
+                    break
+                if key == 'r':
+                    self.enc1_offset += enc_value_1 
+                    print("Reset R")
+                elif key == 't':
+                    self.enc2_offset += enc_value_2
+                    print("Reset T")
+                elif key == 'z':
+                    print(f"BEFORE zero: enc_value_1={enc_value_1}, enc_value_2={enc_value_2}")
+                    self.enc1_offset = raw_e1
+                    self.enc2_offset = raw_e2
+                    # Recompute enc_values immediately after zeroing
+                    enc_value_1 = round(raw_e1 - self.enc1_offset, 2)  # now = 0.0
+                    enc_value_2 = round(raw_e2 - self.enc2_offset, 2)  # now = 0.0
+                    # print(f"AFTER zero: enc_value_1={enc_value_1}, enc_value_2={enc_value_2}")  # must be 0.0
+
+                    # Capture initial free lengths from camera at same moment
+                    self.P2_to_NOARK_init = sqrt((N_Pos[0] - P2[0])**2 + (N_Pos[2] - P2[2])**2)
+                    # print(f"Captured P2_to_NOARK_init: {self.P2_to_NOARK_init*100:.2f}cm")
+                    self.P4_to_NOARK_init = sqrt((N_Pos[0] - P4[0])**2 + (N_Pos[2] - P4[2])**2)
+                    print("Zeroed All")
                 #math before zeroing
                 # if self.P2_to_NOARK_init is not None and self.P4_to_NOARK_init is not None:
                 #     print(f"Initial L_free_L: {self.P2_to_NOARK_init*100:.2f}cm | Initial L_free_R: {self.P4_to_NOARK_init*100:.2f}cm")
@@ -135,8 +198,6 @@ class XYPlot:
                     print(f"delta_L: {delta_L*100:.2f}cm  delta_R: {delta_R*100:.2f}cm")
                     # print(f"L_free_L (enc): {L_free_L*100:.2f}cm | L_cam_L: {L_cam_L*100:.2f}cm | error: {(L_free_L-L_cam_L)*100:.2f}cm")
                     # print(f"L_free_R (enc): {L_free_R*100:.2f}cm | L_cam_R: {L_cam_R*100:.2f}cm | error: {(L_free_R-L_cam_R)*100:.2f}cm")
-                
-
                 #Circle - Circle Intersection 
                 #NOARK lies on circle centered at P2 with radius L_free_L and circle centered at P4 with radius L_free_R
 
@@ -162,15 +223,8 @@ class XYPlot:
 
                     #Midpoint along P2-P4 
                     x_mid = x_P2 + a_val * (x_P4 - x_P2) / d
-                    z_mid = z_P2 + a_val * (z_P4 - z_P2) / d
+                    z_mid = z_P2 + a_val * (z_P4 - z_P2) / d 
                     print(f"Footpoint: x={x_mid*100:.2f}cm  z={z_mid*100:.2f}cm")
-
-
-                    # dx = (x_P4 - x_P2) / d
-                    # dz = (z_P4 - z_P2) / d
-
-                    # x_enc = x_P2 + a_val*dx ± h*dz
-                    # z_enc = z_P2 + a_val*dz ∓ h*dx
 
                     #Two possible intersection points
                     x_enc_1 = x_mid + h * (z_P4 - z_P2) / d
@@ -178,9 +232,7 @@ class XYPlot:
 
                     x_enc_2 = x_mid - h * (z_P4 - z_P2) / d
                     z_enc_2 = z_mid + h * (x_P4 - x_P2) / d #below baseline
-                    # print(f"Enc Intersection 1: x={x_enc_1*100:.2f}cm  z={z_enc_1*100:.2f}cm")
-                    # print(f"Enc Intersection 2: x={x_enc_2*100:.2f}cm  z={z_enc_2*100:.2f}cm")
-
+                    
                     # Pick correct point — NOARK is always between P2 and P4 in Z
                     # Choose point closer to current camera position as sanity check
                     # dist1 = sqrt((x_enc_1 - N_Pos[0])**2 + (z_enc_1 - N_Pos[2])**2)
@@ -199,8 +251,6 @@ class XYPlot:
                     print(f"Position error:  x={(x_noark_enc - N_Pos[0])*100:.2f}cm  z={(z_noark_enc - N_Pos[2])*100:.2f}cm")
                 else:
                     print("Press 'z' to initialize!")
-                
-                
                 # Kinematics Calculation:
                 ##LEFT ARM
                 #To find theta 1 from first right angle triangle for left arm 
@@ -213,14 +263,9 @@ class XYPlot:
                 cl = sqrt(a**2 + x2**2) #Distance between Pulley center to NOARK Center
                 # print("cl(cm):",cl * 100)
                 theta1 = np.arccos((x2)/(cl))
-                # theta1 = np.arctan2(abs(N_Pos[2] - P2[2]), abs(N_Pos[0] - P2[0])) # angle between NOARK and pulley 2 center,claude suggestion
-                # print("cl(cm):",cl * 100)
-                # print("Theta1(deg):",degrees(theta1))     
-                #To find theta2 from second right angle triangle
                 l1 = sqrt((P2_to_NOARK)**2 - (r_p2)**2) # length from tangent to NOARK 
                 # print("l1(cm):",l1 * 100)
                 theta2 = np.arccos(l1 / P2_to_NOARK)
-                # theta2 = 
                 theta2_a = np.pi/2 - theta2 # theta 2 dash is found using theta 2 refer notes for clarification
                 # print("Theta2(deg):",degrees(theta2_a))
                 sigma = (theta2_a - theta1)
@@ -246,7 +291,7 @@ class XYPlot:
 
                 #To find theta2 from second right angle triangle
                 l2 = sqrt((P4_to_NOARK)**2 - (r_p4)**2) # length from tangent to NOARK 
-                # print("l2(cm):",l2 * 100)
+                print("l2(cm):",l2 * 100)
                
                 # print("cr",cr * 100)
                 theta4 = np.arccos(l2/P4_to_NOARK) 
@@ -254,13 +299,12 @@ class XYPlot:
                 sigma2 = (theta4a - theta3) 
                 phi_4 = -(theta4 + theta3)
                 omega4 = -3.14 + sigma2
-                # print("omega4",degrees(omega4))
-                R_wrap_length = r_p4 * np.deg2rad(degrees(omega4)) # length of cable wrapped around the pulley
-                # print("R_wrap_length", R_wrap_length * 100)
-                time.sleep(0.1)         
+             
+                # time.sleep(0.1)         
 
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            self._close_files()
 
 
 
