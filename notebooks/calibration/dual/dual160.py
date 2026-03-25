@@ -26,7 +26,7 @@ def _():
     return Parallel, aruco, cv2, delayed, mp, mpn, np, os, plt, tqdm
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(cv2, np):
     patternSize = (8, 12)
     _squareSize = 30
@@ -44,59 +44,56 @@ def _(cv2, np):
 
 @app.cell
 def _(os):
-    _pth = os.path.dirname(os.getcwd())
-    _parent_folder = "data"
+    _project_root = os.getcwd()  # NOARK_backbone (marimo cwd = where it was launched)
     _calib_folder_name = "dual_cam_calibration_checker_sz_30mm"
 
-    _webcam_calib_folder = os.path.join(
-        _pth,'..', _parent_folder, "calibration",'dual_160', _calib_folder_name
+    webcam_calib_folder = os.path.join(
+        _project_root, "data", "calibration", "dual_160", _calib_folder_name
     )
 
-    _camera = 'cam1_ov9281'
-    _webcam_calib_video = os.path.join(_webcam_calib_folder, f"{_camera}.msgpack")
-    return
+    camera = 'cam1_ov9281'
+    webcam_calib_video = os.path.join(webcam_calib_folder, f"{camera}.msgpack")
+    return camera, webcam_calib_folder, webcam_calib_video
 
 
 @app.cell
-def _(mp, mpn):
-    _video_pth = _webcam_calib_video
-    _video_file = open(_video_pth, 'rb')
+def _(mp, mpn, webcam_calib_video):
+    _video_file = open(webcam_calib_video, 'rb')
     _video_data = mp.Unpacker(_video_file, object_hook=mpn.decode)
     _video_length = 0
+    last_frame = None
     for _frame in _video_data:
+        last_frame = _frame
         _video_length = _video_length + 1
     _video_file.close()
     print('video length, ', _video_length)
+    return (last_frame,)
+
+
+@app.cell
+def _(last_frame):
+    last_frame.shape
     return
 
 
 @app.cell
-def _():
-    _frame.shape
-    return
-
-
-@app.cell
-def _(mp, mpn):
-    _video_pth = _webcam_calib_video
-    _video_file = open(_video_pth, "rb")
-    _video_data = mp.Unpacker(_video_file, object_hook=mpn.decode)
-
+def _(webcam_calib_video):
+    _video_pth = webcam_calib_video
     chessb_corners = []
     counter = 0
     return
 
 
 @app.cell
-def _(plt):
-    plt.imshow(_frame)
+def _(last_frame, plt):
+    plt.imshow(last_frame)
     return
 
 
 @app.cell
-def _(Parallel, cv2, delayed, patternSize, tqdm):
+def _(Parallel, cv2, delayed, mp, mpn, patternSize, tqdm, webcam_calib_video):
     def detectCorners(data):
-        frame_id, _frame = _data
+        frame_id, _frame = data
         if len(_frame.shape) == 3:
             _frame = cv2.cvtColor(_frame, cv2.COLOR_RGB2GRAY)
         ret, corners = cv2.findChessboardCorners(_frame, patternSize)
@@ -106,7 +103,10 @@ def _(Parallel, cv2, delayed, patternSize, tqdm):
             return (None, frame_id)
         return (corners, frame_id)
     chessb_corners_1 = []
+    _video_file = open(webcam_calib_video, 'rb')
+    _video_data = mp.Unpacker(_video_file, object_hook=mpn.decode)
     results = Parallel(n_jobs=20, verbose=0)((delayed(detectCorners)(frame) for frame in tqdm(enumerate(_video_data))))
+    _video_file.close()
     return (results,)
 
 
@@ -134,15 +134,15 @@ def _(chessb_corners_2):
 
 
 @app.cell
-def _(STOP_HERE):
-    STOP_HERE
+def _(mo):
+    mo.stop(True, mo.md("**Execution halted — cells below will not run**"))
     return
 
 
 @app.cell
-def _(chessb_corners_2, mp, mpn, os):
-    video_dir = os.path.dirname(_video_pth)
-    corners_file = os.path.join(video_dir, f'chessb_corners_{_camera}.msgpack')
+def _(camera, chessb_corners_2, mp, mpn, os, webcam_calib_video):
+    video_dir = os.path.dirname(webcam_calib_video)
+    corners_file = os.path.join(video_dir, f'chessb_corners_{camera}.msgpack')
     with open(corners_file, 'wb') as _f:
         _packed_file = mp.packb(chessb_corners_2, default=mpn.encode)
         _f.write(_packed_file)
@@ -150,8 +150,8 @@ def _(chessb_corners_2, mp, mpn, os):
 
 
 @app.cell
-def _(STOP_HERE):
-    STOP_HERE
+def _(mo):
+    mo.stop(True, mo.md("**Execution halted — cells below will not run**"))
     return
 
 
@@ -170,24 +170,15 @@ def _(np):
 
 
 @app.cell
-def _(os):
-    _pth = os.path.dirname(os.getcwd())
-    _parent_folder = "data"
-    _calib_folder_name = "dual_cam_calibration_checker_sz_30mm"
-
-    _webcam_calib_folder = os.path.join(
-        _pth,'..', _parent_folder, "calibration",'dual_160', _calib_folder_name
-    )
-    _webcam_calib_video = os.path.join(_webcam_calib_folder, "cam1_ov9281.msgpack")
-    _webcam_calib_folder = os.path.join(_webcam_calib_folder)
-    _webcam_corners_pth = os.path.join(_webcam_calib_folder, "chessb_corners_cam0_imx219.msgpack")
-    return
+def _(os, webcam_calib_folder):
+    webcam_corners_pth = os.path.join(webcam_calib_folder, "chessb_corners_cam0_imx219.msgpack")
+    return (webcam_corners_pth,)
 
 
 @app.cell
-def _(mp, mpn, np):
+def _(mp, mpn, np, webcam_corners_pth):
     # load data
-    _corners_file = open(_webcam_corners_pth, 'rb')
+    _corners_file = open(webcam_corners_pth, 'rb')
     chessb_corners_3 = list(mp.Unpacker(_corners_file, object_hook=mpn.decode))[0]
     chessboard_data = {'cb_corners': [], 'frame_id': []}
     for c, id in chessb_corners_3:
@@ -198,7 +189,7 @@ def _(mp, mpn, np):
     return (chessb_corners_3,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(chessb_corners_3, np, plt):
     rnd = np.random.choice(len(chessb_corners_3), 100)
     chessb_c = chessb_corners_3[rnd]
@@ -316,12 +307,11 @@ def _(
 
 
 @app.cell
-def _(mp, mpn, my_dict, os, permute_value, useFisheye):
-    # video_dir = os.path.dirname(_video_pth)
+def _(mp, mpn, my_dict, os, permute_value, useFisheye, webcam_calib_folder):
     if useFisheye:
-        calibration_file = os.path.join(_webcam_calib_folder, f'calibration_data_{permute_value}.msgpack')
+        calibration_file = os.path.join(webcam_calib_folder, f'calibration_data_{permute_value}.msgpack')
     else:
-        calibration_file = os.path.join(_webcam_calib_folder, f'standard_calibration_data_{permute_value}.msgpack')
+        calibration_file = os.path.join(webcam_calib_folder, f'standard_calibration_data_{permute_value}.msgpack')
     with open(calibration_file, 'wb') as _f:
         _packed_file = mp.packb(my_dict, default=mpn.encode)
         _f.write(_packed_file)
@@ -387,9 +377,9 @@ def _(my_dict, np, plt):
 
 
 @app.cell
-def _(camera_dist, camera_mat, cv2, mp, mpn, plt):
+def _(camera_dist, camera_mat, cv2, mp, mpn, plt, webcam_calib_video):
     # show distorted and undistorted images
-    _video_pth = _webcam_calib_video
+    _video_pth = webcam_calib_video
     _video_file = open(_video_pth, 'rb')
     _video_data = mp.Unpacker(_video_file, object_hook=mpn.decode)
     for _idx, frame in enumerate(_video_data):
@@ -410,8 +400,8 @@ def _(camera_dist, camera_mat, cv2, mp, mpn, plt):
 
 
 @app.cell
-def _(STOP_HERE):
-    STOP_HERE
+def _(mo):
+    mo.stop(True, mo.md("**Execution halted — cells below will not run**"))
     return
 
 
@@ -428,33 +418,45 @@ def _(os):
     import sys
     import polars as pl
     from datetime import datetime
-    sys.path.insert(1, os.path.dirname(os.getcwd()))
+    sys.path.insert(1, os.path.join(os.getcwd(), 'notebooks'))
     from scipy.spatial.transform import Rotation as R
-    # from pd_support import *
+    from pd_support import add_datetime_col, read_rigid_body_csv, get_rb_marker_name
     from scipy.interpolate import interp1d
 
-    return R, datetime, interp1d, pl
+    return (
+        R,
+        add_datetime_col,
+        datetime,
+        get_rb_marker_name,
+        interp1d,
+        pl,
+        read_rigid_body_csv,
+    )
 
 
 @app.cell
 def _(mp, mpn, np, os):
-    _pth = os.path.dirname(os.getcwd())
-    _parent_folder = 'data'
+    _project_root = os.getcwd()  # NOARK_backbone
     _fov = '160_fov'
-    _calib_fov = 'dual_160'
     permute_value_1 = 20
     useFisheye_1 = True
-    _calib_folder_name = 'dual_cam_calibration_checker_sz_30mm'
-    _recording_folder_name = '3marker_linear_2d_160fov_t1'
-    _webcam_calib_folder = os.path.join(_pth, '..', _parent_folder, 'calibration', _calib_fov, _calib_folder_name)
-    _reference_recording_folder = os.path.join(_pth, '..', _parent_folder, 'recordings', _fov, '3marker_complete_data', _recording_folder_name)
-    _reference_file = os.path.join(_reference_recording_folder, 'webcam_color.msgpack')
-    _timestamp_file = os.path.join(_reference_recording_folder, 'webcam_timestamp.msgpack')
+    recording_folder_name = '3marker_linear_2d_160fov_t1'
+    reference_recording_folder = os.path.join(_project_root, 'data', 'recordings', _fov, '3marker_complete_data', recording_folder_name)
+    reference_file = os.path.join(reference_recording_folder, 'webcam_color.msgpack')
+    _timestamp_file = os.path.join(reference_recording_folder, 'webcam_timestamp.msgpack')
     with open(_timestamp_file, 'rb') as _f:
         _metadata = list(mp.Unpacker(_f, object_hook=mpn.decode))
-        _timestamp = np.array(_metadata)[:, 1]
-        _sync_pulse = np.array(_metadata)[:, 0]
-    return permute_value_1, useFisheye_1
+        timestamp = np.array(_metadata)[:, 1]
+        sync_pulse = np.array(_metadata)[:, 0]
+    return (
+        permute_value_1,
+        recording_folder_name,
+        reference_file,
+        reference_recording_folder,
+        sync_pulse,
+        timestamp,
+        useFisheye_1,
+    )
 
 
 @app.cell(hide_code=True)
@@ -466,24 +468,24 @@ def _(mo):
 
 
 @app.cell
-def _(mpn, msgpack, os, permute_value_1, useFisheye_1):
+def _(mp, mpn, os, permute_value_1, useFisheye_1, webcam_calib_folder):
     if useFisheye_1:
-        _calibration_data = os.path.join(_webcam_calib_folder, f'calibration_data_{permute_value_1}.msgpack')
+        _calibration_data = os.path.join(webcam_calib_folder, f'calibration_data_{permute_value_1}.msgpack')
     else:
-        _calibration_data = os.path.join(_webcam_calib_folder, f'standard_calibration_data_{permute_value_1}.msgpack')
+        _calibration_data = os.path.join(webcam_calib_folder, f'standard_calibration_data_{permute_value_1}.msgpack')
     with open(_calibration_data, 'rb') as _f:
-        my_dict_1 = list(msgpack.Unpacker(_f, object_hook=mpn.decode))
+        my_dict_1 = list(mp.Unpacker(_f, object_hook=mpn.decode))
     my_dict_1 = my_dict_1[0]
     return (my_dict_1,)
 
 
 @app.cell
-def _(mp, mpn):
-    _ref_video_length = 0
-    for _ in mp.Unpacker(open(_reference_file, 'rb'), object_hook=mpn.decode):
-        _ref_video_length = _ref_video_length + 1
-    print('video length, ', _ref_video_length)
-    return
+def _(mp, mpn, reference_file):
+    ref_video_length = 0
+    for _ in mp.Unpacker(open(reference_file, 'rb'), object_hook=mpn.decode):
+        ref_video_length = ref_video_length + 1
+    print('video length, ', ref_video_length)
+    return (ref_video_length,)
 
 
 @app.cell
@@ -520,23 +522,23 @@ def _(mo):
 
 
 @app.cell
-def _(mp, mpn):
-    _calib_data = list(mp.Unpacker(open(_calibration_data, "rb"), object_hook=mpn.decode))
+def _(my_dict_1):
+    _calib_data = my_dict_1
     return
 
 
 @app.cell
-def _():
-    len(_calib_data[0]['ReError'])
+def _(my_dict_1):
+    len(my_dict_1['ReError'])
     return
 
 
 @app.cell
-def _(board, detector, mp, mpn, np, tqdm):
+def _(board, detector, mp, mpn, np, ref_video_length, reference_file, tqdm):
     # selecting random 50 frames
     np.random.seed(9)
-    _random_reference_frames_idx = np.random.choice(_ref_video_length, 300)
-    _ref_data = mp.Unpacker(open(_reference_file, 'rb'), object_hook=mpn.decode)
+    _random_reference_frames_idx = np.random.choice(ref_video_length, 300)
+    _ref_data = mp.Unpacker(open(reference_file, 'rb'), object_hook=mpn.decode)
     ar_total_results = {'calib_idx': [], 'ar_data': []}
     ar_results = {'corners': [], 'ids': [], 'rejected': []}
     # _ref_frames = []
@@ -559,14 +561,14 @@ def _(mo):
 
 
 @app.cell
-def _():
-    _timestamp
+def _(timestamp):
+    timestamp
     return
 
 
 @app.cell
-def _(datetime, pl):
-    ar_df = {"time": _timestamp, "sync": _sync_pulse}
+def _(datetime, pl, sync_pulse, timestamp):
+    ar_df = {"time": timestamp, "sync": sync_pulse}
     ar_df = pl.from_dict(ar_df)
     if type(ar_df["time"][0]) is not datetime:
         ar_df = ar_df.with_columns(pl.col("time").str.to_datetime())
@@ -574,9 +576,16 @@ def _(datetime, pl):
 
 
 @app.cell
-def _(add_datetime_col, os, pl, read_rigid_body_csv):
+def _(
+    add_datetime_col,
+    os,
+    pl,
+    read_rigid_body_csv,
+    recording_folder_name,
+    reference_recording_folder,
+):
     mocap_df, st_time = read_rigid_body_csv(
-        os.path.join(_reference_recording_folder, f"{_recording_folder_name}.csv")
+        os.path.join(reference_recording_folder, f"{recording_folder_name}.csv")
     )
     mocap_df = add_datetime_col(mocap_df, st_time, "seconds")
     mocap_df = pl.from_pandas(mocap_df)
@@ -627,9 +636,9 @@ def _(ar_df_1, ar_results, mocap_df, pl):
     ar_df_2 = ar_df_1[start_pulse:end_pulse]
     ar_corners = ar_results['corners'][start_pulse:end_pulse]
     ids = ar_results['ids'][start_pulse:end_pulse]
-    _time_diff = mocap_df['time'][0] - ar_df_2['time'][0]
-    ar_df_2 = ar_df_2.with_columns([(pl.col('time') + _time_diff).alias('time')])
-    return ar_corners, ar_df_2, ids
+    time_diff = mocap_df['time'][0] - ar_df_2['time'][0]
+    ar_df_2 = ar_df_2.with_columns([(pl.col('time') + time_diff).alias('time')])
+    return ar_corners, ar_df_2, ids, time_diff
 
 
 @app.cell
@@ -645,8 +654,8 @@ def _(ar_df_2):
 
 
 @app.cell
-def _():
-    _time_diff
+def _(time_diff):
+    time_diff
     return
 
 
@@ -674,8 +683,8 @@ def _(R, bl, br, mocap_df, pl, tl, tr):
 @app.cell
 def _(mocap_df, mocap_mean, rmat_m, to):
     to_marker = mocap_df[[to['x'], to['y'], to['z']]].to_numpy()[0]
-    _offset_tvvv = rmat_m.T @ (mocap_mean[["x", "y", "z"]].to_numpy()[0].reshape(3, 1) - to_marker.reshape(3,1))
-    return (to_marker,)
+    offset_tvvv = rmat_m.T @ (mocap_mean[["x", "y", "z"]].to_numpy()[0].reshape(3, 1) - to_marker.reshape(3,1))
+    return offset_tvvv, to_marker
 
 
 @app.cell
@@ -771,15 +780,15 @@ def _(
     def process_single_iteration(i, fish_mat, fish_dist, all_corners_concat, corner_counts, mocap_x, mocap_y, mocap_z):
         """Process a single iteration of the calibration loop"""
         if useFisheye_1:
-            _new_cam = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(_fish_mat, _fish_dist, (1280, 800), np.eye(3), balance=1)
-            _undist_all = cv2.fisheye.undistortPoints(_all_corners_concat, _fish_mat, _fish_dist, None, _new_cam)
+            _new_cam = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(fish_mat, fish_dist, (1280, 800), np.eye(3), balance=1)
+            _undist_all = cv2.fisheye.undistortPoints(all_corners_concat, fish_mat, fish_dist, None, _new_cam)
         else:
-            _new_cam, roi = cv2.getOptimalNewCameraMatrix(_fish_mat, _fish_dist, (1280, 800), 1.0, (1280, 800))
-            _fish_dist = _fish_dist
-            _undist_all = _all_corners_concat
+            _new_cam, roi = cv2.getOptimalNewCameraMatrix(fish_mat, fish_dist, (1280, 800), 1.0, (1280, 800))
+            fish_dist = fish_dist
+            _undist_all = all_corners_concat
         _undist_corners = []
         _idx = 0
-        for _count in _corner_counts:
+        for _count in corner_counts:
             if _count > 0:
                 _undist_corners.append(_undist_all[_idx:_idx + _count])
                 _idx = _idx + _count
@@ -792,7 +801,7 @@ def _(
             if _c is not None:
                 _num_detected_markers = _c.shape[0] // 4
                 _reshaped_corners = [_c[_j * 4:(_j + 1) * 4].reshape(4, 1, 2) for _j in range(_num_detected_markers)]
-                _rotation_vectors, _translation_vectors = estimate_pose_single_markers(corners=_reshaped_corners, marker_size=0.048, camera_matrix=_fish_mat, distortion_coefficients=_fish_dist)
+                _rotation_vectors, _translation_vectors = estimate_pose_single_markers(corners=_reshaped_corners, marker_size=0.048, camera_matrix=fish_mat, distortion_coefficients=fish_dist)
                 if _rotation_vectors is not None and len(_rotation_vectors) > 0:
                     rvecs[_idx] = _rotation_vectors[0][0]
                     _tvecs[_idx] = _translation_vectors[0][0]
@@ -802,7 +811,7 @@ def _(
                 valid_idx = _idx
                 break
         if valid_idx is None:
-            return {'err_x': np.nan, 'err_y': np.nan, 'err_z': np.nan, 'mean_err': np.nan, 'idx': _i}
+            return {'err_x': np.nan, 'err_y': np.nan, 'err_z': np.nan, 'mean_err': np.nan, 'idx': i}
         _rmat = cv2.Rodrigues(rvecs[valid_idx])[0]
         _rmat_T = _rmat.T
         tvec_diff = _tvecs - _tvecs[valid_idx]
@@ -855,18 +864,15 @@ def _(error_dict, np):
 
 
 @app.cell
-def _(mocap_x, mocap_y, mocap_z, np, tvec_transformed):
+def _(error_dict, min_index, mocap_x, mocap_y, mocap_z, np):
+    tvec_transformed_best = np.array(error_dict['tvecs'][min_index])
     mocap_array = np.array([mocap_x, mocap_y, mocap_z]).T
-    apriltag_array = tvec_transformed
+    apriltag_array = tvec_transformed_best
     valid_mask = np.isfinite(mocap_array).all(axis=1) & np.isfinite(apriltag_array).all(axis=1)
     clean_mocap = mocap_array[valid_mask]
     clean_apriltag = apriltag_array[valid_mask]
-    # 1. Create a boolean mask of rows where ALL values are finite (no NaNs or Infs)
-    # We check both arrays to ensure we only keep frames where BOTH systems had tracking
     print(f'Original frames: {len(mocap_array)}')
     print(f'Cleaned frames: {len(clean_mocap)}')
-    # 2. Apply the mask to filter both arrays
-    # Optional: Print to see how many frames were dropped
     print(f'Dropped frames: {len(mocap_array) - len(clean_mocap)}')
     return clean_apriltag, clean_mocap, mocap_array
 
@@ -1030,6 +1036,7 @@ def _(
     min_index,
     my_dict_1,
     np,
+    offset_tvvv,
     useFisheye_1,
 ):
     _all_corners_list = []
@@ -1079,8 +1086,7 @@ def _(
             break
     _rmat = cv2.Rodrigues(rvecs_1[valid_idx_1])[0]
     _rmat_T = _rmat.T
-    _h_offset = np.array([0, 0, 0.05]).reshape(3, 1)
-    _h_offset = _offset_tvvv
+    _h_offset = offset_tvvv
     _newtvec = []
     for _rr, _tt in zip(rvecs_1, _tvecs):
         _rt = (cv2.Rodrigues(_rr)[0] @ _h_offset + _tt).T[0]
@@ -1627,8 +1633,8 @@ def _(error_dict, np):
 
 
 @app.cell
-def _(STOP_HERE):
-    STOP_HERE
+def _(mo):
+    mo.stop(True, mo.md("**Execution halted — cells below will not run**"))
     return
 
 
