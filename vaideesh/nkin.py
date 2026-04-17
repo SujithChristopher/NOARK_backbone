@@ -1,3 +1,4 @@
+import keyboard
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -13,8 +14,6 @@ import tty
 import csv
 from datetime import datetime
 import gpiod
-import msgpack as mp
-import msgpack_numpy as mpn
 
 # from uncertainties import ufloat
 
@@ -41,72 +40,10 @@ class XYPlot:
         self.cam = MainClass(calib_path, table_calibration_path)
         self.enc = TeensyPort()
         self.enc.start()
-        self.last_key = None
 
-        self.enc1_offset = 0.0
-        self.enc2_offset = 0.0 
         self.P2_to_NOARK_init = None
         self.P4_to_NOARK_init = None
-        self.start_time = time.time()
 
-        # Sync Pin Setup
-        sync_pin = 17
-        chip = gpiod.Chip("gpiochip4")
-        self.sync_line = chip.get_line(sync_pin)
-        self.sync_line.request(consumer="SyncPin", type=gpiod.LINE_REQ_DIR_IN)
-        #Recording state
-        self.start_recording = False
-
-        #CSV setup 
-        self.csv_path = "camera_data.csv"
-        with open(self.csv_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-            "timestamp", "sync_pin",
-            "marker_id",
-            "tvec_x", "tvec_y", "tvec_z",
-            "rvec_x", "rvec_y", "rvec_z"
-        ])
-        # Sensor CSV setup
-        self.sensor_csv_path = "sensor_data.csv"
-        with open(self.sensor_csv_path, "w", newline="") as f:
-            writer_sen = csv.writer(f)
-            writer_sen.writerow(["timestamp", "enc1", "enc2"])
-
-    def parse_encoder_value(self, value):
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            return 0.0
-    def get_key(self):
-        # Check if there is data waiting in the buffer
-        if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
-            return sys.stdin.read(1)
-        return None
-    def _write_frame(self, timestamp):
-        sync = self.sync_line.get_value()
-        with open(self.csv_path, "a", newline="") as f:
-            writer = csv.writer(f)
-            for marker in [self.cam.marker_12, self.cam.marker_14, self.cam.marker_20]:
-                if marker["tvec"] is not None and marker["rvec"] is not None:
-                    tx, ty, tz = float(marker["tvec"][0]), float(marker["tvec"][1]), float(marker["tvec"][2])
-                    rx, ry, rz = float(marker["rvec"][0]), float(marker["rvec"][1]), float(marker["rvec"][2])
-                else:
-                    tx = ty = tz = float("nan")
-                    rx = ry = rz = float("nan")
-
-                writer.writerow([
-                    timestamp, sync,
-                    marker["id"],
-                    tx, ty, tz,
-                    rx, ry, rz
-                ])
-    def _write_sensor_frame(self, timestamp, enc1, enc2):
-        with open(self.sensor_csv_path, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([timestamp, enc1, enc2])
-    def _close_files(self):
-        print("CSV saved and closed.")
     def run(self):
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
@@ -117,59 +54,29 @@ class XYPlot:
             while True:
                 self.cam.process_frame()
                 N_Pos = self.cam.noark_in_table_frame  # Noark position in table frame 
-                  # --- Write to CSV ---
-                if self.start_recording:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                    self._write_frame(timestamp)
                 
                 if N_Pos is None:
                     print("Camera: Searching for NOARK....")
                     time.sleep(0.1)
                     continue
-                print(N_Pos * 100)
-                # Reset encoder to zero at the start of the program
-                raw_e1 = self.parse_encoder_value(self.enc.enc1)  # Encoder value from left motor pulley
-                raw_e2 = self.parse_encoder_value(self.enc.enc2)  # Encoder value from right motor pulley
-                enc_value_1 = round(raw_e1 - self.enc1_offset, 2)
-                enc_value_2 = round(raw_e2 - self.enc2_offset, 2)
-                print("E1 , E2 :",enc_value_1, enc_value_2)
-                # --- Write sensor data ---
-                if self.start_recording:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                    self._write_sensor_frame(timestamp, enc_value_1, enc_value_2) 
+                # print(N_Pos * 100)
                 # Use a loop to catch the key even if it was pressed 
-                key = self.get_key()
-                if key == 's':  
-                    self.start_recording = True
-                    print("Recording started...")
-                elif key == 'q':
-                    print("Recording stopped. Exiting...")
-                    break
-                if key == 'r':
-                    self.enc1_offset += enc_value_1 
-                    print("Reset R")
-                elif key == 't':
-                    self.enc2_offset += enc_value_2
-                    print("Reset T")
-                elif key == 'z':
-                    print(f"BEFORE zero: enc_value_1={enc_value_1}, enc_value_2={enc_value_2}")
-                    self.enc1_offset = raw_e1
-                    self.enc2_offset = raw_e2
-                    # Recompute enc_values immediately after zeroing
-                    enc_value_1 = round(raw_e1 - self.enc1_offset, 2)  # now = 0.0
-                    enc_value_2 = round(raw_e2 - self.enc2_offset, 2)  # now = 0.0
-                    # print(f"AFTER zero: enc_value_1={enc_value_1}, enc_value_2={enc_value_2}")  # must be 0.0
-
-                    # Capture initial free lengths from camera at same moment
+                if keyboard.is_pressed('z'):
+                    self.enc.encoder_reset()
+                     # Capture initial free lengths from camera at same moment
                     self.P2_to_NOARK_init = sqrt((N_Pos[0] - P2[0])**2 + (N_Pos[2] - P2[2])**2)
                     # print(f"Captured P2_to_NOARK_init: {self.P2_to_NOARK_init*100:.2f}cm")
                     self.P4_to_NOARK_init = sqrt((N_Pos[0] - P4[0])**2 + (N_Pos[2] - P4[2])**2)
-                    print("Zeroed All")
+                    # print("Zeroed All")
+                elif keyboard.is_pressed('q'):
+                    self.enc.running = False       # Stop serial thread
+                    print("Recording stopped. Exiting...")
+                    break
+              
                 #math before zeroing
                 # if self.P2_to_NOARK_init is not None and self.P4_to_NOARK_init is not None:
                 #     print(f"Initial L_free_L: {self.P2_to_NOARK_init*100:.2f}cm | Initial L_free_R: {self.P4_to_NOARK_init*100:.2f}cm")
                 #     continue
-
 
                 # Distance calculation
                 L_motor_to_P1 = sqrt((P1[0] - ML[0])**2 + (P1[2] - ML[2])**2)
@@ -188,8 +95,8 @@ class XYPlot:
                 L_cam_R = sqrt((N_Pos[0] - P4[0])**2 + (N_Pos[2] - P4[2])**2)
                 # Cable wound around the the spool 
                 if self.P2_to_NOARK_init is not None and self.P4_to_NOARK_init is not None:
-                    delta_L = r_ML * np.deg2rad(enc_value_1)
-                    delta_R = r_MR * np.deg2rad(enc_value_2)
+                    delta_L = r_ML * np.deg2rad(self.enc.enc1)
+                    delta_R = r_MR * np.deg2rad(self.enc.enc2)
                     #enc1 positive --> ML unwinds --> L_free_L increases --> ADD delta_L
                     L_free_L = self.P2_to_NOARK_init + delta_L #Left cable wound
                     #enc2 positive --> MR winds --> L_free_R decreases --> SUBTRACT delta_R
@@ -224,7 +131,7 @@ class XYPlot:
                     #Midpoint along P2-P4 
                     x_mid = x_P2 + a_val * (x_P4 - x_P2) / d
                     z_mid = z_P2 + a_val * (z_P4 - z_P2) / d 
-                    print(f"Footpoint: x={x_mid*100:.2f}cm  z={z_mid*100:.2f}cm")
+                    # print(f"Footpoint: x={x_mid*100:.2f}cm  z={z_mid*100:.2f}cm")
 
                     #Two possible intersection points
                     x_enc_1 = x_mid + h * (z_P4 - z_P2) / d
@@ -251,6 +158,7 @@ class XYPlot:
                     print(f"Position error:  x={(x_noark_enc - N_Pos[0])*100:.2f}cm  z={(z_noark_enc - N_Pos[2])*100:.2f}cm")
                 else:
                     print("Press 'z' to initialize!")
+             
                 # Kinematics Calculation:
                 ##LEFT ARM
                 #To find theta 1 from first right angle triangle for left arm 
@@ -304,7 +212,6 @@ class XYPlot:
 
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            self._close_files()
 
 
 

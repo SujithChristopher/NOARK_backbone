@@ -1,3 +1,5 @@
+import csv
+import gpiod
 import numpy as np
 import cv2
 from cv2 import aruco
@@ -13,12 +15,6 @@ class Config:
     FRAME_SIZE = (1280, 800)
     MARKER_LENGTH = 0.049
     DEFAULT_IDS = [12, 14, 20]
-    MARKER_OFFSETS = {
-        12: np.array([0, 0, -0.055]),
-        #12: np.array([0, 0, 0.0]),
-        14: np.array([-0.126, 0, -0.054]),
-        20: np.array([0.126, 0, -0.054]),
-    }
 
 class MainClass:
     def __init__(self, cam_calib_path, table_calib_path):
@@ -26,10 +22,6 @@ class MainClass:
         calib_data = toml.load(cam_calib_path)
         self.camera_matrix = np.array(calib_data["calibration"]["camera_matrix"]).reshape(3, 3)
         self.distortion_coeff = np.array(calib_data["calibration"]["dist_coeffs"]).flatten()[:4].reshape(4, 1)
-
-        table_calib_data = toml.load(table_calib_path)
-        self.table_rotation_matrix = np.array(table_calib_data["rotation_matrix"]).reshape(3, 3)
-        self.table_translation_vector = np.array(table_calib_data["tvec"]).reshape(3, 1)
 
         # 2. Pre-compute Undistortion Maps 
         # Using balance=1.0 to retain full FOV for the 160-degree lens
@@ -48,14 +40,35 @@ class MainClass:
             Config.FRAME_SIZE, 
             cv2.CV_16SC2
         )
-
         self.detector = self._init_detector()
-        self.noark_in_table_frame = None
         self.video_frame = None
+        self.trigger_cam = False
+
+          # Sync Pin Setup
+        sync_pin = 17
+        chip = gpiod.Chip("gpiochip0")
+        self.sync_line = chip.get_line(sync_pin)
+        self.sync_line.request(consumer="SyncPin", type=gpiod.LINE_REQ_DIR_IN)
+
+        
+        self.csv_path = "camera_data.csv"
+        with open(self.csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+            "timestamp", "sync_pin",
+            "tvec_12_x", "tvec_12_y", "tvec_12_z",
+            "tvec_14_x", "tvec_14_y", "tvec_14_z",
+            "tvec_20_x", "tvec_20_y", "tvec_20_z",
+            "rvec_12_x", "rvec_12_y", "rvec_12_z",
+            "rvec_14_x", "rvec_14_y", "rvec_14_z",
+            "rvec_20_x", "rvec_20_y", "rvec_20_z"   
+        ])
+      
 
         if platform.system() == "Linux":
             self._init_rpi_camera()
-
+        self._frame_count = 0
+        self._fps_timer = time.time()
     def _init_detector(self):
         aruco_params = aruco.DetectorParameters()
         aruco_params.cornerRefinementMethod = aruco.CORNER_REFINE_CONTOUR
@@ -97,88 +110,79 @@ class MainClass:
                 rvecs.append(rvec.flatten())
                 tvecs.append(tvec.flatten())
         return np.array(rvecs), np.array(tvecs)
+    def _close_files(self):
+        print("CSV saved and closed.")
+    
+    def _write_frame(self, timestamp):
+        sync = self.sync_line.get_value()
 
-    def _get_centroid(self, ids, rvecs, tvecs):
-        """Calculates the handle of the object by applying marker-specific offsets."""
-        ids = np.array(ids).flatten()
-        rvecs = np.array(rvecs).reshape(-1, 3)
-        tvecs = np.array(tvecs).reshape(-1, 3)
-        
-        transformed_points = []
-        for i, m_id in enumerate(ids):
-            if m_id in Config.MARKER_OFFSETS:
-                R_mat, _ = cv2.Rodrigues(rvecs[i])
-                offset = Config.MARKER_OFFSETS[m_id].reshape(3, 1)
-                # Apply Rotation to Offset + Translation
-                pos_cam = R_mat @ offset + tvecs[i].reshape(3, 1)
-                transformed_points.append(pos_cam.flatten())
+        row = [timestamp, sync]
 
-        if not transformed_points:
-            return None
-        
-        # Returns (3,1) to match table_translation_vector shape
-        return np.mean(transformed_points, axis=0).reshape(3, 1)
-
-    def _get_local_coordinates(self, ids, rvecs, tvecs):
-        centroid_cam = self._get_centroid(ids, rvecs, tvecs)
-        if centroid_cam is None: return None
-        # P_table = R_table.T * (P_camera - T_table)
-        relative_pos = centroid_cam - self.table_translation_vector
-        p_table = self.table_rotation_matrix.T @ relative_pos
-        return p_table.flatten()
+      # Extract Translation Vectors (tvecs)
+        for m in [self.marker_12, self.marker_14, self.marker_20]:
+            if m["tvec"] is not None:
+                row.extend([round(float(v), 6) for v in m["tvec"]])
+            else:
+                row.extend([float("nan")] * 3)
+        # Extract Rotation Vectors (rvecs)
+        for m in [self.marker_12, self.marker_14, self.marker_20]:
+            if m["rvec"] is not None:
+                row.extend([round(float(v), 6) for v in m["rvec"]])
+            else:
+                row.extend([float("nan")] * 3)
+        with open(self.csv_path, "a", newline="") as f:
+            csv.writer(f).writerow(row)
     def process_frame(self):
         if platform.system() == "Linux":
             # Direct Y-channel extraction (Grayscale) for speed
             raw_data = self.picam2.capture_array()
             gray = raw_data[:Config.FRAME_SIZE[1], :Config.FRAME_SIZE[0]]
             gray = cv2.flip(gray, 1)
-        else:
-            ret, frame = self.camera.read()
-            if not ret: return
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # Efficiency: Use pre-computed maps to rectify fisheye distortion
         undistorted = cv2.remap(gray, self.map1, self.map2, cv2.INTER_LINEAR)
-        
         corners, ids, _ = self.detector.detectMarkers(undistorted)
         self.video_frame = cv2.cvtColor(undistorted, cv2.COLOR_GRAY2BGR)
         # --- Initialize per-marker storage (None if marker not detected) ---
-        if ids is not None:
-            aruco.drawDetectedMarkers(self.video_frame, corners, ids)
-            rvecs, tvecs = self.estimate_pose(corners)
+        self.marker_12 = {"id": 12, "tvec": None, "rvec": None}
+        self.marker_14 = {"id": 14, "tvec": None, "rvec": None}
+        self.marker_20 = {"id": 20, "tvec": None, "rvec": None}
 
-    
-            # print(self.marker_12)
-            self.noark_in_table_frame = self._get_local_coordinates(ids, rvecs, tvecs)
+        marker_map = {
+            12: self.marker_12,
+            14: self.marker_14,
+            20: self.marker_20,
+        }
+
+        if ids is not None:
+           
+            # aruco.drawDetectedMarkers(self.video_frame, corners, ids)
+            rvecs, tvecs = self.estimate_pose(corners)
             
-            if self.noark_in_table_frame is not None:
-                # print(f"Table Frame (cm): {np.round(self.noark_in_table_frame * 100, 3)}")
-                # Optional: draw axes for the first marker
-                cv2.drawFrameAxes(
-                    self.video_frame, 
-                    self.new_camera_matrix, 
-                    None, 
-                    rvecs[0], 
-                    tvecs[0], 
-                    0.05)
-            # --- PRINT RAW TVECS AT THE END OF PROCESSING ---
-            # print("\n--- Raw Camera Frame Detections ---")
-            # for i, marker_id in enumerate(ids.flatten()):
-            #     # raw_tvec is the [x, y, z] in meters from the camera lens center
-            #     raw_tvec_cm = tvecs[i] * 100 
-            #     raw_rvec_cm = rvecs[i] * 100
-            #     print(f"Marker ID {marker_id}: {np.round(raw_tvec_cm, 2)} cm")
-            #     print(f"Marker ID {marker_id}: {np.round(raw_rvec_cm, 2)} cm")
-            
-            if self.noark_in_table_frame is not None:
-                print(f"NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
-        cv_show = cv2.resize(self.video_frame, (480, 320))
-        cv2.imshow("Optimized Tracker", cv_show)
-        cv2.pollKey() 
+            for i, marker_id in enumerate(ids.flatten()):
+                if marker_id in marker_map:
+                    marker_map[marker_id]["tvec"] = tvecs[i]
+                    marker_map[marker_id]["rvec"] = rvecs[i]
+            # print(f"Marker 12: tvec={self.marker_12['tvec']}, rvec={self.marker_12['rvec']}")
+
+        if self.trigger_cam:    
+            self._write_frame(timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"))
+                
+        # cv_show = cv2.resize(self.video_frame, (480, 320))
+        # cv2.imshow("Camera", cv_show)
+        # cv2.pollKey()
+      #FPS Calculation (every 10 frames)
+        # self._frame_count += 1
+        # if self._frame_count % 10 == 0:
+        #     elapsed = time.time() - self._fps_timer
+        #     fps = 10 / elapsed
+        #     self._fps_timer = time.time()
+        #     print(f"FPS: {fps:.2f}")
         if keyboard.is_pressed('q'):
            cv2.destroyAllWindows()
            return False
-
+        return True
+    
     def run(self):
         while self.process_frame():
             pass

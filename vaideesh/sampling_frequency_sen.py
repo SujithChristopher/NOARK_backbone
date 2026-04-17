@@ -1,14 +1,21 @@
-import pandas as pd
-import numpy as np
+from pyteensy import TeensyPort
+import time
 
-df = pd.read_csv("sensor_data.csv")
+enc = TeensyPort()
+enc.start()
+time.sleep(1.0)  # let serial settle
 
-df['timestamp'] = pd.to_datetime(df['timestamp'])
+prev1, prev2 = None, None
+changes = 0
+t0 = time.time()
+duration = 5.0
 
-# FIX: divide by 1e6 (microseconds → seconds)
-time_seconds = df['timestamp'].astype('int64') / 1e6
+while time.time() - t0 < duration:
+    e1, e2 = enc.enc1, enc.enc2
+    if e1 != prev1 or e2 != prev2:
+        print(f"  t={time.time()-t0:.4f}s  enc1={e1}  enc2={e2}")
+        prev1, prev2 = e1, e2
+        changes += 1
 
-time_diffs = np.diff(time_seconds)
-
-print("Mean interval:", np.mean(time_diffs))
-print("Sampling rate:", 1 / np.mean(time_diffs))
+print(f"\nUnique updates in {duration}s : {changes}")
+print(f"Effective serial rate        : {changes/duration:.1f} Hz")

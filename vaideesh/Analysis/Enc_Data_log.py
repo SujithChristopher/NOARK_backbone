@@ -2,8 +2,8 @@ import csv
 import serial
 import serial.tools.list_ports
 import threading
-
 from datetime import datetime
+import time
 
 class TeensyPort:
     def __init__(self):
@@ -12,21 +12,30 @@ class TeensyPort:
         self.portsList = []
         self.use = None
         self.running = True
-        self.e1 = 0
-        self.e2 = 0
+        self.start_time = time.time()
+
+        #Data variables
         self.raw_e1 = 0.0
         self.raw_e2 = 0.0
         self.offset_e1 = 0.0
         self.offset_e2 = 0.0
         self.enc1 = 0
         self.enc2 = 0
-
+        #Initialize NOARK initial position
+        self.trigger_sens = False
         self.enc_reset = False
+        # # Stop event for encoder thread
+        # self._stop_enc = threading.Event()
+         # Sensor CSV setup
+        self.sensor_csv_path = "sensor_data.csv"
+        with open(self.sensor_csv_path, "w", newline="") as f:
+            writer_sen = csv.writer(f)
+            writer_sen.writerow(["timestamp","Millis","enc1", "enc2"])
 
         # Find and list ports
         for port in self.ports:
             self.portsList.append(str(port))
-            # print(self.portsList)
+            print(self.portsList)
         
         # Find the Teensy port
         for i in range(len(self.portsList)):
@@ -41,7 +50,6 @@ class TeensyPort:
         # Configure serial port
         self.serialInst.baudrate = 115200
         self.serialInst.port = self.use  
-        # self.serialInst.timeout = 0.05
     def parse_encoder_value(self, value):
         try:
             return float(value)
@@ -52,7 +60,7 @@ class TeensyPort:
         self.offset_e2 = self.raw_e2
         self.enc_reset = False
         print(f"\n[RESET] Encoders zeroed at Raw: {self.offset_e1}, {self.offset_e2}")
-   
+
     def read_serial(self):
         """Thread function to continuously read serial data"""
         while self.running:
@@ -64,16 +72,21 @@ class TeensyPort:
                     values = [v for v in self.encoder.split(",") if v]
                     # self.enc1 = self.encoder.split(",")[0]
                     # self.enc2 = self.encoder.split(",")[1]
-                    if len(values) >= 2:
-                        self.raw_e1 = self.parse_encoder_value(values[0])
+                    if len(values) >= 2: 
+                        self.raw_e1 = self.parse_encoder_value(values[0])   
                         self.raw_e2 = self.parse_encoder_value(values[1])
+
                         if self.enc_reset:
                             self.encoder_reset()
-                        self.enc1 = round(self.raw_e1 - self.offset_e1, 2)  
+                        self.enc1 = round(self.raw_e1 - self.offset_e1, 2)
                         self.enc2 = round(self.raw_e2 - self.offset_e2, 2)
-                    # print(f"e1: {self.enc1}, e2: {self.enc2}")
+                        if self.trigger_sens:
+                            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                            millis = round((time.time() - self.start_time) * 1000, 2)
+                            with open(self.sensor_csv_path, "a", newline="") as f:
+                                csv.writer(f).writerow([ts,millis,self.enc1, self.enc2])
+                        # print(f"e1: {self.enc1}, e2: {self.enc2}")
                 else:
-                    # print(f"Invalid data: {self.encoder}")
                     pass
                         
             except Exception as e:
@@ -86,7 +99,7 @@ class TeensyPort:
             print(f"\nConnected to {self.use}")
                     
             # Start reading thread
-            read_thread = threading.Thread(target=self.read_serial)
+            read_thread = threading.Thread(target=self.read_serial, daemon=True)
             read_thread.start()
          
         except KeyboardInterrupt:
