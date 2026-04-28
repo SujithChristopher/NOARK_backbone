@@ -8,6 +8,7 @@ import pandas as pd
 from more_itertools import locate
 from scipy.interpolate import interp1d
 
+FILE = "E:\\Ragav\\MS Bio Engineering\\NOARK_backbone\\mocap_data_t1\\table_frame_t2.csv"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ORIGINAL FUNCTIONS (unchanged)
@@ -540,53 +541,49 @@ def get_marker_name_3rb(label, val):
 
 if __name__ == "__main__":
 
-    FILE = "E:/Ragav/MS Bio Engineering/NOARK_backbone/mocap_data/table_frame.csv"
+    # FILE = "E:\\Ragav\\MS Bio Engineering\\NOARK_backbone\\mocap_data_t1\\table_frame_t2.csv"
 
-    # ── 1. Read all 3 rigid bodies ────────────────────────────────────────────
-    # rb_names order must match the order in the CSV: tframe → noark → table
+    # ── 1. Auto-detect rigid bodies in the file ───────────────────────────────
+    _raw      = pd.read_csv(FILE, skiprows=2, header=None, dtype=str)
+    _type_row = _raw.iloc[0].fillna("").str.strip().tolist()
+    _name_row = _raw.iloc[1].fillna("").str.strip().tolist()
+
+    detected_rb_names = []
+    for t, n in zip(_type_row, _name_row):
+        if t == "Rigid Body" and n and n not in detected_rb_names:
+            detected_rb_names.append(n)
+
+    print(f"Detected rigid bodies: {detected_rb_names}")
+
+    # ── 2. Read rigid bodies ──────────────────────────────────────────────────
     rb_dfs, st_time = read_3_rigid_body_csv(
         FILE,
-        rb_names=["noark", "table"],
+        rb_names=detected_rb_names,
     )
 
-    # rb_dfs["tframe"] columns example:
-    #   frame, seconds,
-    #   tframe_rot_x, tframe_rot_y, tframe_rot_z, tframe_rot_w,
-    #   tframe_pos_x, tframe_pos_y, tframe_pos_z, tframe_pos_err,
-    #   tframe_marker_m1_x, tframe_marker_m1_y, tframe_marker_m1_z, tframe_marker_m1_mq,
-    #   tframe_marker_m2_x … (4 markers total for tframe)
-    #
-    # rb_dfs["noark"]  → same pattern, noark_ prefix, 5 markers
-    # rb_dfs["table"]  → same pattern, table_ prefix, 5 markers
-
-    # ── 2. Add absolute datetime to each DataFrame ───────────────────────────
+    # ── 3. Add absolute datetime ──────────────────────────────────────────────
     rb_dfs = add_datetime_col_3rb(rb_dfs, st_time)
 
-    rb_dfs["noark"], rb_dfs["table"] = trunkate_dfs(
-        rb_dfs["noark"],
-        rb_dfs["table"],
-        display_print=True,
-    )
+    # ── 4. Truncate to shared time window ─────────────────────────────────────
+    names = list(rb_dfs.keys())
+    if len(names) == 3:
+        rb_dfs[names[0]], rb_dfs[names[1]], rb_dfs[names[2]] = trunkate_3_dfs(
+            rb_dfs[names[0]], rb_dfs[names[1]], rb_dfs[names[2]], display_print=True
+        )
+    elif len(names) == 2:
+        rb_dfs[names[0]], rb_dfs[names[1]] = trunkate_dfs(
+            rb_dfs[names[0]], rb_dfs[names[1]], display_print=True
+        )
 
-    # ── 4. (Optional) Read standalone markers ────────────────────────────────
+    # ── 5. Read standalone markers ────────────────────────────────────────────
     marker_dfs, _ = read_markers_from_3rb_csv(
         FILE,
-        rb_names=["tframe", "noark", "table"],
+        rb_names=detected_rb_names,
     )
-    # marker_dfs["noark"] has columns: frame, seconds,
-    #   noark_m1_x/y/z, noark_m2_x/y/z, noark_m3_x/y/z, noark_m4_x/y/z, noark_m5_x/y/z
 
-    # ── 5. Use naming helpers ────────────────────────────────────────────────
-    # print(get_rb_pos_cols("tframe"))
-    # → {"x": "tframe_pos_x", "y": "tframe_pos_y", "z": "tframe_pos_z"}
-
-    # print(get_rb_rot_cols("tframe"))
-    # → {"x": "tframe_rot_x", "y": "tframe_rot_y", "z": "tframe_rot_z", "w": "tframe_rot_w"}
-
-    # print(get_rb_marker_name_3rb("noark", 1))
-    # → {"x": "noark_marker_m1_x", "y": "noark_marker_m1_y", "z": "noark_marker_m1_z"}
-
-    # ── 6. Quick inspection ──────────────────────────────────────────────────
+    # ── 6. Quick inspection ───────────────────────────────────────────────────
+    print(f'\nCapture start time : {st_time}')
+    print(f'rb_dfs keys        : {list(rb_dfs.keys())}')
     for name, df in rb_dfs.items():
         print(f"\n── {name}  shape={df.shape} ──")
         print(df.columns.tolist())
