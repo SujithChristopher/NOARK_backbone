@@ -20,7 +20,11 @@
       "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" visualize_clusters.py)",
       "Bash(find E:/CMC/pyprojects/programs_rpi -name webcam_timestamp.msgpack -path *3marker*)",
       "Bash(uv run *)",
-      "Bash(uv add *)"
+      "Bash(uv add *)",
+      "Bash(ffmpeg -version)",
+      "Bash(curl -L -o pose_landmarker_full.task \"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task\")",
+      "Bash(ffprobe -v quiet -print_format json -show_streams \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\upperlimb_3d.mp4\")",
+      "Bash(ffprobe -v quiet -print_format json -show_streams \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\upperlimb_combined.mp4\")"
     ],
     "deny": []
   }
