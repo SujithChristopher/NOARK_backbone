@@ -18,7 +18,9 @@
       "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" fisheye_calibration_kmeans.py)",
       "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" visualize_calibration.py)",
       "Bash(\"C:\\Users\\Pintu\\miniconda3\\envs\\py13\\python.exe\" visualize_clusters.py)",
-      "Bash(find E:/CMC/pyprojects/programs_rpi -name webcam_timestamp.msgpack -path *3marker*)"
+      "Bash(find E:/CMC/pyprojects/programs_rpi -name webcam_timestamp.msgpack -path *3marker*)",
+      "Bash(uv run *)",
+      "Bash(uv add *)"
     ],
     "deny": []
   }
