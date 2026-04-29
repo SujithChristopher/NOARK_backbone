@@ -22,6 +22,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from pathlib import Path
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -31,6 +32,8 @@ CALIB_TOML = SCRIPT_DIR / "stereo_calibration.toml"
 DATA_DIR   = SCRIPT_DIR.parents[2] / "data" / "dual_data" / "dual_camera_trunk_test"
 CAM0_VIDEO = DATA_DIR / "cam0_imx219.msgpack"
 CAM1_VIDEO = DATA_DIR / "cam1_ov9281.msgpack"
+CAM0_TIMESTAMP = DATA_DIR / "cam0_timestamp.msgpack"
+CAM1_TIMESTAMP = DATA_DIR / "cam1_timestamp.msgpack"
 OUT_VIDEO    = SCRIPT_DIR / "upperlimb_combined.mp4"
 PANEL_HEIGHT = 480   # all three panels scaled to this height
 
@@ -38,15 +41,14 @@ PANEL_HEIGHT = 480   # all three panels scaled to this height
 # MediaPipe upper-body landmark indices
 # ---------------------------------------------------------------------------
 # 0=nose  11=L-shoulder  12=R-shoulder  13=L-elbow  14=R-elbow
-# 15=L-wrist  16=R-wrist  23=L-hip  24=R-hip
-UPPER_JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24]
+# 15=L-wrist  16=R-wrist
+# Hips are excluded here because they are often occluded and unstable in this view.
+UPPER_JOINTS = [0, 11, 12, 13, 14, 15, 16]
 
 BONES = [
     (11, 12, "gray"),   # shoulder bar
     (11, 13, "royalblue"), (13, 15, "royalblue"),   # left arm
     (12, 14, "tomato"),    (14, 16, "tomato"),       # right arm
-    (11, 23, "limegreen"), (12, 24, "limegreen"),    # torso sides
-    (23, 24, "gray"),   # hip bar
 ]
 
 # Same in BGR for cv2 drawing
@@ -54,8 +56,6 @@ BONES_BGR = [
     (11, 12, (180, 180, 180)),
     (11, 13, (205, 90,  65)),  (13, 15, (205, 90,  65)),   # left arm  (blue)
     (12, 14, (71,  99, 255)),  (14, 16, (71,  99, 255)),   # right arm (red)
-    (11, 23, (50, 205,  50)),  (12, 24, (50, 205,  50)),   # torso     (green)
-    (23, 24, (180, 180, 180)),
 ]
 
 VIS_THRESH    = 0.5
@@ -83,6 +83,30 @@ def load_all_frames(path):
         for frame in msgpack.Unpacker(f, object_hook=mpn.decode):
             frames.append(np.array(frame))
     return frames
+
+def load_timestamps(path):
+    """Return a per-frame timestamp series in milliseconds from the msgpack log."""
+    stamps = []
+    with open(path, "rb") as f:
+        for item in msgpack.Unpacker(f, object_hook=mpn.decode):
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                raw = item[1]
+            else:
+                raw = item
+            stamps.append(datetime.fromisoformat(str(raw)))
+    if not stamps:
+        return []
+    t0 = stamps[0]
+    return [int((ts - t0).total_seconds() * 1000) for ts in stamps]
+
+def estimate_fps(timestamp_ms, fallback=15.0):
+    if len(timestamp_ms) < 2:
+        return fallback
+    deltas = np.diff(np.asarray(timestamp_ms, dtype=np.float64))
+    deltas = deltas[deltas > 0]
+    if len(deltas) == 0:
+        return fallback
+    return float(1000.0 / np.median(deltas))
 
 # ---------------------------------------------------------------------------
 # Pose detection  (MediaPipe Tasks API, 0.10+)
@@ -238,6 +262,16 @@ def main():
     n = min(len(frames0), len(frames1))
     print(f"  {n} paired frames")
 
+    ts0_ms = load_timestamps(CAM0_TIMESTAMP)
+    ts1_ms = load_timestamps(CAM1_TIMESTAMP)
+    if len(ts0_ms) != n or len(ts1_ms) != n:
+        print("  Timestamp logs missing or mismatched; falling back to synthetic timing.")
+        ts0_ms = [int(i * 1000 / 15) for i in range(n)]
+        ts1_ms = [int(i * 1000 / 15) for i in range(n)]
+
+    writer_fps = estimate_fps(ts0_ms)
+    print(f"  analysis fps ~{writer_fps:.2f}")
+
     pose0 = make_pose_detector()
     pose1 = make_pose_detector()
 
@@ -256,20 +290,20 @@ def main():
     total_w = dummy0.shape[1] + dummy1.shape[1] + plot_panel.shape[1]
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(OUT_VIDEO), fourcc, 15, (total_w, PANEL_HEIGHT))
+    writer = cv2.VideoWriter(str(OUT_VIDEO), fourcc, writer_fps, (total_w, PANEL_HEIGHT))
 
-    FPS = 15
     print(f"Processing {n} frames -> {OUT_VIDEO}  ({total_w}x{PANEL_HEIGHT})")
     for i in range(n):
         f0 = frames0[i]
         f1 = frames1[i]
-        ts = int(i * 1000 / FPS)
+        ts0 = ts0_ms[i]
+        ts1 = ts1_ms[i]
 
         f0_bgr = cv2.cvtColor(f0, cv2.COLOR_RGB2BGR)
         f1_bgr = cv2.cvtColor(f1, cv2.COLOR_GRAY2BGR) if f1.ndim == 2 else f1
 
-        lms0  = detect(pose0, f0_bgr, ts)
-        lms1  = detect(pose1, f1_bgr, ts)
+        lms0  = detect(pose0, f0_bgr, ts0)
+        lms1  = detect(pose1, f1_bgr, ts1)
         pts3d = triangulate(lms0, lms1, K0, D0, K1, D1, R, T)
 
         # 2D overlays
