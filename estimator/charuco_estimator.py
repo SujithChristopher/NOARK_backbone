@@ -7,13 +7,14 @@ import argparse
 import sys
 from picamera2 import Picamera2
 import libcamera
+import keyboard
 
 # Default frame size if not specified in config
 WIDTH = 1280
 HEIGHT = 800
 
 class RealtimeCharucoTracker:
-    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.027, marker_length=0.02, dict_id=cv2.aruco.DICT_4X4_50):
+    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.028, marker_length=0.02, dict_id=cv2.aruco.DICT_4X4_50):
         self.config_path = config_path
         
         # ChArUco Board Parameters
@@ -136,7 +137,7 @@ class RealtimeCharucoTracker:
                 interpolation=cv2.INTER_LINEAR, 
                 borderMode=cv2.BORDER_CONSTANT
             )
-
+            
             # Detect markers first
             corners, ids, rejected = self.detector.detectMarkers(undistorted_gray)
 
@@ -170,30 +171,33 @@ class RealtimeCharucoTracker:
                     )
 
                     
-                    if success:
-                        # Draw axis
-                        cv2.drawFrameAxes(
-                            display_img, 
-                            self.new_camera_matrix, 
-                            None, 
-                            self.rvec, 
-                            self.tvec, 
-                            length=self.square_length * 2, 
-                            thickness=2
-                        )
+                    # if success:
+                    #     # Draw axis  
+                    #     cv2.drawFrameAxes(
+                    #         display_img, 
+                    #         self.new_camera_matrix, 
+                    #         np.zeros((4,1)), # No dist_coeffs
+                    #         # None, 
+                    #         self.rvec, 
+                    #         self.tvec, 
+                    #         length=self.square_length * 2, 
+                    #         thickness=2
+                    #     )
                         # Print pose
                     # print(success)
                     print(f"ChArUco Pose: tvec={self.tvec.ravel()}")
-
-
+   
+            
             # Resize for display to avoid filling the screen
-            display_img_resized = cv2.resize(display_img, (350, 200))
-            cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img_resized)
-            if cv2.waitKey(1) & 0xFF == ord('s'):
+            display_img_resized = cv2.resize(display_img, (480, 320))
+            # cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img_resized)
+            cv2.waitKey(1) # Needed to update the display and check for key presses
+            if keyboard.is_pressed('s'):
                 print("Saving calibration data...")
                 self.save_calibration_data(self.rvec, self.tvec)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+            if keyboard.is_pressed('q'):
+                print("Exiting...")
+                break
                     
         # except KeyboardInterrupt:
         #     print("\nStopped by user.")
@@ -233,10 +237,10 @@ if __name__ == "__main__":
     )
     
     # Optional arguments for ChArUco parameters
-    parser.add_argument("--squares_x", type=int, default=4, help="Number of squares in X direction")
-    parser.add_argument("--squares_y", type=int, default=6, help="Number of squares in Y direction")
-    parser.add_argument("--square_len", type=float, default=0.026, help="Square side length (in meters)")
-    parser.add_argument("--marker_len", type=float, default=0.019, help="Marker side length (in meters)")
+    parser.add_argument("--squares_x", type=int, default=6, help="Number of squares in X direction")
+    parser.add_argument("--squares_y", type=int, default=4, help="Number of squares in Y direction")
+    parser.add_argument("--square_len", type=float, default=0.028, help="Square side length (in meters)")
+    parser.add_argument("--marker_len", type=float, default=0.020, help="Marker side length (in meters)")
     
     args = parser.parse_args()
 
