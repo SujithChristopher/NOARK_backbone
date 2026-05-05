@@ -13,6 +13,7 @@ dependencies = [
     "msgpack-numpy>=0.4.8",
     "opencv-contrib-python>=4.13.0.92",
     "pandas>=3.0.2",
+    "picamera2>=0.3.35",
     "polars>=1.40.0",
     "scipy>=1.17.1",
     "toml>=0.10.2",

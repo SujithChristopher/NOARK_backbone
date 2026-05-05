@@ -1,6 +1,6 @@
 """
 This program records data from dual webcams and teensy controller
-Camera 0: IMX219 (1640x1232)
+Camera 0: OV9281 (1280x800)
 Camera 1: OV9281 (1280x800)
 """
 
@@ -18,56 +18,57 @@ import keyboard
 import sys
 
 class RecordData:
-    def __init__(
-        self,
-        _pth=None,
-        record_camera=True,
-        fps_value=30,
-        isColor=True,
-        default_res=False,
-    ):
-        # Initialize Camera 0 (IMX219)
-        tuning_file = "/home/sujith/imx219_waveshare.json"
+    def __init__(self, _pth=None, record_camera=True, fps_value=30, isColor=False, default_res=False):
+        # 1. Auto-detect cameras using the camera manager
+        cam_manager = Picamera2.camera_manager
+        camera_list = cam_manager.get_cameras()
+        num_detected = len(camera_list)
         
-        if os.path.exists(tuning_file):
-            tuning0 = Picamera2.load_tuning_file(tuning_file)
-            self.picam0 = Picamera2(camera_num=0, tuning=tuning0)
-        else:
-            self.picam0 = Picamera2(camera_num=0)
-            
-        main0 = {"format": "BGR888", "size": (1640, 1232)}
-        _c0 = {"FrameRate": fps_value, "ExposureTime": 5000}
+        print(f"Detected {num_detected} cameras.")
+        
+        if num_detected < 2:
+            print("Error: This script requires 2 cameras.")
+            sys.exit(1)
+
+        # 2. Identify cameras by model name
+        # camera_list[i].id() returns a string like 'ov9281' or 'imx219'
+        self.cam_ids = [camera_list[i].id().lower() for i in range(num_detected)]
+        print(f"Camera IDs found: {self.cam_ids}")
+
+        # --- Initialize Camera 0 ---
+        self.picam0 = Picamera2(camera_num=0)
+        # Use specific settings if it's an OV9281
+        res0 = (1280, 800) if "ov9281" in self.cam_ids[0] else (1640, 1232)
+        fmt0 = "YUV420" if "ov9281" in self.cam_ids[0] else "BGR888"
+        
         config0 = self.picam0.create_video_configuration(
-            main0, controls=_c0, transform=libcamera.Transform(vflip=1)
+            main={"format": fmt0, "size": res0},
+            controls={"FrameRate": fps_value, "ExposureTime": 5000},
+            transform=libcamera.Transform(vflip=1)
         )
         self.picam0.configure(config0)
         self.picam0.start()
 
-        # Apply custom colour gains for IMX219 if available
-        self.picam0.set_controls({
-            "AwbEnable": False,
-            "ColourGains": (1.5, 1.8)
-        })
-
-        # Initialize Camera 1 (OV9281)
+        # --- Initialize Camera 1 ---
         self.picam1 = Picamera2(camera_num=1)
-        main1 = {"format": "YUV420", "size": (1280, 800)}
-        _c1 = {"FrameRate": fps_value, "ExposureTime": 5000}
+        res1 = (1280, 800) if "ov9281" in self.cam_ids[1] else (1640, 1232)
+        fmt1 = "YUV420" if "ov9281" in self.cam_ids[1] else "BGR888"
+        
         config1 = self.picam1.create_video_configuration(
-            main1, controls=_c1, transform=libcamera.Transform(vflip=1)
+            main={"format": fmt1, "size": res1},
+            controls={"FrameRate": fps_value, "ExposureTime": 5000},
+            transform=libcamera.Transform(vflip=1)
         )
         self.picam1.configure(config1)
         self.picam1.start()
 
+        # Common initializations...
         self.record_camera = record_camera
-        self.start_recording = False
         self._pth = _pth
-        self.kill_signal = False
-        self.fps_val = fps_value
+        self.start_recording = False
         self.display = True
-
-        self.isColor = isColor
-
+        
+        # GPIO Setup
         sync_pin = 17
         chip = gpiod.Chip("gpiochip4")
         self.sync_line = chip.get_line(sync_pin)
@@ -76,45 +77,48 @@ class RecordData:
     def capture_webcam(self):
         """capture webcams"""
         if self.record_camera:
-            _save_pth0 = os.path.join(self._pth, "cam0_color.msgpack")
+            _save_pth0 = os.path.join(self._pth, "cam0_frame.msgpack")
             _save_file0 = open(_save_pth0, "wb")
             _timestamp_file0 = open(
                 os.path.join(self._pth, "cam0_timestamp.msgpack"), "wb"
             )
 
-            _save_pth1 = os.path.join(self._pth, "cam1_color.msgpack")
+            _save_pth1 = os.path.join(self._pth, "cam1_frame.msgpack")
             _save_file1 = open(_save_pth1, "wb")
             _timestamp_file1 = open(
                 os.path.join(self._pth, "cam1_timestamp.msgpack"), "wb"
             )
 
         while True:
+            # Inside capture_webcam loop
             frame0 = self.picam0.capture_array()
-            color_image0 = cv2.flip(frame0, 1)
-
             frame1 = self.picam1.capture_array()
-            gray_image1 = frame1[:800, :1280]
-            gray_image1 = cv2.flip(gray_image1, 1)
+
+            # For OV9281, capture_array usually returns (H, W, 3) 
+            # even in YUV, where Y is the first channel.
+            # If using YUV420, just take the Y channel:
+            img0 = cv2.flip(frame0[:800, :1280], 1)
+            img1 = cv2.flip(frame1[:800, :1280], 1)
 
             if self.record_camera and self.start_recording:
                 _time_stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                 sync_val = self.sync_line.get_value()
                 
                 # Write Cam 0
-                _packed_file0 = mp.packb(color_image0, default=mpn.encode)
+                _packed_file0 = mp.packb(img0, default=mpn.encode)
                 _save_file0.write(_packed_file0)
                 _packed_timestamp0 = mp.packb([sync_val, _time_stamp])
                 _timestamp_file0.write(_packed_timestamp0)
 
                 # Write Cam 1
-                _packed_file1 = mp.packb(gray_image1, default=mpn.encode)
+                _packed_file1 = mp.packb(img1, default=mpn.encode)
                 _save_file1.write(_packed_file1)
                 _packed_timestamp1 = mp.packb([sync_val, _time_stamp])
                 _timestamp_file1.write(_packed_timestamp1)
 
             if self.display:
-                image_scale0 = cv2.resize(color_image0, (250, 200))
-                gray_image_scale1 = cv2.resize(gray_image1, (250, 200))
+                image_scale0 = cv2.resize(img0, (250, 200))
+                gray_image_scale1 = cv2.resize(img1, (250, 200))
                 cv2.imshow("webcam 0 (IMX219)", image_scale0)
                 cv2.imshow("webcam 1 (OV9281)", gray_image_scale1)
                 # sys.stdout.flush()
