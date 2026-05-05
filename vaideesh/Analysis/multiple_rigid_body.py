@@ -8,7 +8,7 @@ import pandas as pd
 from more_itertools import locate
 from scipy.interpolate import interp1d
 
-FILE ="E:\\Ragav\\MS Bio Engineering\\NOARK_backbone\\mocap_recordings\\mocap_recordings_apr_30\\table_frame_apr_30.csv"
+FILE =r"E:\Ragav\MS Bio Engineering\NOARK_backbone\mocap_recordings\mocap_recordings_may_4\table_frame_may_4.csv"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ORIGINAL FUNCTIONS (unchanged)
