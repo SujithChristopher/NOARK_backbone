@@ -18,21 +18,20 @@ import keyboard
 import sys
 
 class RecordData:
-    def __init__(self, _pth=None, record_camera=True, fps_value=30, isColor=False, default_res=False):
+    def __init__(self, _pth=None, record_camera=True, fps_value=30, display=True):
         # 1. Auto-detect cameras using the camera manager
-        cam_manager = Picamera2.camera_manager
-        camera_list = cam_manager.get_cameras()
+        camera_list = Picamera2.global_camera_info()
         num_detected = len(camera_list)
-        
+
         print(f"Detected {num_detected} cameras.")
-        
+
         if num_detected < 2:
             print("Error: This script requires 2 cameras.")
             sys.exit(1)
 
         # 2. Identify cameras by model name
-        # camera_list[i].id() returns a string like 'ov9281' or 'imx219'
-        self.cam_ids = [camera_list[i].id().lower() for i in range(num_detected)]
+        # global_camera_info() returns dicts with 'Model', 'Num', 'Id', etc.
+        self.cam_ids = [camera_list[i]['Model'].lower() for i in range(num_detected)]
         print(f"Camera IDs found: {self.cam_ids}")
 
         # --- Initialize Camera 0 ---
@@ -66,7 +65,7 @@ class RecordData:
         self.record_camera = record_camera
         self._pth = _pth
         self.start_recording = False
-        self.display = True
+        self.display = display
         
         # GPIO Setup
         sync_pin = 17
@@ -167,7 +166,7 @@ if __name__ == "__main__":
 
         if record_camera or record_sensors:
             _name = input("Enter the name of the recording: ")
-        display = False
+        display = True
         _pth = None
         _folder_name = "recordings"
 
@@ -177,6 +176,7 @@ if __name__ == "__main__":
         _name = args.name
         record_camera = args.camera
         record_sensors = args.sensors
+        display = True
 
         if record_camera == "True":
             record_camera = True
@@ -196,6 +196,6 @@ if __name__ == "__main__":
     time.sleep(1)
 
     record_data = RecordData(
-        _pth=_pth, record_camera=record_camera, fps_value=30, isColor=True, default_res=True
+        _pth=_pth, record_camera=record_camera, fps_value=30, display=display
     )
     record_data.run()

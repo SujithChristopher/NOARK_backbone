@@ -24,7 +24,10 @@
       "Bash(ffmpeg -version)",
       "Bash(curl -L -o pose_landmarker_full.task \"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task\")",
       "Bash(ffprobe -v quiet -print_format json -show_streams \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\upperlimb_3d.mp4\")",
-      "Bash(ffprobe -v quiet -print_format json -show_streams \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\upperlimb_combined.mp4\")"
+      "Bash(ffprobe -v quiet -print_format json -show_streams \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\upperlimb_combined.mp4\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(ruff check *)",
+      "Bash(/home/cmc1/Documents/NOARK_backbone/.venv/bin/python *)"
     ],
     "deny": []
   }
