@@ -14,7 +14,7 @@ WIDTH = 1280
 HEIGHT = 800
 
 class RealtimeCharucoTracker:
-    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.028, marker_length=0.02, dict_id=cv2.aruco.DICT_4X4_50):
+    def __init__(self, config_path, squares_x=4, squares_y=3, square_length=0.036, marker_length=0.026, dict_id=cv2.aruco.DICT_4X4_50):
         self.config_path = config_path
         
         # ChArUco Board Parameters
@@ -49,7 +49,7 @@ class RealtimeCharucoTracker:
         WIDTH, HEIGHT = self.resolution
              
         # Display settings
-        self.display = self.config.get("display", {}).get("display", True)
+        self.display = self.config.get("display", {}).get("display", True) 
 
     def _init_camera(self):
         """Initializes the Picamera2 instance with OV9281 specific settings."""
@@ -102,7 +102,7 @@ class RealtimeCharucoTracker:
         
         # Create the ChArUco Board object
         self.board = cv2.aruco.CharucoBoard(
-            (6, 4), 
+            (self.squares_x, self.squares_y), 
             self.square_length, 
             self.marker_length, 
             self.dictionary
@@ -171,26 +171,26 @@ class RealtimeCharucoTracker:
                     )
 
                     
-                    # if success:
-                    #     # Draw axis  
-                    #     cv2.drawFrameAxes(
-                    #         display_img, 
-                    #         self.new_camera_matrix, 
-                    #         np.zeros((4,1)), # No dist_coeffs
-                    #         # None, 
-                    #         self.rvec, 
-                    #         self.tvec, 
-                    #         length=self.square_length * 2, 
-                    #         thickness=2
-                    #     )
-                        # Print pose
+                    if success:
+                        # Draw axis  
+                        cv2.drawFrameAxes(
+                            display_img, 
+                            self.new_camera_matrix, 
+                            np.zeros((4,1)), # No dist_coeffs
+                            # None, 
+                            self.rvec, 
+                            self.tvec, 
+                            length=self.square_length, 
+                            thickness=2
+                        )
+                    #     # Print pose
                     # print(success)
                     print(f"ChArUco Pose: tvec={self.tvec.ravel()}")
    
             
             # Resize for display to avoid filling the screen
             display_img_resized = cv2.resize(display_img, (480, 320))
-            # cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img_resized)
+            cv2.imshow("Realtime ChArUco Detection (Undistorted)", display_img_resized)
             cv2.waitKey(1) # Needed to update the display and check for key presses
             if keyboard.is_pressed('s'):
                 print("Saving calibration data...")
@@ -215,7 +215,7 @@ class RealtimeCharucoTracker:
         }
 
         output_dir = "/home/sujith/Documents/NOARK_backbone/estimator/charuco_pose"
-        output_path = os.path.join(output_dir, "charuco_pose.toml")
+        output_path = os.path.join(output_dir, "charuco_pose_picam.toml")
         
         with open(output_path, "w", encoding="utf-8") as f:
             toml.dump(calibration_data, f)
@@ -237,10 +237,10 @@ if __name__ == "__main__":
     )
     
     # Optional arguments for ChArUco parameters
-    parser.add_argument("--squares_x", type=int, default=6, help="Number of squares in X direction")
-    parser.add_argument("--squares_y", type=int, default=4, help="Number of squares in Y direction")
-    parser.add_argument("--square_len", type=float, default=0.028, help="Square side length (in meters)")
-    parser.add_argument("--marker_len", type=float, default=0.020, help="Marker side length (in meters)")
+    parser.add_argument("--squares_x", type=int, default=4, help="Number of squares in X direction")
+    parser.add_argument("--squares_y", type=int, default=3, help="Number of squares in Y direction")
+    parser.add_argument("--square_len", type=float, default=0.036, help="Square side length (in meters)")
+    parser.add_argument("--marker_len", type=float, default=0.026, help="Marker side length (in meters)")
     
     args = parser.parse_args()
 
