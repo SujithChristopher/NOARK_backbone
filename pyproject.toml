@@ -13,9 +13,21 @@ dependencies = [
     "msgpack-numpy>=0.4.8",
     "opencv-contrib-python>=4.13.0.92",
     "pandas>=3.0.2",
-    "picamera2>=0.3.35",
+    "more-itertools>=10.7.0",
     "polars>=1.40.0",
     "scipy>=1.17.1",
     "toml>=0.10.2",
     "tqdm>=4.67.3",
 ]
+
+# [project.optional-dependencies]
+# rpi = [
+#     "picamera2>=0.3.35; sys_platform == 'linux' and platform_machine == 'aarch64'",
+# ]
+
+# [tool.uv]
+# environments = [
+#     "sys_platform == 'win32'",
+#     "sys_platform == 'linux' and platform_machine == 'aarch64'",
+#     "sys_platform == 'darwin'",
+# ]

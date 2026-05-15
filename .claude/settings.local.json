@@ -27,7 +27,12 @@
       "Bash(ffprobe -v quiet -print_format json -show_streams \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\upperlimb_combined.mp4\")",
       "Bash(echo \"Exit: $?\")",
       "Bash(ruff check *)",
-      "Bash(/home/cmc1/Documents/NOARK_backbone/.venv/bin/python *)"
+      "Bash(/home/cmc1/Documents/NOARK_backbone/.venv/bin/python *)",
+      "Bash(uv sync *)",
+      "Bash(uv --version)",
+      "Bash(uv pip *)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(Remove-Item uv.lock -ErrorAction SilentlyContinue)"
     ],
     "deny": []
   }
