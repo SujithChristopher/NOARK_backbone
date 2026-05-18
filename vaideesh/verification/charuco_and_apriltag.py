@@ -23,7 +23,7 @@ class CharucoAprilTagTracker:
 
     def __init__(self, config_path,
                  squares_x=4, squares_y=3,
-                 square_length=0.036, marker_length=0.026,
+                 square_length=0.037, marker_length=0.027,
                  april_marker_length=APRIL_MARKER_LENGTH):
 
         self.squares_x        = squares_x
@@ -183,8 +183,8 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--config", required=True)
     parser.add_argument("--squares_x",  type=int,   default=4)
     parser.add_argument("--squares_y",  type=int,   default=3)
-    parser.add_argument("--square_len", type=float, default=0.036)
-    parser.add_argument("--marker_len", type=float, default=0.026)
+    parser.add_argument("--square_len", type=float, default=0.037)
+    parser.add_argument("--marker_len", type=float, default=0.027)
     parser.add_argument("--april_len",  type=float, default=0.05)
     args = parser.parse_args()
 
