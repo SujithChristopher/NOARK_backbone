@@ -14,7 +14,7 @@ WIDTH = 1280
 HEIGHT = 800
 
 class RealtimeCharucoTracker:
-    def __init__(self, config_path, squares_x=6, squares_y=4, square_length=0.028, marker_length=0.02, dict_id=cv2.aruco.DICT_4X4_50):
+    def __init__(self, config_path, squares_x=4, squares_y=3, square_length=0.037, marker_length=0.027, dict_id=cv2.aruco.DICT_4X4_50):
         self.config_path = config_path
         
         # ChArUco Board Parameters
@@ -23,7 +23,7 @@ class RealtimeCharucoTracker:
         self.square_length = square_length
         self.marker_length = marker_length
         self.dict_id = dict_id
-        
+    
         self._load_config()
         self._init_camera()
         self._init_undistortion_maps()
@@ -102,7 +102,7 @@ class RealtimeCharucoTracker:
         
         # Create the ChArUco Board object
         self.board = cv2.aruco.CharucoBoard(
-            (6, 4), 
+            (self.squares_x, self.squares_y), 
             self.square_length, 
             self.marker_length, 
             self.dictionary
@@ -237,10 +237,10 @@ if __name__ == "__main__":
     )
     
     # Optional arguments for ChArUco parameters
-    parser.add_argument("--squares_x", type=int, default=6, help="Number of squares in X direction")
-    parser.add_argument("--squares_y", type=int, default=4, help="Number of squares in Y direction")
-    parser.add_argument("--square_len", type=float, default=0.028, help="Square side length (in meters)")
-    parser.add_argument("--marker_len", type=float, default=0.020, help="Marker side length (in meters)")
+    parser.add_argument("--squares_x", type=int, default=4, help="Number of squares in X direction")
+    parser.add_argument("--squares_y", type=int, default=3, help="Number of squares in Y direction")
+    parser.add_argument("--square_len", type=float, default=0.037, help="Square side length (in meters)")
+    parser.add_argument("--marker_len", type=float, default=0.027, help="Marker side length (in meters)")
     
     args = parser.parse_args()
 

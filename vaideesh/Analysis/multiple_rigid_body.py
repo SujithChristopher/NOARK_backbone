@@ -8,11 +8,11 @@ import pandas as pd
 from more_itertools import locate
 from scipy.interpolate import interp1d
 
-FILE =r"E:\Ragav\MS Bio Engineering\NOARK_backbone\mocap_recordings\mocap_recordings_may_4\table_frame_may_4.csv"
+FILE =r"E:\Ragav\MS Bio Engineering\NOARK_backbone\mocap_recordings\mocap_recordings_may_15\table_frame_may_15.csv"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ORIGINAL FUNCTIONS (unchanged)
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────    ───────────
 
 def read_df_csv(filename, offset=2):
     pth = filename
