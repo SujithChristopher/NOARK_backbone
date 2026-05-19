@@ -18,7 +18,7 @@ import keyboard
 import sys
 
 class RecordData:
-    def __init__(self, _pth=None, record_camera=True, fps_value=30, display=True):
+    def __init__(self, _pth=None, record_camera=True, fps_value=15, display=True, flicker_hz=50):
         # 1. Auto-detect cameras using the camera manager
         camera_list = Picamera2.global_camera_info()
         num_detected = len(camera_list)
@@ -34,15 +34,19 @@ class RecordData:
         self.cam_ids = [camera_list[i]['Model'].lower() for i in range(num_detected)]
         print(f"Camera IDs found: {self.cam_ids}")
 
+        # Exposure must be an integer multiple of the AC half-period to avoid
+        # banding under fluorescent/tube lights: 10000µs for 50Hz, 8333µs for 60Hz.
+        exposure_time = 1_000_000 // (flicker_hz * 2)
+        print(f"Flicker compensation: {flicker_hz}Hz → ExposureTime={exposure_time}µs")
+
         # --- Initialize Camera 0 ---
         self.picam0 = Picamera2(camera_num=0)
-        # Use specific settings if it's an OV9281
         res0 = (1280, 800) if "ov9281" in self.cam_ids[0] else (1640, 1232)
         fmt0 = "YUV420" if "ov9281" in self.cam_ids[0] else "BGR888"
-        
+
         config0 = self.picam0.create_video_configuration(
             main={"format": fmt0, "size": res0},
-            controls={"FrameRate": fps_value, "ExposureTime": 5000},
+            controls={"FrameRate": fps_value, "AeEnable": False, "ExposureTime": exposure_time},
             transform=libcamera.Transform(vflip=1)
         )
         self.picam0.configure(config0)
@@ -52,10 +56,10 @@ class RecordData:
         self.picam1 = Picamera2(camera_num=1)
         res1 = (1280, 800) if "ov9281" in self.cam_ids[1] else (1640, 1232)
         fmt1 = "YUV420" if "ov9281" in self.cam_ids[1] else "BGR888"
-        
+
         config1 = self.picam1.create_video_configuration(
             main={"format": fmt1, "size": res1},
-            controls={"FrameRate": fps_value, "ExposureTime": 5000},
+            controls={"FrameRate": fps_value, "AeEnable": False, "ExposureTime": exposure_time},
             transform=libcamera.Transform(vflip=1)
         )
         self.picam1.configure(config1)
