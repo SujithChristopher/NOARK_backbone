@@ -158,11 +158,14 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--name", help="name of the file", required=False)
     parser.add_argument("-c", "--camera", help="record camera", required=False)
     parser.add_argument("-s", "--sensors", help="record sensors", required=False)
+    parser.add_argument("-z", "--hz", help="mains frequency for flicker compensation (50 or 60)", required=False, type=int, default=50)
 
     args = parser.parse_args()
 
+    flicker_hz = args.hz
+
     # if your not passing any arguments then the default values will be used
-    if not any(vars(args).values()):
+    if not any(v for k, v in vars(args).items() if k != "hz"):
         print("No arguments passed, please enter manually")
 
         record_camera = True
@@ -200,6 +203,6 @@ if __name__ == "__main__":
     time.sleep(1)
 
     record_data = RecordData(
-        _pth=_pth, record_camera=record_camera, fps_value=30, display=display
+        _pth=_pth, record_camera=record_camera, fps_value=30, display=display, flicker_hz=flicker_hz
     )
     record_data.run()
