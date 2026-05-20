@@ -11,7 +11,7 @@ import msgpack as mp
 import msgpack_numpy as mpn
 import argparse
 import time
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from picamera2 import Picamera2
 import gpiod
 import libcamera
@@ -93,74 +93,69 @@ class RecordData:
                 os.path.join(self._pth, "cam1_timestamp.msgpack"), "wb"
             )
 
-        results = {}
-
-        def _grab(cam, key):
+        def _grab(cam):
             req = cam.capture_request()
-            results[key] = (req.make_array("main"), req.get_metadata())
+            arr = req.make_array("main")
+            meta = req.get_metadata()
             req.release()
+            return arr, meta
 
-        while True:
-            # Capture both cameras in parallel so frames are grabbed simultaneously.
-            t0 = threading.Thread(target=_grab, args=(self.picam0, 0))
-            t1 = threading.Thread(target=_grab, args=(self.picam1, 1))
-            t0.start()
-            t1.start()
-            t0.join()
-            t1.join()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            while True:
+                # Submit both grabs to the persistent thread pool — no per-frame thread creation.
+                f0 = executor.submit(_grab, self.picam0)
+                f1 = executor.submit(_grab, self.picam1)
+                frame0, meta0 = f0.result()
+                frame1, meta1 = f1.result()
 
-            frame0, meta0 = results[0]
-            frame1, meta1 = results[1]
+                # SensorTimestamp is a hardware nanosecond counter from each sensor.
+                sensor_ts0 = meta0.get("SensorTimestamp", 0)
+                sensor_ts1 = meta1.get("SensorTimestamp", 0)
+                skew_us = (sensor_ts1 - sensor_ts0) / 1000
 
-            # SensorTimestamp is a hardware nanosecond counter from each sensor.
-            sensor_ts0 = meta0.get("SensorTimestamp", 0)
-            sensor_ts1 = meta1.get("SensorTimestamp", 0)
-            skew_us = (sensor_ts1 - sensor_ts0) / 1000
+                img0 = frame0[:800, :1280]
+                img1 = frame1[:800, :1280]
 
-            img0 = frame0[:800, :1280]
-            img1 = frame1[:800, :1280]
+                if self.record_camera and self.start_recording:
+                    _time_stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    sync_val = self.sync_line.get_value()
 
-            if self.record_camera and self.start_recording:
-                _time_stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                sync_val = self.sync_line.get_value()
+                    # Write Cam 0 — store sensor timestamp (ns) alongside wall clock
+                    _packed_file0 = mp.packb(img0, default=mpn.encode)
+                    _save_file0.write(_packed_file0)
+                    _packed_timestamp0 = mp.packb([sync_val, _time_stamp, sensor_ts0])
+                    _timestamp_file0.write(_packed_timestamp0)
 
-                # Write Cam 0 — store sensor timestamp (ns) alongside wall clock
-                _packed_file0 = mp.packb(img0, default=mpn.encode)
-                _save_file0.write(_packed_file0)
-                _packed_timestamp0 = mp.packb([sync_val, _time_stamp, sensor_ts0])
-                _timestamp_file0.write(_packed_timestamp0)
+                    # Write Cam 1
+                    _packed_file1 = mp.packb(img1, default=mpn.encode)
+                    _save_file1.write(_packed_file1)
+                    _packed_timestamp1 = mp.packb([sync_val, _time_stamp, sensor_ts1])
+                    _timestamp_file1.write(_packed_timestamp1)
 
-                # Write Cam 1
-                _packed_file1 = mp.packb(img1, default=mpn.encode)
-                _save_file1.write(_packed_file1)
-                _packed_timestamp1 = mp.packb([sync_val, _time_stamp, sensor_ts1])
-                _timestamp_file1.write(_packed_timestamp1)
+                    if abs(skew_us) > 5000:  # warn if cameras drift > 5 ms
+                        print(f"[WARN] frame skew: {skew_us:.0f} µs")
 
-                if abs(skew_us) > 5000:  # warn if cameras drift > 5 ms
-                    print(f"[WARN] frame skew: {skew_us:.0f} µs")
+                if self.display:
+                    image_scale0 = cv2.resize(img0, (250, 200))
+                    gray_image_scale1 = cv2.resize(img1, (250, 200))
+                    cv2.imshow("webcam 0 (IMX219)", image_scale0)
+                    cv2.imshow("webcam 1 (OV9281)", gray_image_scale1)
+                    cv2.waitKey(1)
 
-            if self.display:
-                image_scale0 = cv2.resize(img0, (250, 200))
-                gray_image_scale1 = cv2.resize(img1, (250, 200))
-                cv2.imshow("webcam 0 (IMX219)", image_scale0)
-                cv2.imshow("webcam 1 (OV9281)", gray_image_scale1)
-                # sys.stdout.flush()
-                cv2.waitKey(1)
+                if keyboard.is_pressed("s") and not self.start_recording:
+                    print("You Pressed a Key!, started recording from dual webcams")
+                    self.start_recording = True
 
-            if keyboard.is_pressed("s") and not self.start_recording:
-                print("You Pressed a Key!, started recording from dual webcams")
-                self.start_recording = True
-
-            if keyboard.is_pressed("q"):
-                cv2.destroyAllWindows()
-                if self.record_camera:
-                    _save_file0.close()
-                    _timestamp_file0.close()
-                    _save_file1.close()
-                    _timestamp_file1.close()
-                self.picam0.stop()
-                self.picam1.stop()
-                break
+                if keyboard.is_pressed("q"):
+                    cv2.destroyAllWindows()
+                    if self.record_camera:
+                        _save_file0.close()
+                        _timestamp_file0.close()
+                        _save_file1.close()
+                        _timestamp_file1.close()
+                    self.picam0.stop()
+                    self.picam1.stop()
+                    break
 
     def run(self):
         """run the program"""
