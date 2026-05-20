@@ -47,7 +47,7 @@ class RecordData:
         config0 = self.picam0.create_video_configuration(
             main={"format": fmt0, "size": res0},
             controls={"FrameRate": fps_value, "AeEnable": False, "ExposureTime": exposure_time},
-            transform=libcamera.Transform(vflip=1)
+            # transform=libcamera.Transform(vflip=1)
         )
         self.picam0.configure(config0)
         self.picam0.start()
@@ -60,7 +60,7 @@ class RecordData:
         config1 = self.picam1.create_video_configuration(
             main={"format": fmt1, "size": res1},
             controls={"FrameRate": fps_value, "AeEnable": False, "ExposureTime": exposure_time},
-            transform=libcamera.Transform(vflip=1)
+            # transform=libcamera.Transform(vflip=1)
         )
         self.picam1.configure(config1)
         self.picam1.start()
@@ -100,8 +100,10 @@ class RecordData:
             # For OV9281, capture_array usually returns (H, W, 3) 
             # even in YUV, where Y is the first channel.
             # If using YUV420, just take the Y channel:
-            img0 = cv2.flip(frame0[:800, :1280], 1)
-            img1 = cv2.flip(frame1[:800, :1280], 1)
+            # img0 = cv2.flip(frame0[:800, :1280], 0)
+            # img1 = cv2.flip(frame1[:800, :1280], 0)
+            img0 = frame0[:800, :1280]
+            img1 = frame1[:800, :1280]
 
             if self.record_camera and self.start_recording:
                 _time_stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
