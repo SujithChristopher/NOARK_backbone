@@ -1,12 +1,13 @@
-"""Upper limb 3D motion analysis — dual fisheye camera triangulation.
+"""Upper limb 3D point cloud — dual OV9281 fisheye stereo pipeline.
 
 Pipeline
 --------
-1. Load msgpack frames from both cameras
-2. Run MediaPipe Pose on each frame
-3. Undistort 2D landmarks with fisheye model (fisheye.undistortPoints)
-4. Triangulate to 3D using stereo calibration (R, T from stereo_calibration.toml)
-5. Render 3D skeleton with matplotlib and write to MP4
+1. Load grayscale msgpack frames from both OV9281 cameras
+2. Stereo-rectify both frames using fisheye calibration (R, T)
+3. Segment human region with MediaPipe ImageSegmenter on each rectified frame
+4. Compute StereoSGBM disparity masked to intersection of both human masks
+5. Back-project disparity to 3D point cloud via Q matrix from stereoRectify
+6. Render: [cam0 seg | cam1 seg | 3D cloud] → MP4
 """
 
 import cv2
@@ -27,39 +28,31 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-SCRIPT_DIR = Path(__file__).parent
-CALIB_TOML = SCRIPT_DIR / "stereo_calibration.toml"
-DATA_DIR   = SCRIPT_DIR.parents[2] / "data" / "dual_data" / "dual_camera_trunk_test"
-CAM0_VIDEO = DATA_DIR / "cam0_imx219.msgpack"
-CAM1_VIDEO = DATA_DIR / "cam1_ov9281.msgpack"
+PROJECT_ROOT = Path(__file__).parents[3]
+SCRIPT_DIR   = Path(__file__).parent
+CALIB_TOML   = (
+    PROJECT_ROOT
+    / "data" / "calibration" / "dual_160"
+    / "dual_ov9281_calibration_checker_sz_30mm"
+    / "stereo_calibration.toml"
+)
+DATA_DIR       = PROJECT_ROOT / "data" / "dual_data" / "dual_ov9281_trunk_test"
+CAM0_VIDEO     = DATA_DIR / "cam0_frame.msgpack"
+CAM1_VIDEO     = DATA_DIR / "cam1_frame.msgpack"
 CAM0_TIMESTAMP = DATA_DIR / "cam0_timestamp.msgpack"
 CAM1_TIMESTAMP = DATA_DIR / "cam1_timestamp.msgpack"
-OUT_VIDEO    = SCRIPT_DIR / "upperlimb_combined.mp4"
-PANEL_HEIGHT = 480   # all three panels scaled to this height
+OUT_VIDEO      = DATA_DIR / "upperlimb_combined.mp4"
 
-# ---------------------------------------------------------------------------
-# MediaPipe upper-body landmark indices
-# ---------------------------------------------------------------------------
-# 0=nose  11=L-shoulder  12=R-shoulder  13=L-elbow  14=R-elbow
-# 15=L-wrist  16=R-wrist
-# Hips are excluded here because they are often occluded and unstable in this view.
-UPPER_JOINTS = [0, 11, 12, 13, 14, 15, 16]
+PANEL_HEIGHT    = 480
+SEGMENTER_MODEL = SCRIPT_DIR / "selfie_segmenter.tflite"
+SEG_THRESH      = 0.5
 
-BONES = [
-    (11, 12, "gray"),   # shoulder bar
-    (11, 13, "royalblue"), (13, 15, "royalblue"),   # left arm
-    (12, 14, "tomato"),    (14, 16, "tomato"),       # right arm
-]
+# StereoSGBM — tune numDisparities to camera separation
+NUM_DISP   = 128   # must be multiple of 16
+BLOCK_SIZE = 5
 
-# Same in BGR for cv2 drawing
-BONES_BGR = [
-    (11, 12, (180, 180, 180)),
-    (11, 13, (205, 90,  65)),  (13, 15, (205, 90,  65)),   # left arm  (blue)
-    (12, 14, (71,  99, 255)),  (14, 16, (71,  99, 255)),   # right arm (red)
-]
-
-VIS_THRESH    = 0.5
-MODEL_PATH    = SCRIPT_DIR / "pose_landmarker_full.task"
+# Both OV9281 cameras share the same resolution
+CAM_SIZE = (1280, 800)   # (W, H)
 
 # ---------------------------------------------------------------------------
 # Calibration
@@ -67,10 +60,10 @@ MODEL_PATH    = SCRIPT_DIR / "pose_landmarker_full.task"
 def load_calib(path):
     d  = toml.load(path)
     K0 = np.array(d["cam0"]["camera_matrix"])
-    D0 = np.array(d["cam0"]["dist_coeffs"])   # (1, 4)
+    D0 = np.array(d["cam0"]["dist_coeffs"])
     K1 = np.array(d["cam1"]["camera_matrix"])
     D1 = np.array(d["cam1"]["dist_coeffs"])
-    R  = np.array(d["stereo"]["R"])            # 3×3
+    R  = np.array(d["stereo"]["R"])
     T  = np.array(d["stereo"]["T"]).reshape(3, 1)   # mm
     return K0, D0, K1, D1, R, T
 
@@ -85,7 +78,6 @@ def load_all_frames(path):
     return frames
 
 def load_timestamps(path):
-    """Return a per-frame timestamp series in milliseconds from the msgpack log."""
     stamps = []
     with open(path, "rb") as f:
         for item in msgpack.Unpacker(f, object_hook=mpn.decode):
@@ -109,84 +101,98 @@ def estimate_fps(timestamp_ms, fallback=15.0):
     return float(1000.0 / np.median(deltas))
 
 # ---------------------------------------------------------------------------
-# Pose detection  (MediaPipe Tasks API, 0.10+)
+# Stereo rectification (fisheye → pinhole-rectified pair)
 # ---------------------------------------------------------------------------
-def make_pose_detector():
-    opts = mp_vision.PoseLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=str(MODEL_PATH)),
-        running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
+def build_rectify_maps(K0, D0, K1, D1, R, T, size):
+    """size = (W, H). Returns (maps0, maps1, Q)."""
+    R0, R1, P0, P1, Q = cv2.fisheye.stereoRectify(
+        K0, D0, K1, D1, size, R, T,
+        flags=cv2.CALIB_ZERO_DISPARITY,
+        newImageSize=size,
+        balance=0.0,
+        fov_scale=1.0,
     )
-    return mp_vision.PoseLandmarker.create_from_options(opts)
+    m0x, m0y = cv2.fisheye.initUndistortRectifyMap(K0, D0, R0, P0, size, cv2.CV_32F)
+    m1x, m1y = cv2.fisheye.initUndistortRectifyMap(K1, D1, R1, P1, size, cv2.CV_32F)
+    return (m0x, m0y), (m1x, m1y), Q
 
-def detect(landmarker, bgr, timestamp_ms):
-    """Return {idx: (px, py)} for visible upper-body landmarks."""
+def rectify(frame, maps):
+    return cv2.remap(frame, maps[0], maps[1], cv2.INTER_LINEAR)
+
+# ---------------------------------------------------------------------------
+# Segmentation (MediaPipe ImageSegmenter, selfie_segmenter.tflite)
+# ---------------------------------------------------------------------------
+def make_segmenter():
+    opts = mp_vision.ImageSegmenterOptions(
+        base_options=BaseOptions(model_asset_path=str(SEGMENTER_MODEL)),
+        running_mode=mp_vision.RunningMode.VIDEO,
+        output_confidence_masks=True,
+        output_category_mask=False,
+    )
+    return mp_vision.ImageSegmenter.create_from_options(opts)
+
+def segment_frame(segmenter, bgr, timestamp_ms):
+    """Return float32 person-confidence mask (H, W) ∈ [0, 1]."""
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-    res = landmarker.detect_for_video(mp_img, timestamp_ms)
-    if not res.pose_landmarks:
-        return {}
-    h, w = bgr.shape[:2]
-    lms = res.pose_landmarks[0]   # first (only) person
-    out = {}
-    for idx in UPPER_JOINTS:
-        lm = lms[idx]
-        if lm.visibility >= VIS_THRESH:
-            out[idx] = (lm.x * w, lm.y * h)
-    return out
+    res = segmenter.segment_for_video(mp_img, timestamp_ms)
+    if not res.confidence_masks:
+        return np.zeros(bgr.shape[:2], np.float32)
+    # index 0 = person channel for selfie_segmenter (single-output model)
+    return np.squeeze(res.confidence_masks[0].numpy_view()).copy()
 
 # ---------------------------------------------------------------------------
-# Triangulation
+# Disparity + point cloud
 # ---------------------------------------------------------------------------
-def undistort_pts(pts_px, K, D):
-    arr = np.array(pts_px, dtype=np.float64).reshape(-1, 1, 2)
-    return cv2.fisheye.undistortPoints(arr, K, D).reshape(-1, 2)
+_stereo_matcher = cv2.StereoSGBM_create(
+    minDisparity=0,
+    numDisparities=NUM_DISP,
+    blockSize=BLOCK_SIZE,
+    P1=8  * 3 * BLOCK_SIZE ** 2,
+    P2=32 * 3 * BLOCK_SIZE ** 2,
+    disp12MaxDiff=1,
+    uniquenessRatio=10,
+    speckleWindowSize=100,
+    speckleRange=32,
+    preFilterCap=63,
+    mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY,
+)
 
-def triangulate(lms0, lms1, K0, D0, K1, D1, R, T):
-    """Triangulate common visible landmarks. Returns {idx: [X,Y,Z] mm} in cam0 frame."""
-    common = sorted(set(lms0) & set(lms1))
-    if len(common) < 2:
-        return {}
+def compute_disparity(gray0, gray1, human_mask=None):
+    """StereoSGBM disparity. If human_mask given, zeroes pixels outside it."""
+    disp = _stereo_matcher.compute(gray0, gray1).astype(np.float32) / 16.0
+    if human_mask is not None:
+        disp[human_mask == 0] = 0.0
+    disp[disp <= 0] = 0.0
+    return disp
 
-    pts0 = np.array([lms0[i] for i in common], dtype=np.float64)
-    pts1 = np.array([lms1[i] for i in common], dtype=np.float64)
-
-    u0 = undistort_pts(pts0, K0, D0)   # normalized cam0
-    u1 = undistort_pts(pts1, K1, D1)   # normalized cam1
-
-    # Projection matrices in normalized space (K already divided out by undistortPoints)
-    P0 = np.hstack([np.eye(3), np.zeros((3, 1))])
-    P1 = np.hstack([R, T])
-
-    pts4d = cv2.triangulatePoints(P0, P1, u0.T, u1.T)  # (4, N)
-    pts3d = (pts4d[:3] / pts4d[3]).T                    # (N, 3) mm
-
-    return {idx: pts3d[i] for i, idx in enumerate(common)}
+def disp_to_pointcloud(disp, Q, max_pts=8000):
+    """Back-project valid disparity pixels to 3D (mm). Returns (N, 3) float32."""
+    valid = disp > 0
+    pts = cv2.reprojectImageTo3D(disp, Q, handleMissingValues=False)
+    cloud = pts[valid].astype(np.float32)
+    # keep only reasonable depth range (100 mm – 5000 mm)
+    cloud = cloud[(cloud[:, 2] > 100) & (cloud[:, 2] < 5000)]
+    if len(cloud) > max_pts:
+        idx = np.random.choice(len(cloud), max_pts, replace=False)
+        cloud = cloud[idx]
+    return cloud
 
 # ---------------------------------------------------------------------------
-# 2D overlay drawing
+# Visualization helpers
 # ---------------------------------------------------------------------------
-def draw_2d_skeleton(bgr, lms, label=""):
+def seg_overlay(bgr, mask_f32, color_bgr):
+    """Semi-transparent colored overlay on segmented region."""
     out = bgr.copy()
-    for a, b, color in BONES_BGR:
-        if a in lms and b in lms:
-            p = (int(lms[a][0]), int(lms[a][1]))
-            q = (int(lms[b][0]), int(lms[b][1]))
-            cv2.line(out, p, q, color, 3, cv2.LINE_AA)
-    for idx, (px, py) in lms.items():
-        cv2.circle(out, (int(px), int(py)), 6, (0, 255, 255), -1, cv2.LINE_AA)
-    if label:
-        cv2.putText(out, label, (12, 36), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.0, (255, 255, 255), 2, cv2.LINE_AA)
+    m = mask_f32 >= SEG_THRESH
+    overlay = out.copy()
+    overlay[m] = color_bgr
+    cv2.addWeighted(overlay, 0.45, out, 0.55, 0, out)
     return out
 
 def scale_to_height(img, h):
-    """Resize img to height h, keeping aspect ratio."""
     oh, ow = img.shape[:2]
-    w = int(ow * h / oh)
-    return cv2.resize(img, (w, h))
+    return cv2.resize(img, (int(ow * h / oh), h))
 
 def make_panel(img, h, label=""):
     panel = scale_to_height(img, h)
@@ -195,43 +201,29 @@ def make_panel(img, h, label=""):
                     0.8, (255, 255, 255), 2, cv2.LINE_AA)
     return panel
 
-# ---------------------------------------------------------------------------
-# 3D rendering
-# ---------------------------------------------------------------------------
-def render_frame(ax, pts3d, frame_num, total):
+def fig_to_bgr(fig):
+    fig.canvas.draw()
+    w, h = fig.canvas.get_width_height()
+    img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
+    return cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
+
+def render_pointcloud(ax, cloud, frame_num, total):
     ax.cla()
     ax.set_facecolor("black")
-
-    if pts3d:
-        xs = np.array([pts3d[i][0] for i in pts3d])
-        ys = np.array([pts3d[i][1] for i in pts3d])
-        zs = np.array([pts3d[i][2] for i in pts3d])
-
-        # Centre view on skeleton midpoint each frame
-        cx, cy, cz = xs.mean(), ys.mean(), zs.mean()
-        r = 600  # mm half-range
-
+    if len(cloud) > 0:
+        ax.scatter(
+            cloud[:, 0], cloud[:, 1], cloud[:, 2],
+            c=cloud[:, 2], cmap="plasma", s=1, alpha=0.7, depthshade=False,
+        )
+        cx, cy, cz = cloud.mean(axis=0)
+        r = 600
         ax.set_xlim(cx - r, cx + r)
         ax.set_ylim(cy - r, cy + r)
         ax.set_zlim(cz - r, cz + r)
-
-        # Joints
-        ax.scatter(xs, ys, zs, c="cyan", s=50, depthshade=True, zorder=5)
-
-        # Bones
-        for a, b, color in BONES:
-            if a in pts3d and b in pts3d:
-                p, q = pts3d[a], pts3d[b]
-                ax.plot([p[0], q[0]], [p[1], q[1]], [p[2], q[2]],
-                        color=color, lw=2.5)
-
-        # Invert Y so "up" in image maps to "up" visually
         ax.invert_yaxis()
     else:
-        ax.set_xlim(-600, 600)
-        ax.set_ylim(-600, 600)
-        ax.set_zlim(-600, 600)
-
+        for setter in [ax.set_xlim, ax.set_ylim, ax.set_zlim]:
+            setter(-600, 600)
     ax.set_xlabel("X (mm)", color="white", labelpad=6)
     ax.set_ylabel("Y (mm)", color="white", labelpad=6)
     ax.set_zlabel("Z (mm)", color="white", labelpad=6)
@@ -239,14 +231,8 @@ def render_frame(ax, pts3d, frame_num, total):
     for pane in [ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane]:
         pane.fill = False
     ax.grid(True, color="gray", alpha=0.3)
-    ax.set_title(f"Upper Limb 3D  [{frame_num}/{total}]", color="white", pad=10)
+    ax.set_title(f"Point Cloud  [{frame_num}/{total}]", color="white", pad=10)
     ax.view_init(elev=15, azim=-60)
-
-def fig_to_bgr(fig):
-    fig.canvas.draw()
-    w, h = fig.canvas.get_width_height()
-    img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
-    return cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
 
 # ---------------------------------------------------------------------------
 # Main
@@ -255,6 +241,9 @@ def main():
     print("Loading calibration...")
     K0, D0, K1, D1, R, T = load_calib(CALIB_TOML)
     print(f"  T={T.ravel().round(1)} mm")
+
+    maps0, maps1, Q = build_rectify_maps(K0, D0, K1, D1, R, T, CAM_SIZE)
+    print("  Rectification maps built.")
 
     print("Loading frames...")
     frames0 = load_all_frames(CAM0_VIDEO)
@@ -265,68 +254,72 @@ def main():
     ts0_ms = load_timestamps(CAM0_TIMESTAMP)
     ts1_ms = load_timestamps(CAM1_TIMESTAMP)
     if len(ts0_ms) != n or len(ts1_ms) != n:
-        print("  Timestamp logs missing or mismatched; falling back to synthetic timing.")
+        print("  Timestamp mismatch — using synthetic 15 fps timing.")
         ts0_ms = [int(i * 1000 / 15) for i in range(n)]
-        ts1_ms = [int(i * 1000 / 15) for i in range(n)]
+        ts1_ms = list(ts0_ms)
 
     writer_fps = estimate_fps(ts0_ms)
-    print(f"  analysis fps ~{writer_fps:.2f}")
+    print(f"  fps ~{writer_fps:.2f}")
 
-    pose0 = make_pose_detector()
-    pose1 = make_pose_detector()
+    seg0 = make_segmenter()
+    seg1 = make_segmenter()
 
-    # matplotlib 3D panel (square)
     fig = plt.figure(figsize=(5, 5), facecolor="black")
     ax  = fig.add_subplot(111, projection="3d", facecolor="black")
 
-    # Determine combined video width from a sample render
-    render_frame(ax, {}, 0, n)
-    plot_bgr  = fig_to_bgr(fig)
-    plot_panel = scale_to_height(plot_bgr, PANEL_HEIGHT)
-
-    # Dummy cam frames to measure panel widths
-    dummy0 = scale_to_height(np.zeros((frames0[0].shape[0], frames0[0].shape[1], 3), np.uint8), PANEL_HEIGHT)
-    dummy1 = scale_to_height(np.zeros((frames1[0].shape[0], frames1[0].shape[1] if frames1[0].ndim == 3 else frames1[0].shape[1], 3), np.uint8), PANEL_HEIGHT)
-    total_w = dummy0.shape[1] + dummy1.shape[1] + plot_panel.shape[1]
+    # Pre-compute output frame width
+    render_pointcloud(ax, np.empty((0, 3)), 0, n)
+    plot_w = scale_to_height(fig_to_bgr(fig), PANEL_HEIGHT).shape[1]
+    cam_w  = int(CAM_SIZE[0] * PANEL_HEIGHT / CAM_SIZE[1])
+    total_w = cam_w * 2 + plot_w
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(OUT_VIDEO), fourcc, writer_fps, (total_w, PANEL_HEIGHT))
-
     print(f"Processing {n} frames -> {OUT_VIDEO}  ({total_w}x{PANEL_HEIGHT})")
+
     for i in range(n):
         f0 = frames0[i]
         f1 = frames1[i]
-        ts0 = ts0_ms[i]
-        ts1 = ts1_ms[i]
 
-        f0_bgr = cv2.cvtColor(f0, cv2.COLOR_RGB2BGR)
+        # OV9281 → grayscale BGR
+        f0_bgr = cv2.cvtColor(f0, cv2.COLOR_GRAY2BGR) if f0.ndim == 2 else f0
         f1_bgr = cv2.cvtColor(f1, cv2.COLOR_GRAY2BGR) if f1.ndim == 2 else f1
 
-        lms0  = detect(pose0, f0_bgr, ts0)
-        lms1  = detect(pose1, f1_bgr, ts1)
-        pts3d = triangulate(lms0, lms1, K0, D0, K1, D1, R, T)
+        # Segment on original (pre-rectification) frames — better for MediaPipe
+        mask0_orig = segment_frame(seg0, f0_bgr, ts0_ms[i])
+        mask1_orig = segment_frame(seg1, f1_bgr, ts1_ms[i])
 
-        # 2D overlays
-        ov0 = draw_2d_skeleton(f0_bgr, lms0)
-        ov1 = draw_2d_skeleton(f1_bgr, lms1)
+        # Fisheye rectification (frames + masks warped together)
+        r0 = rectify(f0_bgr, maps0)
+        r1 = rectify(f1_bgr, maps1)
+        mask0 = cv2.remap(mask0_orig, maps0[0], maps0[1], cv2.INTER_LINEAR)
+        mask1 = cv2.remap(mask1_orig, maps1[0], maps1[1], cv2.INTER_LINEAR)
 
-        # Scale panels to common height
-        p0   = make_panel(ov0, PANEL_HEIGHT, "Cam0 IMX219")
-        p1   = make_panel(ov1, PANEL_HEIGHT, "Cam1 OV9281")
+        # Dense disparity on full rectified image (mask warping clips too aggressively)
+        r0_gray = cv2.cvtColor(r0, cv2.COLOR_BGR2GRAY)
+        r1_gray = cv2.cvtColor(r1, cv2.COLOR_BGR2GRAY)
+        disp = compute_disparity(r0_gray, r1_gray, human_mask=None)
 
-        # 3D plot panel
-        render_frame(ax, pts3d, i + 1, n)
+        cloud = disp_to_pointcloud(disp, Q)
+
+        # Panels — show rectified frames with warped mask overlay
+        ov0 = seg_overlay(r0, mask0, color_bgr=(50, 220, 100))
+        ov1 = seg_overlay(r1, mask1, color_bgr=(50, 180, 255))
+        p0  = make_panel(ov0, PANEL_HEIGHT, "Cam0 OV9281")
+        p1  = make_panel(ov1, PANEL_HEIGHT, "Cam1 OV9281")
+
+        render_pointcloud(ax, cloud, i + 1, n)
         p3d = scale_to_height(fig_to_bgr(fig), PANEL_HEIGHT)
 
         combined = np.concatenate([p0, p1, p3d], axis=1)
         writer.write(combined)
 
         if i % 50 == 0:
-            print(f"  {i}/{n}  3D joints: {len(pts3d)}")
+            print(f"  {i}/{n}  cloud pts: {len(cloud)}")
 
     writer.release()
-    pose0.__exit__(None, None, None)
-    pose1.__exit__(None, None, None)
+    seg0.__exit__(None, None, None)
+    seg1.__exit__(None, None, None)
     plt.close(fig)
     print(f"Done -> {OUT_VIDEO}")
 

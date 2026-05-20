@@ -32,7 +32,8 @@
       "Bash(uv --version)",
       "Bash(uv pip *)",
       "Bash(.venv/Scripts/python.exe -c ' *)",
-      "Bash(Remove-Item uv.lock -ErrorAction SilentlyContinue)"
+      "Bash(Remove-Item uv.lock -ErrorAction SilentlyContinue)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite\" -OutFile \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\selfie_segmenter.tflite\")"
     ],
     "deny": []
   }
