@@ -30,10 +30,10 @@ PROJECT_ROOT = Path(__file__).parents[3]
 CALIB_DATA = (
     PROJECT_ROOT
     / "data" / "calibration" / "dual_160"
-    / "dual_cam_calibration_checker_sz_30mm"
+    / "dual_ov9281_calibration_checker_sz_30mm"
 )
-corners_imx219_pth = CALIB_DATA / "chessb_corners_cam0_imx219.pkl"
-corners_ov9281_pth = CALIB_DATA / "chessb_corners_cam1_ov9281.pkl"
+corners_cam0_pth = CALIB_DATA / "chessb_corners_cam0_frame.pkl"
+corners_cam1_pth = CALIB_DATA / "chessb_corners_cam1_frame.pkl"
 
 # ---------------------------------------------------------------------------
 # Load
@@ -42,8 +42,8 @@ def _load(pth):
     with open(pth, "rb") as f:
         return pickle.load(f)
 
-d0 = _load(corners_imx219_pth)   # cam0 IMX219
-d1 = _load(corners_ov9281_pth)   # cam1 OV9281
+d0 = _load(corners_cam0_pth)   # cam0 IMX219
+d1 = _load(corners_cam1_pth)   # cam1 OV9281
 print(f"cam0: {len(d0['corners'])} frames   cam1: {len(d1['corners'])} frames")
 
 # ---------------------------------------------------------------------------
@@ -221,6 +221,6 @@ def save_toml(result, path: Path):
 
 if __name__ == "__main__":
     result = run(n_individual=300, n_paired=150, seed=42)
-    out_path = Path(__file__).parent / "stereo_calibration.toml"
+    out_path = CALIB_DATA / "stereo_calibration.toml"
     save_toml(result, out_path)
     print("\nDone.")
