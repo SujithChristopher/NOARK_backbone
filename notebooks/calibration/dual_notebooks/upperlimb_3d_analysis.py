@@ -18,10 +18,6 @@ import toml
 import mediapipe as mp
 from mediapipe.tasks.python import vision as mp_vision
 from mediapipe.tasks.python import BaseOptions
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from pathlib import Path
 from datetime import datetime
 
@@ -33,10 +29,10 @@ SCRIPT_DIR   = Path(__file__).parent
 CALIB_TOML   = (
     PROJECT_ROOT
     / "data" / "calibration" / "dual_160"
-    / "dual_ov9281_calibration_checker_sz_30mm"
+    / "dual_ov9281_parallel_calib_cz_30mm"
     / "stereo_calibration.toml"
 )
-DATA_DIR       = PROJECT_ROOT / "data" / "dual_data" / "dual_ov9281_trunk_test"
+DATA_DIR       = PROJECT_ROOT / "data" / "dual_data" / "dual_ov9281_parallel_trunk_test"
 CAM0_VIDEO     = DATA_DIR / "cam0_frame.msgpack"
 CAM1_VIDEO     = DATA_DIR / "cam1_frame.msgpack"
 CAM0_TIMESTAMP = DATA_DIR / "cam0_timestamp.msgpack"
@@ -50,6 +46,13 @@ SEG_THRESH      = 0.5
 # StereoSGBM — tune numDisparities to camera separation
 NUM_DISP   = 128   # must be multiple of 16
 BLOCK_SIZE = 5
+
+# WLS filter params — sigma controls spatial smoothness, lambda controls edge sensitivity
+WLS_LAMBDA = 8000.0
+WLS_SIGMA  = 1.5
+
+# Temporal EMA alpha for depth smoothing — lower = smoother but more lag
+DEPTH_EMA_ALPHA = 0.3
 
 # Both OV9281 cameras share the same resolution
 CAM_SIZE = (1280, 800)   # (W, H)
@@ -109,7 +112,7 @@ def build_rectify_maps(K0, D0, K1, D1, R, T, size):
         K0, D0, K1, D1, size, R, T,
         flags=cv2.CALIB_ZERO_DISPARITY,
         newImageSize=size,
-        balance=0.0,
+        balance=1.0,   # keep full fisheye content, black-fill unmapped borders
         fov_scale=1.0,
     )
     m0x, m0y = cv2.fisheye.initUndistortRectifyMap(K0, D0, R0, P0, size, cv2.CV_32F)
@@ -144,7 +147,7 @@ def segment_frame(segmenter, bgr, timestamp_ms):
 # ---------------------------------------------------------------------------
 # Disparity + point cloud
 # ---------------------------------------------------------------------------
-_stereo_matcher = cv2.StereoSGBM_create(
+_left_matcher = cv2.StereoSGBM_create(
     minDisparity=0,
     numDisparities=NUM_DISP,
     blockSize=BLOCK_SIZE,
@@ -157,26 +160,68 @@ _stereo_matcher = cv2.StereoSGBM_create(
     preFilterCap=63,
     mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY,
 )
+_right_matcher = cv2.ximgproc.createRightMatcher(_left_matcher)
+_wls_filter    = cv2.ximgproc.createDisparityWLSFilter(_left_matcher)
+_wls_filter.setLambda(WLS_LAMBDA)
+_wls_filter.setSigmaColor(WLS_SIGMA)
+
+
+class TemporalDepthSmoother:
+    """Per-pixel EMA over depth frames; invalid pixels (<=0) excluded from blend."""
+
+    def __init__(self, alpha=DEPTH_EMA_ALPHA):
+        self.alpha = alpha
+        self._prev = None
+
+    def update(self, disp):
+        if self._prev is None:
+            self._prev = disp.copy()
+            return disp.copy()
+        valid_new  = disp > 0
+        valid_prev = self._prev > 0
+        out = self._prev.copy()
+        # Both valid → EMA blend
+        both = valid_new & valid_prev
+        out[both] = self.alpha * disp[both] + (1 - self.alpha) * self._prev[both]
+        # New pixel appeared → accept it directly
+        appeared = valid_new & ~valid_prev
+        out[appeared] = disp[appeared]
+        # Pixel vanished → decay toward zero after 1/alpha frames
+        vanished = ~valid_new & valid_prev
+        out[vanished] = (1 - self.alpha) * self._prev[vanished]
+        out[out < 0.5] = 0.0   # flush near-zero remnants
+        self._prev = out.copy()
+        return out
+
 
 def compute_disparity(gray0, gray1, human_mask=None):
-    """StereoSGBM disparity. If human_mask given, zeroes pixels outside it."""
-    disp = _stereo_matcher.compute(gray0, gray1).astype(np.float32) / 16.0
+    """WLS-filtered StereoSGBM disparity. human_mask (uint8 0/1) restricts ROI."""
+    disp_left  = _left_matcher.compute(gray0, gray1)
+    disp_right = _right_matcher.compute(gray1, gray0)
+    disp_wls   = _wls_filter.filter(disp_left, gray0, disparity_map_right=disp_right)
+    disp = disp_wls.astype(np.float32) / 16.0
     if human_mask is not None:
         disp[human_mask == 0] = 0.0
     disp[disp <= 0] = 0.0
     return disp
 
-def disp_to_pointcloud(disp, Q, max_pts=8000):
-    """Back-project valid disparity pixels to 3D (mm). Returns (N, 3) float32."""
+def disp_to_heatmap(disp, target_size=None):
+    """
+    Convert float32 disparity map to a BGR heatmap image.
+    Higher disparity (closer) = brighter. Invalid pixels = black.
+    target_size: (W, H) to resize output, or None to keep original size.
+    """
     valid = disp > 0
-    pts = cv2.reprojectImageTo3D(disp, Q, handleMissingValues=False)
-    cloud = pts[valid].astype(np.float32)
-    # keep only reasonable depth range (100 mm – 5000 mm)
-    cloud = cloud[(cloud[:, 2] > 100) & (cloud[:, 2] < 5000)]
-    if len(cloud) > max_pts:
-        idx = np.random.choice(len(cloud), max_pts, replace=False)
-        cloud = cloud[idx]
-    return cloud
+    vis = np.zeros(disp.shape, np.float32)
+    if valid.any():
+        lo, hi = disp[valid].min(), disp[valid].max()
+        if hi > lo:
+            vis[valid] = (disp[valid] - lo) / (hi - lo) * 255.0
+    heatmap = cv2.applyColorMap(vis.astype(np.uint8), cv2.COLORMAP_INFERNO)
+    heatmap[~valid] = 0   # black = no depth
+    if target_size is not None:
+        heatmap = cv2.resize(heatmap, target_size)
+    return heatmap
 
 # ---------------------------------------------------------------------------
 # Visualization helpers
@@ -201,38 +246,6 @@ def make_panel(img, h, label=""):
                     0.8, (255, 255, 255), 2, cv2.LINE_AA)
     return panel
 
-def fig_to_bgr(fig):
-    fig.canvas.draw()
-    w, h = fig.canvas.get_width_height()
-    img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
-    return cv2.cvtColor(img[:, :, :3], cv2.COLOR_RGB2BGR)
-
-def render_pointcloud(ax, cloud, frame_num, total):
-    ax.cla()
-    ax.set_facecolor("black")
-    if len(cloud) > 0:
-        ax.scatter(
-            cloud[:, 0], cloud[:, 1], cloud[:, 2],
-            c=cloud[:, 2], cmap="plasma", s=1, alpha=0.7, depthshade=False,
-        )
-        cx, cy, cz = cloud.mean(axis=0)
-        r = 600
-        ax.set_xlim(cx - r, cx + r)
-        ax.set_ylim(cy - r, cy + r)
-        ax.set_zlim(cz - r, cz + r)
-        ax.invert_yaxis()
-    else:
-        for setter in [ax.set_xlim, ax.set_ylim, ax.set_zlim]:
-            setter(-600, 600)
-    ax.set_xlabel("X (mm)", color="white", labelpad=6)
-    ax.set_ylabel("Y (mm)", color="white", labelpad=6)
-    ax.set_zlabel("Z (mm)", color="white", labelpad=6)
-    ax.tick_params(colors="white")
-    for pane in [ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane]:
-        pane.fill = False
-    ax.grid(True, color="gray", alpha=0.3)
-    ax.set_title(f"Point Cloud  [{frame_num}/{total}]", color="white", pad=10)
-    ax.view_init(elev=15, azim=-60)
 
 # ---------------------------------------------------------------------------
 # Main
@@ -261,17 +274,13 @@ def main():
     writer_fps = estimate_fps(ts0_ms)
     print(f"  fps ~{writer_fps:.2f}")
 
-    seg0 = make_segmenter()
-    seg1 = make_segmenter()
+    seg0          = make_segmenter()
+    seg1          = make_segmenter()
+    depth_smoother = TemporalDepthSmoother()
 
-    fig = plt.figure(figsize=(5, 5), facecolor="black")
-    ax  = fig.add_subplot(111, projection="3d", facecolor="black")
-
-    # Pre-compute output frame width
-    render_pointcloud(ax, np.empty((0, 3)), 0, n)
-    plot_w = scale_to_height(fig_to_bgr(fig), PANEL_HEIGHT).shape[1]
-    cam_w  = int(CAM_SIZE[0] * PANEL_HEIGHT / CAM_SIZE[1])
-    total_w = cam_w * 2 + plot_w
+    # Output layout: [cam0 | cam1 | depth heatmap], all at PANEL_HEIGHT
+    cam_w   = int(CAM_SIZE[0] * PANEL_HEIGHT / CAM_SIZE[1])
+    total_w = cam_w * 3   # heatmap same size as each cam panel
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(OUT_VIDEO), fourcc, writer_fps, (total_w, PANEL_HEIGHT))
@@ -285,42 +294,50 @@ def main():
         f0_bgr = cv2.cvtColor(f0, cv2.COLOR_GRAY2BGR) if f0.ndim == 2 else f0
         f1_bgr = cv2.cvtColor(f1, cv2.COLOR_GRAY2BGR) if f1.ndim == 2 else f1
 
-        # Segment on original (pre-rectification) frames — better for MediaPipe
+        # Segment on original frames — better for MediaPipe on fisheye
         mask0_orig = segment_frame(seg0, f0_bgr, ts0_ms[i])
         mask1_orig = segment_frame(seg1, f1_bgr, ts1_ms[i])
 
-        # Fisheye rectification (frames + masks warped together)
-        r0 = rectify(f0_bgr, maps0)
-        r1 = rectify(f1_bgr, maps1)
-        mask0 = cv2.remap(mask0_orig, maps0[0], maps0[1], cv2.INTER_LINEAR)
-        mask1 = cv2.remap(mask1_orig, maps1[0], maps1[1], cv2.INTER_LINEAR)
-
-        # Dense disparity on full rectified image (mask warping clips too aggressively)
+        # Fisheye → rectified for disparity
+        r0      = rectify(f0_bgr, maps0)
+        r1      = rectify(f1_bgr, maps1)
         r0_gray = cv2.cvtColor(r0, cv2.COLOR_BGR2GRAY)
         r1_gray = cv2.cvtColor(r1, cv2.COLOR_BGR2GRAY)
-        disp = compute_disparity(r0_gray, r1_gray, human_mask=None)
+        disp_raw = compute_disparity(r0_gray, r1_gray)
+        disp     = depth_smoother.update(disp_raw)
 
-        cloud = disp_to_pointcloud(disp, Q)
+        # Save first frame debug images to check disparity quality
+        if i == 0:
+            out_dir = DATA_DIR
+            cv2.imwrite(str(out_dir / "dbg_r0.png"), r0)
+            cv2.imwrite(str(out_dir / "dbg_r1.png"), r1)
+            cv2.imwrite(str(out_dir / "dbg_disp_raw.png"), disp_to_heatmap(disp_raw))
+            cv2.imwrite(str(out_dir / "dbg_disp_filtered.png"), disp_to_heatmap(disp))
+            print(f"  [diag] raw  disp valid_px={(disp_raw>0).sum()} "
+                  f"min={disp_raw[disp_raw>0].min() if (disp_raw>0).any() else 0:.1f} "
+                  f"max={disp_raw.max():.1f}")
+            print(f"  [diag] filt disp valid_px={(disp>0).sum()} "
+                  f"min={disp[disp>0].min() if (disp>0).any() else 0:.1f} "
+                  f"max={disp.max():.1f}")
 
-        # Panels — show rectified frames with warped mask overlay
-        ov0 = seg_overlay(r0, mask0, color_bgr=(50, 220, 100))
-        ov1 = seg_overlay(r1, mask1, color_bgr=(50, 180, 255))
-        p0  = make_panel(ov0, PANEL_HEIGHT, "Cam0 OV9281")
-        p1  = make_panel(ov1, PANEL_HEIGHT, "Cam1 OV9281")
+        # Panels
+        ov0  = seg_overlay(f0_bgr, mask0_orig, color_bgr=(50, 220, 100))
+        ov1  = seg_overlay(f1_bgr, mask1_orig, color_bgr=(50, 180, 255))
+        p0   = make_panel(ov0,  PANEL_HEIGHT, "Cam0 OV9281")
+        p1   = make_panel(ov1,  PANEL_HEIGHT, "Cam1 OV9281")
+        p_hm = disp_to_heatmap(disp, target_size=(cam_w, PANEL_HEIGHT))
+        cv2.putText(p_hm, "Depth (brighter=closer)", (8, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
-        render_pointcloud(ax, cloud, i + 1, n)
-        p3d = scale_to_height(fig_to_bgr(fig), PANEL_HEIGHT)
-
-        combined = np.concatenate([p0, p1, p3d], axis=1)
+        combined = np.concatenate([p0, p1, p_hm], axis=1)
         writer.write(combined)
 
         if i % 50 == 0:
-            print(f"  {i}/{n}  cloud pts: {len(cloud)}")
+            print(f"  {i}/{n}  valid disp px: {(disp>0).sum()}")
 
     writer.release()
     seg0.__exit__(None, None, None)
     seg1.__exit__(None, None, None)
-    plt.close(fig)
     print(f"Done -> {OUT_VIDEO}")
 
 
