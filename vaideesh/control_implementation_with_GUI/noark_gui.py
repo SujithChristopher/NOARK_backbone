@@ -196,8 +196,13 @@ class WorkspaceCanvas(QWidget):
         p3  = self._w2c(*P3)
 
         # Cables
+        # def cable_color(base: QColor, tension, max_t):
+        #     alpha = int(64 + tension / max_t * 191) if max_t > 0 else 64
+        #     c = QColor(base)
+        #     c.setAlpha(alpha)
+        #     return c
         def cable_color(base: QColor, tension, max_t):
-            alpha = int(64 + tension / max_t * 191) if max_t > 0 else 64
+            alpha = int(64 + min(tension, max_t) / max_t * 191) if max_t > 0 else 64
             c = QColor(base)
             c.setAlpha(alpha)
             return c
@@ -605,6 +610,8 @@ class NOARKWindow(QMainWindow):
             nx, nz    = s.noark_x, s.noark_z
             dir_x, dir_z = s.dir_x, s.dir_z
             force_mag = s.force_mag
+            prev_tau1 = s.prev_tau1
+            prev_tau2 = s.prev_tau2
 
         if not has_noark:
             return
@@ -612,13 +619,13 @@ class NOARKWindow(QMainWindow):
         sol = solve_tensions(nx, nz, Fx, Fz)
         if not sol:
             return
-        T_MIN = 1.0
+        T_MIN = 2.12
         T1   = max(0.0, sol["T1"])
         T3   = max(0.0, sol["T3"])
         tau1 = -(T1 * R_SPOOL)
         tau2 =   T3 * R_SPOOL
         print(f"[solve] nx={nx:.3f} nz={nz:.3f} Fx={Fx:.2f} Fz={Fz:.2f} " f"T1={sol['T1']:.2f} T3={sol['T3']:.2f}")
-        # MAX_TORQUE_RATE = 0.05
+        # MAX_TORQUE_RATE = 0.04
         # tau1 = np.clip(tau1, self.state.prev_tau1 - MAX_TORQUE_RATE, self.state.prev_tau1 + MAX_TORQUE_RATE)
         # tau2 = np.clip(tau2, self.state.prev_tau2 - MAX_TORQUE_RATE, self.state.prev_tau2 + MAX_TORQUE_RATE)
         # with self.state.lock:
