@@ -26,7 +26,7 @@ class TeensyPort:
         # Find and list ports
         for port in self.ports:
             self.portsList.append(str(port))
-            # print(self.portsList)
+            print(self.portsList)
         
         # Find the Teensy port
         for i in range(len(self.portsList)):
@@ -65,6 +65,9 @@ class TeensyPort:
                     # self.enc1 = self.encoder.split(",")[0]
                     # self.enc2 = self.encoder.split(",")[1]
                     if len(values) >= 2:
+                        # self.tau1_actual = float(values[0])
+                        # self.tau2_actual = float(values[1])
+                        # print(f"τ₁_actual: {self.tau1_actual:.4f} Nm  τ₂_actual: {self.tau2_actual:.4f} Nm")
                         self.raw_e1 = self.parse_encoder_value(values[0])
                         self.raw_e2 = self.parse_encoder_value(values[1])
                         if self.enc_reset:
