@@ -1,0 +1,6 @@
+sample,pwm,current_A,torque_Nm,Kt_NmPerA
+1,410,0.00000,0.00245,0.00000
+
+kt_mean,0.00000
+kt_stdev,0.00000
+kt_regression,0.00000
