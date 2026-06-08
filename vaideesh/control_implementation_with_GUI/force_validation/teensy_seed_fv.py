@@ -30,15 +30,15 @@ class SeeeduinoPort:
                     parts["fx"] = float(segment.replace("avg X:", "").strip())
                 elif segment.startswith("avg Y:"):
                     parts["fy"] = float(segment.replace("avg Y:", "").strip())
-                elif segment.startswith("magnitude:"):
-                    parts["mag"] = float(segment.replace("magnitude:", "").strip())
-                elif segment.startswith("direction:"):
-                    parts["dir"] = float(segment.replace("direction:", "").strip())
+                # elif segment.startswith("magnitude:"):
+                #     parts["mag"] = float(segment.replace("magnitude:", "").strip())
+                # elif segment.startswith("direction:"):
+                #     parts["dir"] = float(segment.replace("direction:", "").strip())
             if "fx" in parts and "fy" in parts:
                 self.fx = parts["fx"]
                 self.fy = parts["fy"]
-                self.magnitude = parts.get("mag", 0.0)
-                self.direction = parts.get("dir", 0.0)
+                # self.magnitude = parts.get("mag", 0.0)
+                # self.direction = parts.get("dir", 0.0)
         except Exception as e:
             print(f"[seeeduino parse] {e} | raw: {line}")
 
@@ -47,13 +47,10 @@ class SeeeduinoPort:
         while self.running:
             try:
                 waiting = self.serialInst.in_waiting
-                if waiting > 500:
-                    self.serialInst.reset_input_buffer()
-                elif waiting > 0:
-                    line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
-                    if line:
-                        self._parse_line(line)
-                    
+                if waiting > 0:
+                        line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
+                        if line:
+                            self._parse_line(line)
                 else:
                     time.sleep(0.0005)
             except Exception as e:
@@ -89,8 +86,6 @@ class TeensyPort:
         self.offset_e2 = 0.0
         self.enc1 = 0
         self.enc2 = 0
-        self.tau1_actual = 0.0
-        self.tau2_actual = 0.0
         self.enc_reset = False
         self.encoder = ""
 
@@ -132,9 +127,10 @@ class TeensyPort:
         while self.running:
             try:
                 waiting = self.serialInst.in_waiting
-                if waiting > 500:
-                    self.serialInst.reset_input_buffer()
-                elif waiting > 0:
+                # if waiting > 500:
+                #     self.serialInst.reset_input_buffer()
+                # elif waiting > 0:
+                if waiting > 0:
                     response = self.serialInst.readline()
                     self.encoder = response.decode('utf-8').strip()
                     if self.encoder.startswith("ENC_RESET"):
@@ -146,14 +142,6 @@ class TeensyPort:
                         self.raw_e2 = self.parse_encoder_value(values[1])
                         self.enc1 = round(self.raw_e1 - self.offset_e1, 2)
                         self.enc2 = round(self.raw_e2 - self.offset_e2, 2)
-                    # # --- rate counter ---
-                    # self._count += 1
-                    # if self._count % 100 == 0:
-                    #     elapsed = time.time() - self._t0
-                    #     print(f"[teensy rate] {self._count/elapsed:.1f} Hz")
-                    #     self._count = 0
-                    #     self._t0 = time.time()
-                    # # --- end rate counter --- 
                 else:
                     time.sleep(0.0005)
             except Exception as e:

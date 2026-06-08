@@ -10,8 +10,8 @@ from PySide6.QtGui import (QPainter, QPen, QColor, QBrush, QFont, QPixmap,
 from PySide6.QtCore import Qt, QTimer, QPointF, Signal, QRectF
 
 sys.path.insert(0, '/home/sujith/Documents/NOARK_backbone')
-from camera_pose_gui import MainClass
-from vaideesh.control_implementation_with_GUI.teensyseed import SeeeduinoPort,TeensyPort
+from camera_pose_fv import MainClass
+from vaideesh.control_implementation_with_GUI.force_validation.teensy_seed_fv import SeeeduinoPort,TeensyPort
 
 CAM_TOML   = '/home/sujith/Documents/NOARK_backbone/notebooks/calibration/output/good.toml'
 TABLE_TOML = '/home/sujith/Documents/NOARK_backbone/estimator/charuco_pose/charuco_pose_picam.toml'
@@ -109,16 +109,16 @@ class SeeeduinoReceiver:
                     parts["fx"] = float(seg.replace("avg X:", "").strip())
                 elif seg.startswith("avg Y:"):
                     parts["fy"] = float(seg.replace("avg Y:", "").strip())
-                elif seg.startswith("magnitude:"):
-                    parts["mag"] = float(seg.replace("magnitude:", "").strip())
-                elif seg.startswith("direction:"):
-                    parts["dir"] = float(seg.replace("direction:", "").strip())
+                # elif seg.startswith("magnitude:"):
+                #     parts["mag"] = float(seg.replace("magnitude:", "").strip())
+                # elif seg.startswith("direction:"):
+                #     parts["dir"] = float(seg.replace("direction:", "").strip())
             if "fx" in parts and "fy" in parts:
                 with self._lock:
                     self._fx = parts["fx"]
                     self._fy = parts["fy"]
-                    self._magnitude = parts.get("mag", math.hypot(parts["fx"], parts["fy"]))
-                    self._direction = parts.get("dir", math.atan2(parts["fy"], parts["fx"]))
+                    # self._magnitude = parts.get("mag", math.hypot(parts["fx"], parts["fy"]))
+                    # self._direction = parts.get("dir", math.atan2(parts["fy"], parts["fx"]))
                     self._timestamp = time.time()
         except Exception as e:
             print(f"[seeeduino parse] {e} | raw: {line}")
@@ -133,14 +133,6 @@ class SeeeduinoReceiver:
                     line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self._parse_line(line)
-                #             # --- rate counter ---
-                #         self._count += 1
-                #         if self._count % 100 == 0:
-                #             elapsed = time.time() - self._t0
-                #             print(f"[seeeduino rate] {self._count/elapsed:.1f} Hz")
-                #             self._count = 0
-                #             self._t0 = time.time()
-                # else:
                     time.sleep(0.0005)
             except Exception as e:
                 if self._running:
@@ -389,20 +381,6 @@ class NOARKWindow(QMainWindow):
         self.state = STATE; self.running = True
         self._enc = None; self._lc = None; self._sending = False
         self._threads = []  # FIX 7 - track threads for join on close
-        # CSV logging setup
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self._csv_path = f"NOARK_{ts}.csv"
-        self._csv_file = open(self._csv_path, "w", newline="")
-        self._csv_writer = csv.writer(self._csv_file)
-        self._csv_writer.writerow([
-            "timestamp",
-            "noark_x", "noark_z",
-            "given_force_mag", "given_Fx", "given_Fz",
-            "T1_N", "T3_N",
-            "tau1_cmd", "tau2_cmd",
-            "lc_fx", "lc_fy", "lc_magnitude", "lc_direction",
-        ])
-
 
         self._build_ui()
         self._start_camera()
@@ -616,18 +594,6 @@ class NOARKWindow(QMainWindow):
         mfx = lc_x
         mfy = lc_y
         lc_mag = math.hypot(mfx, mfy)
-
-        # Write one CSV row per button press
-        self._csv_writer.writerow([
-            datetime.now().isoformat(),
-            f"{nx:.4f}", f"{nz:.4f}",
-            f"{fm:.3f}", f"{Fx:.3f}", f"{Fz:.3f}",
-            f"{T1:.3f}", f"{T3:.3f}",
-            f"{tau1:.4f}", f"{tau2:.4f}",
-            f"{mfx:.4f}", f"{mfy:.4f}", f"{lc_mag:.4f}",
-            f"{self._lc.lc_direction:.2f}" if self._lc else "0.00", 
-        ])
-        self._csv_file.flush()
 
     def _estop(self):
         self._sending = False
