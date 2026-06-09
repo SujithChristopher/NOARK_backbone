@@ -77,7 +77,7 @@ STATE = State()
 
 class SeeeduinoReceiver:
     """Reads load cell X/Y force data from Seeeduino over serial."""
-    def __init__(self, port="/dev/ttyACM1", baud=115200):
+    def __init__(self, port="/dev/ttyACM2", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
         self.serialInst.baudrate = baud
@@ -133,14 +133,6 @@ class SeeeduinoReceiver:
                     line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self._parse_line(line)
-                #             # --- rate counter ---
-                #         self._count += 1
-                #         if self._count % 100 == 0:
-                #             elapsed = time.time() - self._t0
-                #             print(f"[seeeduino rate] {self._count/elapsed:.1f} Hz")
-                #             self._count = 0
-                #             self._t0 = time.time()
-                # else:
                     time.sleep(0.0005)
             except Exception as e:
                 if self._running:
@@ -402,8 +394,6 @@ class NOARKWindow(QMainWindow):
             "tau1_cmd", "tau2_cmd",
             "lc_fx", "lc_fy", "lc_magnitude", "lc_direction",
         ])
-
-
         self._build_ui()
         self._start_camera()
         self._start_teensy()
@@ -415,7 +405,7 @@ class NOARKWindow(QMainWindow):
 
         self._cam_timer = QTimer(self)
         self._cam_timer.timeout.connect(self.cam_view.update_frame)
-        self._cam_timer.start(16)   # 60 Hz for camera — no need for more
+        self._cam_timer.start(10)   # 100 Hz for camera — no need for more
         # No continuous send timer — button press sends once
 
     def _build_ui(self):
@@ -708,10 +698,7 @@ class NOARKWindow(QMainWindow):
             self._lc.stop()
         for t in self._threads:
             t.join(timeout=1.0)
-        self._csv_file.close()
-        print(f'[log] saved → {self._csv_path}')
         event.accept()
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv); app.setStyle('Fusion')

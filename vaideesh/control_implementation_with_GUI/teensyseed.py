@@ -7,7 +7,7 @@ import time
 
 class SeeeduinoPort:
     """Reads load cell X/Y force data from the Seeeduino over serial."""
-    def __init__(self, port="/dev/ttyACM1", baud=115200):
+    def __init__(self, port="/dev/ttyACM2", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
         self.serialInst.baudrate = baud
@@ -99,12 +99,12 @@ class TeensyPort:
         print(self.portsList)
 
         for i in range(len(self.portsList)):
-            if self.portsList[i].startswith("/dev/ttyACM0"):
-                self.use = "/dev/ttyACM0"
+            if self.portsList[i].startswith("/dev/ttyACM1"):
+                self.use = "/dev/ttyACM1"
                 break
 
         if self.use is None:
-            raise Exception("Teensy port /dev/ttyACM0 not found!")
+            raise Exception("Teensy port /dev/ttyACM1 not found!")
 
         self.serialInst.baudrate = 115200
         self.serialInst.port = self.use
