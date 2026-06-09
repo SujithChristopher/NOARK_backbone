@@ -5,8 +5,8 @@ import threading
 from datetime import datetime
 import time
 
-class SeeeduinoPort:
-    """Reads load cell X/Y force data from the Seeeduino over serial."""
+class SeeduinoPort:
+    """Reads load cell X/Y force data from the Seeduino over serial."""
     def __init__(self, port="/dev/ttyACM1", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
@@ -18,10 +18,15 @@ class SeeeduinoPort:
         self.direction = 0.0
         self._count = 0
         self._t0 = time.time()
+        self._tare_confirmed =False
+        self.on_update = None  # callback for new force values: on_update(fx, fy)
        
 
     def _parse_line(self, line: str):
         """Parse lines like: 'avg X: 0.123\tavg Y: -0.456\tmagnitude: 0.789'"""
+        def _parse_line(self, line: str):
+            self._tare_confirmed = True
+            return 
         try:
             parts = {}
             for segment in line.split("\t"):
@@ -37,6 +42,8 @@ class SeeeduinoPort:
             if "fx" in parts and "fy" in parts:
                 self.fx = parts["fx"]
                 self.fy = parts["fy"]
+                if self.on_update:
+                    self.on_update(self.fx, self.fy)
                 # self.magnitude = parts.get("mag", 0.0)
                 # self.direction = parts.get("dir", 0.0)
         except Exception as e:
@@ -70,7 +77,18 @@ class SeeeduinoPort:
         if self.serialInst.is_open:
             self.serialInst.close()
 
+    @property
+    def tare_confirmed(self):
+        return self._tare_confirmed
 
+    def send_tare(self):
+        try:
+            if self.serialInst.is_open:
+                self._tare_confirmed = False
+                self.serialInst.write(b'T\n')
+                print("[seeeduino] tare command sent")
+        except Exception as e:
+            print(f"[seeeduino tare] {e}")
 class TeensyPort:
     def __init__(self):
         self.ports = serial.tools.list_ports.comports()
@@ -88,7 +106,8 @@ class TeensyPort:
         self.enc2 = 0
         self.enc_reset = False
         self.encoder = ""
-
+        self.on_update = None  # callback for new encoder values: on_update(enc1, enc2)
+        self.tare_confirmed = False
         for port in self.ports:
             self.portsList.append(str(port))
         print(self.portsList)
@@ -113,6 +132,7 @@ class TeensyPort:
         # Reset on Arduino
         try:
             if self.serialInst.is_open:
+                self.tare_confirmed = False
                 self.serialInst.write(b'R\n')
                 print("[RESET] sent to Teensy")
         except Exception as e:
@@ -134,6 +154,7 @@ class TeensyPort:
                     response = self.serialInst.readline()
                     self.encoder = response.decode('utf-8').strip()
                     if self.encoder.startswith("ENC_RESET"):
+                        self.tare_confirmed = True
                         print("[RESET] confirmed by Teensy")
                         continue
                     values = [v for v in self.encoder.split(",") if v]
@@ -142,6 +163,8 @@ class TeensyPort:
                         self.raw_e2 = self.parse_encoder_value(values[1])
                         self.enc1 = round(self.raw_e1 - self.offset_e1, 2)
                         self.enc2 = round(self.raw_e2 - self.offset_e2, 2)
+                        if self.on_update:
+                            self.on_update(self.enc1, self.enc2)
                 else:
                     time.sleep(0.0005)
             except Exception as e:

@@ -6,12 +6,12 @@ import cv2, numpy as np
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy)
 from PySide6.QtGui import (QPainter, QPen, QColor, QBrush, QFont, QPixmap,
-    QImage, QPolygonF, QPainterPath)
+    QImage, QPolygonF, QPainterPath, QShortcut, QKeySequence)
 from PySide6.QtCore import Qt, QTimer, QPointF, Signal, QRectF
-
+from data_logger import DataLogger
 sys.path.insert(0, '/home/sujith/Documents/NOARK_backbone')
 from camera_pose_fv import MainClass
-from vaideesh.control_implementation_with_GUI.force_validation.teensy_seed_fv import SeeeduinoPort,TeensyPort
+from vaideesh.control_implementation_with_GUI.force_validation.teensy_seed_fv import SeeduinoPort,TeensyPort
 
 CAM_TOML   = '/home/sujith/Documents/NOARK_backbone/notebooks/calibration/output/good.toml'
 TABLE_TOML = '/home/sujith/Documents/NOARK_backbone/estimator/charuco_pose/charuco_pose_picam.toml'
@@ -25,6 +25,13 @@ MR = ( 0.065, -0.707)   # right motor
 R_SPOOL = 0.033          # motor spool radius (m)
 MAX_F   = 24.0           # N
 T_MIN = 0.0
+
+
+HOLD_TIME = 5.0          # seconds to hold for recording
+ANGLE_STEPS = 7         # number of angle steps from 0 to 180 (inclusive) for recording
+
+MAG_LIST = [0.0, 5.0, 10.0, 15.0, 24.0]
+EDGE_MARGIN_DEG = 5.0
 # ── world bounds ──────────────────────────────────────────────────────────
 WX0, WX1 = -0.50,  0.50
 WZ0, WZ1 = -0.80, 0
@@ -55,8 +62,142 @@ def solve_tensions(nx, nz, Fx, Fz):
     if abs(det) < 1e-6:
         return None
     return {'T1': (Fx*u3z - Fz*u3x)/det, 'T3': (u1x*Fz - u1z*Fx)/det}
+class AutoSweep:
+    def __init__(self, parent, state, teensy, solve_tensions,
+                 P2, P4, R_SPOOL, session_dir="logs"):
+        self.state = state
+        self.teensy = teensy
+        self.solve_tensions = solve_tensions
+        self.P2 = P2
+        self.P4 = P4
+        self.R_SPOOL = R_SPOOL
+        self.session_dir = session_dir
 
+        self._steps = []
+        self._idx = -1
+        self._running = False
+        self._events = None
+        self._events_fh = None
 
+        self._timer = QTimer(parent)          # parent the timer to the window
+        self._timer.timeout.connect(self._advance)
+      
+    def start(self):
+        if self._running:
+            print("[sweep] already running"); return
+        if self.teensy is None:
+            print("[sweep] no Teensy — cannot drive motors"); return
+        with self.state.lock:
+            has_noark = self.state.has_noark
+            nx, nz = self.state.noark_x, self.state.noark_z
+        if not has_noark:
+            print("[sweep] NOARK not detected — cannot compute geometry"); return
+        self._steps = self._build_grid(nx, nz)
+        if not self._steps:
+            print("[sweep] empty grid"); return
+        self._open_events_log()
+        dur = len(self._steps) * HOLD_TIME
+        print(f"[sweep] {len(self._steps)} steps, ~{dur:.0f}s "
+              f"({len(MAG_LIST)} mag x {ANGLE_STEPS} angle)")
+        self._running = True
+        self._idx = -1
+        self._advance()
+        self._timer.start(int(HOLD_TIME * 1000))
+
+    def stop(self):
+        if not self._running:
+            return
+        self._timer.stop()
+        self._running = False
+        self._zero_torque()
+        if self._events_fh:
+            self._events_fh.flush(); self._events_fh.close(); self._events_fh = None
+        print("[sweep] stopped, torques zeroed")
+
+    @property
+    def running(self):
+        return self._running
+
+    def _build_grid(self, nx, nz):
+        def unit(dx, dz):
+            l = math.hypot(dx, dz)
+            return (dx / l, dz / l) if l > 1e-9 else (0.0, 0.0)
+        u1 = unit(self.P2[0] - nx, self.P2[1] - nz)
+        u3 = unit(self.P4[0] - nx, self.P4[1] - nz)
+        a1 = math.atan2(u1[1], u1[0])
+        a3 = math.atan2(u3[1], u3[0])
+        d = math.atan2(math.sin(a3 - a1), math.cos(a3 - a1))
+        margin = math.radians(EDGE_MARGIN_DEG)
+        a_start = a1 + math.copysign(margin, d)
+        a_end   = a3 - math.copysign(margin, d)
+        span = math.atan2(math.sin(a_end - a_start), math.cos(a_end - a_start))
+        if ANGLE_STEPS == 1:
+            angles = [a_start + span / 2.0]
+        else:
+            angles = [a_start + span * i / (ANGLE_STEPS - 1)
+                      for i in range(ANGLE_STEPS)]
+        return [(theta, m) for theta in angles for m in MAG_LIST]
+
+    def _advance(self):
+        self._idx += 1
+        if self._idx >= len(self._steps):
+            print("[sweep] grid complete"); self.stop(); return
+        theta, mag = self._steps[self._idx]
+        dx, dz = math.cos(theta), math.sin(theta)
+        with self.state.lock:
+            has_noark = self.state.has_noark
+            nx, nz = self.state.noark_x, self.state.noark_z
+        if not has_noark:
+            print("[sweep] NOARK lost mid-sweep — aborting"); self.stop(); return
+        Fx, Fz = mag * dx, mag * dz
+        sol = self.solve_tensions(nx, nz, Fx, Fz)
+        feasible = sol is not None
+        T1 = T3 = tau1 = tau2 = 0.0
+        if feasible:
+            T1 = max(0.0, sol["T1"]); T3 = max(0.0, sol["T3"])
+        with self.state.lock:
+            self.state.dir_x = dx; self.state.dir_z = dz
+            self.state.force_mag = mag if feasible else 0.0
+        if feasible:
+            tau1 = -(T1 * self.R_SPOOL); tau2 = T3 * self.R_SPOOL
+            self._send_torque(tau1, tau2)
+        else:
+            self._zero_torque()
+        ang_deg = math.degrees(theta)
+        print(f"[sweep] {self._idx+1}/{len(self._steps)}  "
+              f"ang={ang_deg:6.1f}  mag={mag:5.1f}N  {'OK' if feasible else 'SKIP'}")
+        self._log_event(self._idx, ang_deg, mag, T1, T3, tau1, tau2, feasible)
+
+    def _send_torque(self, tau1, tau2):
+        try:
+            self.teensy.serialInst.write(f"{tau1:.3f},{tau2:.3f}\n".encode())
+        except Exception as e:
+            print(f"[sweep] torque write failed: {e} — aborting"); self.stop()
+
+    def _zero_torque(self):
+        try:
+            if self.teensy and self.teensy.serialInst.is_open:
+                self.teensy.serialInst.write(b"0.000,0.000\n")
+        except Exception:
+            pass
+
+    def _open_events_log(self):
+        os.makedirs(self.session_dir, exist_ok=True)
+        tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(self.session_dir, f"sweep_targets_{tag}.csv")
+        self._events_fh = open(path, "w", newline="")
+        self._events = csv.writer(self._events_fh)
+        self._events.writerow(["timestamp", "step", "target_angle_deg",
+            "target_mag_N", "T1", "T3", "tau1", "tau2", "feasible"])
+        print(f"[sweep] targets → {path}")
+
+    def _log_event(self, step, ang, mag, T1, T3, tau1, tau2, feasible):
+        if not self._events:
+            return
+        self._events.writerow([f"{time.time():.6f}", step, f"{ang:.3f}",
+            f"{mag:.3f}", f"{T1:.4f}", f"{T3:.4f}", f"{tau1:.4f}",
+            f"{tau2:.4f}", int(feasible)])
+        self._events_fh.flush()
 # ─────────────────────────────────────────────────────────────────────────
 # Shared state (thread-safe via lock)
 # ─────────────────────────────────────────────────────────────────────────
@@ -75,8 +216,8 @@ class State:
 
 STATE = State()
 
-class SeeeduinoReceiver:
-    """Reads load cell X/Y force data from Seeeduino over serial."""
+class SeeduinoReceiver:
+    """Reads load cell X/Y force data from Seeduino over serial."""
     def __init__(self, port="/dev/ttyACM1", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
@@ -88,12 +229,15 @@ class SeeeduinoReceiver:
         self._direction = 0.0
         self._timestamp = 0.0
         self._running = True
+        self._tare_confirmed = False
          # Find sampling frequency
         self._count = 0
         self._t0 = time.time()
     def send_tare(self):
         try:
             if self.serialInst.is_open:
+                with self._lock:
+                    self._tare_confirmed = False # reset before sending
                 self.serialInst.write(b'T\n')
                 print("[seeeduino] tare command sent")
         except Exception as e:
@@ -101,6 +245,10 @@ class SeeeduinoReceiver:
 
     def _parse_line(self, line: str):
         """Parse: 'avg X: 0.123\tavg Y: -0.456\tmagnitude: 0.789'"""
+        if  line.startswith("TARE DONE"): #  firmware must send this
+            with self._lock:
+                self._tare_confirmed = True
+            return
         try:
             parts = {}
             for seg in line.split("\t"):
@@ -127,9 +275,7 @@ class SeeeduinoReceiver:
         while self._running:
             try:
                 waiting = self.serialInst.in_waiting
-                if waiting > 500:
-                    self.serialInst.reset_input_buffer()
-                elif waiting > 0:
+                if waiting > 0:
                     line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self._parse_line(line)
@@ -145,7 +291,10 @@ class SeeeduinoReceiver:
     @property
     def lc_y(self):
         with self._lock: return self._fy
-
+    @property
+    def tare_confirmed(self):
+        with self._lock:
+            return self._tare_confirmed
     @property
     def lc_direction(self):
         with self._lock: return self._direction
@@ -381,10 +530,23 @@ class NOARKWindow(QMainWindow):
         self.state = STATE; self.running = True
         self._enc = None; self._lc = None; self._sending = False
         self._threads = []  # FIX 7 - track threads for join on close
+        self._logger = DataLogger(session_dir="logs")
+        self._rec_state = "idle"
+        self._arm_t0 = 0.0
+
+        self._arm_timer = QTimer(self)
+        self._arm_timer.timeout.connect(self._check_arm)
+
+        QShortcut(QKeySequence("S"), self, activated=self._begin_arming)
+        QShortcut(QKeySequence("X"), self, activated=self._stop_recording)
+       
 
         self._build_ui()
         self._start_camera()
         self._start_teensy()
+        self._sweep = AutoSweep(self, self.state, self._enc, solve_tensions,
+                        P2, P4, R_SPOOL, session_dir="logs")
+        QShortcut(QKeySequence("A"), self, activated=self._sweep.start)
         self._start_loadcell()
 
         self._timer = QTimer(self)
@@ -540,6 +702,12 @@ class NOARKWindow(QMainWindow):
             self.v_err_mag.setStyleSheet(f'color:{mc};')
             self.v_err_dir.setStyleSheet(f'color:{dc};')
         self.workspace.update()
+        if sol and has_noark:
+            T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
+            tau1 = -(T1*R_SPOOL); tau2 = T3*R_SPOOL
+        else:
+            T1 = T3 = tau1 = tau2 = 0.0
+        self._logger.log_gui(fm,math.degrees(math.atan2(fm*dir_z, fm*dir_x)), T1, T3, tau1, tau2)
         # self.cam_view.update_frame()
 
     def _on_direction(self, dx, dz):
@@ -558,9 +726,53 @@ class NOARKWindow(QMainWindow):
         with self.state.lock:
             self.state.lc_offset_x = 0.0
             self.state.lc_offset_y = 0.0
-        # Send tare command to Seeeduino firmware
+        # Send tare command to Seeduino firmware
         if self._lc:
             self._lc.send_tare()
+    def _begin_arming(self):
+        if self._rec_state != "idle":
+            print(f"[arm] ignored — already {self._rec_state}")
+            return
+        if not self._enc or not self._lc:
+            print("[arm] devices not connected — cannot arm")
+            return
+
+        print("[arm] taring encoders + load cell…")
+        # zero Pi-side load-cell offsets too
+        with self.state.lock:
+            self.state.lc_offset_x = 0.0
+            self.state.lc_offset_y = 0.0
+
+        self._enc.encoder_reset()   # sends 'R\n', resets its confirm flag
+        self._lc.send_tare()        # sends 'T\n', resets its confirm flag
+
+        self._rec_state = "arming"
+        self._arm_t0 = time.time()
+        self._arm_timer.start(10)   # poll at 100 Hz
+
+    def _check_arm(self):
+        if self._rec_state != "arming":
+            self._arm_timer.stop()
+            return
+
+        enc_ok = bool(getattr(self._enc, "tare_confirmed", False))
+        lc_ok  = bool(self._lc.tare_confirmed)
+
+        if enc_ok and lc_ok:
+            self._arm_timer.stop()
+            self._logger.start()
+            self._rec_state = "recording"
+            print("[arm] both confirmed → RECORDING")
+        elif time.time() - self._arm_t0 > 3.0:
+            self._arm_timer.stop()
+            self._rec_state = "idle"
+            print(f"[arm] TIMEOUT — enc_ok={enc_ok} lc_ok={lc_ok}. Not recording.")
+
+    def _stop_recording(self):
+        if self._rec_state == "recording":
+            self._logger._active = False   # stop logging, keep files open
+            self._rec_state = "idle"
+            print("[arm] recording stopped")
 
     def _toggle_send(self):
         s = self.state
@@ -596,6 +808,8 @@ class NOARKWindow(QMainWindow):
         lc_mag = math.hypot(mfx, mfy)
 
     def _estop(self):
+        if getattr(self, "_sweep", None):
+            self._sweep.stop()
         self._sending = False
         self.btn_send.setText('send to Teensy')
         with self.state.lock:
@@ -619,7 +833,9 @@ class NOARKWindow(QMainWindow):
                         if pos is not None:
                             self.state.noark_x = float(pos[0])
                             self.state.noark_z = float(pos[2])
+                            self.logger.log_camera(float(pos[0]), float(pos[2]))
                         self.state.video_frame = frame
+                        
                 except Exception as e:
                     print(f'[cam] {e}')
                     time.sleep(0.05)
@@ -630,6 +846,7 @@ class NOARKWindow(QMainWindow):
         try:
             self._enc = TeensyPort()
             self._enc.start()
+            self._enc.on_update = lambda e1, e2: self._logger.log_encoder(e1, e2)
             # Auto-tare after connection settles
             time.sleep(2.0)   # wait for serial to stabilise
             self._enc.encoder_reset()
@@ -648,8 +865,13 @@ class NOARKWindow(QMainWindow):
 
     def _start_loadcell(self):
         try:
-            self._lc = SeeeduinoReceiver(port=SEED_PORT)
+            self._lc = SeeduinoReceiver(port=SEED_PORT)
             self._lc.start()
+            original_parse = self._lc._parse_line
+            def _patched_parse(line):
+                original_parse(line)
+                self._logger.log_loadcell(self._lc.lc_x, self._lc.lc_y)
+            self._lc._parse_line = _patched_parse
         except Exception as e:
             print(f'[loadcell] {e}'); self._lc = None; return
         def loop():
@@ -674,8 +896,9 @@ class NOARKWindow(QMainWindow):
             self._lc.stop()
         for t in self._threads:
             t.join(timeout=1.0)
-        self._csv_file.close()
-        print(f'[log] saved → {self._csv_path}')
+        self._logger.stop()
+        if getattr(self, "_sweep", None):
+            self._sweep.stop()
         event.accept()
 
 
