@@ -77,7 +77,7 @@ STATE = State()
 
 class SeeeduinoReceiver:
     """Reads load cell X/Y force data from Seeeduino over serial."""
-    def __init__(self, port="/dev/ttyACM2", baud=115200):
+    def __init__(self, port="/dev/ttyACM1", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
         self.serialInst.baudrate = baud
