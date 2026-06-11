@@ -63,7 +63,7 @@ def solve_tensions(nx, nz, Fx, Fz):
     return {'T1': (Fx*u3z - Fz*u3x)/det, 'T3': (u1x*Fz - u1z*Fx)/det}
 class AutoSweep:
     def __init__(self, parent, state, teensy, solve_tensions,
-                 P2, P4, R_SPOOL, session_dir="logs"):
+                 P2, P4, R_SPOOL, session_dir="csv_data"):
         self.state = state
         self.teensy = teensy
         self.solve_tensions = solve_tensions
@@ -182,8 +182,7 @@ class AutoSweep:
 
     def _open_events_log(self):
         os.makedirs(self.session_dir, exist_ok=True)
-        tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(self.session_dir, f"sweep_targets_{tag}.csv")
+        path = os.path.join(self.session_dir, "sweep_targets.csv")
         self._events_fh = open(path, "w", newline="")
         self._events = csv.writer(self._events_fh)
         self._events.writerow(["timestamp", "step", "target_angle_deg",
@@ -193,7 +192,7 @@ class AutoSweep:
     def _log_event(self, step, ang, mag, T1, T3, tau1, tau2, feasible):
         if not self._events:
             return
-        self._events.writerow([f"{time.time():.6f}", step, f"{ang:.3f}",
+        self._events.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"), step, f"{ang:.3f}",
             f"{mag:.3f}", f"{T1:.4f}", f"{T3:.4f}", f"{tau1:.4f}",
             f"{tau2:.4f}", int(feasible)])
         self._events_fh.flush()
@@ -243,29 +242,18 @@ class SeeduinoReceiver:
             print(f"[seeeduino tare] {e}")
 
     def _parse_line(self, line: str):
-        """Parse: 'avg X: 0.123\tavg Y: -0.456\tmagnitude: 0.789'"""
-        if  line.startswith("TARE DONE"): #  firmware must send this
+        """Parse: '0.123,-0.456'"""
+        if line.startswith("TARE DONE"):
             with self._lock:
                 self._tare_confirmed = True
             return
         try:
-            parts = {}
-            for seg in line.split("\t"):
-                seg = seg.strip()
-                if seg.startswith("X:"):
-                    parts["fx"] = float(seg.replace("X:", "").strip())
-                elif seg.startswith("Y:"):
-                    parts["fy"] = float(seg.replace("Y:", "").strip())
-                # elif seg.startswith("magnitude:"):
-                #     parts["mag"] = float(seg.replace("magnitude:", "").strip())
-                # elif seg.startswith("direction:"):
-                #     parts["dir"] = float(seg.replace("direction:", "").strip())
-            if "fx" in parts and "fy" in parts:
+            parts = line.split(",")
+            if len(parts) == 2:
+                fx, fy = float(parts[0]), float(parts[1])
                 with self._lock:
-                    self._fx = parts["fx"]
-                    self._fy = parts["fy"]
-                    # self._magnitude = parts.get("mag", math.hypot(parts["fx"], parts["fy"]))
-                    # self._direction = parts.get("dir", math.atan2(parts["fy"], parts["fx"]))
+                    self._fx = fx
+                    self._fy = fy
                     self._timestamp = time.time()
         except Exception as e:
             print(f"[seeeduino parse] {e} | raw: {line}")
@@ -529,7 +517,7 @@ class NOARKWindow(QMainWindow):
         self.state = STATE; self.running = True
         self._enc = None; self._lc = None; self._sending = False
         self._threads = []  # FIX 7 - track threads for join on close
-        self._logger = DataLogger(session_dir="logs")
+        self._logger = DataLogger(base_dir="csv_data")
         self._rec_state = "idle"
         self._arm_t0 = 0.0
 
@@ -544,13 +532,17 @@ class NOARKWindow(QMainWindow):
         self._start_camera()
         self._start_teensy()
         self._sweep = AutoSweep(self, self.state, self._enc, solve_tensions,
-                        P2, P4, R_SPOOL, session_dir="logs")
+                        P2, P4, R_SPOOL, session_dir=self._logger.session_dir)
         QShortcut(QKeySequence("A"), self, activated=self._sweep.start)
         self._start_loadcell()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(10)
+
+        self._log_timer = QTimer(self)
+        self._log_timer.timeout.connect(self._log_tick)
+        self._log_timer.start(5)    # 200 Hz target for data logging, independent of paint
 
         self._cam_timer = QTimer(self)
         self._cam_timer.timeout.connect(self.cam_view.update_frame)
@@ -701,13 +693,23 @@ class NOARKWindow(QMainWindow):
             self.v_err_mag.setStyleSheet(f'color:{mc};')
             self.v_err_dir.setStyleSheet(f'color:{dc};')
         self.workspace.update()
+        # self.cam_view.update_frame()
+
+    def _log_tick(self):
+        s = self.state
+        with s.lock:
+            has_noark = s.has_noark
+            nx, nz = s.noark_x, s.noark_z
+            dir_x, dir_z = s.dir_x, s.dir_z
+            fm = s.force_mag
+        sol = solve_tensions(nx, nz, fm * dir_x, fm * dir_z)
         if sol and has_noark:
             T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
-            tau1 = -(T1*R_SPOOL); tau2 = T3*R_SPOOL
+            tau1 = -(T1 * R_SPOOL); tau2 = T3 * R_SPOOL
         else:
             T1 = T3 = tau1 = tau2 = 0.0
-        self._logger.log_gui(fm,math.degrees(math.atan2(fm*dir_z, fm*dir_x)), T1, T3, tau1, tau2)
-        # self.cam_view.update_frame()
+        self._logger.log_gui(fm, math.degrees(math.atan2(fm * dir_z, fm * dir_x)),
+                             T1, T3, tau1, tau2)
 
     def _on_direction(self, dx, dz):
         with self.state.lock:
@@ -762,7 +764,7 @@ class NOARKWindow(QMainWindow):
             self._logger.start()
             self._rec_state = "recording"
             print("[arm] both confirmed → RECORDING")
-        elif time.time() - self._arm_t0 > 3.0:
+        elif time.time() - self._arm_t0 > 5.0:
             self._arm_timer.stop()
             self._rec_state = "idle"
             print(f"[arm] TIMEOUT — enc_ok={enc_ok} lc_ok={lc_ok}. Not recording.")
@@ -888,6 +890,7 @@ class NOARKWindow(QMainWindow):
     def closeEvent(self, event):
         self.running = False
         self._timer.stop()
+        self._log_timer.stop()
         if self._enc:
             try: self._enc.serialInst.write(b'0.000,0.000\n')  # FIX 1
             except Exception: pass

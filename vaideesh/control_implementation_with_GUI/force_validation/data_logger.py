@@ -35,7 +35,6 @@ import csv
 import os
 import queue
 import threading
-import time
 from datetime import datetime
 
 
@@ -77,30 +76,36 @@ class _StreamWriter:
 # ── public logger ─────────────────────────────────────────────────────────────
 
 class DataLogger:
-    def __init__(self, session_dir: str = "logs"):
-        os.makedirs(session_dir, exist_ok=True)
+    def __init__(self, base_dir: str = "csv_data"):
         tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = os.path.join(base_dir, f"session_{tag}")
+        os.makedirs(session_dir, exist_ok=True)
+        self.session_dir = session_dir
 
         self._cam  = _StreamWriter(
-            os.path.join(session_dir, f"camera_{tag}.csv"),
+            os.path.join(session_dir, "camera.csv"),
             ["timestamp", "pos_x", "pos_z"]
         )
-        self._enc  = _StreamWriter(
-            os.path.join(session_dir, f"encoder_{tag}.csv"),
-            ["timestamp", "enc1", "enc2"]
-        )
+        # self._enc  = _StreamWriter(
+        #     os.path.join(session_dir, "encoder.csv"),
+        #     ["timestamp", "enc1", "enc2"]
+        # )
         self._lc   = _StreamWriter(
-            os.path.join(session_dir, f"loadcell_{tag}.csv"),
+            os.path.join(session_dir, "loadcell.csv"),
             ["timestamp", "Fx", "Fy"]
         )
         self._gui  = _StreamWriter(
-            os.path.join(session_dir, f"gui_{tag}.csv"),
+            os.path.join(session_dir, "gui.csv"),
             ["timestamp", "magnitude", "direction",
              "T1_left", "T3_right", "tau1", "tau2"]
         )
         self._active = False
         self._cam_logged = False
-        print(f"[logger] session → {session_dir}/*_{tag}.csv")
+        print(f"[logger] session → {session_dir}/")
+
+    @staticmethod
+    def _ts() -> str:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
     # ── control ──────────────────────────────────────────────────────────────
 
@@ -111,7 +116,7 @@ class DataLogger:
     def stop(self):
         self._active = False
         self._cam.stop()
-        self._enc.stop()
+        # self._enc.stop()
         self._lc.stop()
         self._gui.stop()
         print("[logger] recording stopped, files closed")
@@ -122,19 +127,21 @@ class DataLogger:
         """Writes exactly one row — the reference position."""
         if not self._active or self._cam_logged:
             return
-        self._cam.log([f"{time.time():.6f}", f"{pos_x:.6f}", f"{pos_z:.6f}"])
+        self._cam.log([self._ts(), f"{pos_x:.6f}", f"{pos_z:.6f}"])
         self._cam_logged = True
+
     def log_encoder(self, enc1: float, enc2: float):
-        """Call every time Teensy serial reader updates enc values."""
-        if not self._active:
-            return
-        self._enc.log([f"{time.time():.6f}", f"{enc1:.6f}", f"{enc2:.6f}"])
+        """Teensy encoder logging — disabled for now."""
+        # if not self._active:
+        #     return
+        # self._enc.log([self._ts(), f"{enc1:.6f}", f"{enc2:.6f}"])
+        pass
 
     def log_loadcell(self, fx: float, fy: float):
         """Call inside SeeduinoReceiver._parse_line after each successful parse."""
         if not self._active:
             return
-        self._lc.log([f"{time.time():.6f}", f"{fx:.6f}", f"{fy:.6f}"])
+        self._lc.log([self._ts(), f"{fx:.6f}", f"{fy:.6f}"])
 
     def log_gui(self, magnitude: float, direction: float,
                 T1: float, T3: float, tau1: float, tau2: float):
@@ -142,7 +149,7 @@ class DataLogger:
         if not self._active:
             return
         self._gui.log([
-            f"{time.time():.6f}",
+            self._ts(),
             f"{magnitude:.6f}", f"{direction:.6f}",
             f"{T1:.6f}",        f"{T3:.6f}",
             f"{tau1:.6f}",      f"{tau2:.6f}",

@@ -1,8 +1,6 @@
-import csv
 import serial
 import serial.tools.list_ports
 import threading
-from datetime import datetime
 import time
 
 class SeeduinoPort:
@@ -23,27 +21,15 @@ class SeeduinoPort:
        
 
     def _parse_line(self, line: str):
-        """Parse lines like: 'avg X: 0.123\tavg Y: -0.456\tmagnitude: 0.789'"""
+        """Parse: '0.123,-0.456'"""
         self._tare_confirmed = True
         try:
-            parts = {}
-            for segment in line.split("\t"):
-                segment = segment.strip()
-                if segment.startswith("X:"):
-                    parts["fx"] = float(segment.replace("X:", "").strip())
-                elif segment.startswith("Y:"):
-                    parts["fy"] = float(segment.replace("Y:", "").strip())
-                # elif segment.startswith("magnitude:"):
-                #     parts["mag"] = float(segment.replace("magnitude:", "").strip())
-                # elif segment.startswith("direction:"):
-                #     parts["dir"] = float(segment.replace("direction:", "").strip())
-            if "fx" in parts and "fy" in parts:
-                self.fx = parts["fx"]
-                self.fy = parts["fy"]
+            parts = line.split(",")
+            if len(parts) == 2:
+                self.fx = float(parts[0])
+                self.fy = float(parts[1])
                 if self.on_update:
                     self.on_update(self.fx, self.fy)
-                # self.magnitude = parts.get("mag", 0.0)
-                # self.direction = parts.get("dir", 0.0)
         except Exception as e:
             print(f"[seeeduino parse] {e} | raw: {line}")
 
@@ -91,6 +77,7 @@ class TeensyPort:
     def __init__(self):
         self.ports = serial.tools.list_ports.comports()
         self.serialInst = serial.Serial()
+        self.serialInst.timeout = 0.1   # 100 ms read timeout — prevents readline() from blocking forever
         self.portsList = []
         self.use = None
         self.running = True
@@ -105,7 +92,8 @@ class TeensyPort:
         self.enc_reset = False
         self.encoder = ""
         self.on_update = None  # callback for new encoder values: on_update(enc1, enc2)
-        self.tare_confirmed = False
+        self._tare_event = threading.Event()
+        self._tare_event.clear()
         for port in self.ports:
             self.portsList.append(str(port))
         print(self.portsList)
@@ -127,44 +115,46 @@ class TeensyPort:
         except (ValueError, TypeError):
             return 0.0
     def encoder_reset(self):
-        # Reset on Arduino
-        try:
-            if self.serialInst.is_open:
-                self.tare_confirmed = False
-                self.serialInst.write(b'R\n')
-                print("[RESET] sent to Teensy")
-        except Exception as e:
-            print(f"[RESET] serial error: {e}")
+        self._tare_event.clear()
         # Reset on Pi side too
         self.offset_e1 = self.raw_e1
         self.offset_e2 = self.raw_e2
         self.enc_reset = False
         print(f"[RESET] Pi-side zeroed at Raw: {self.offset_e1}, {self.offset_e2}")
+        try:
+            if self.serialInst.is_open:
+                self.serialInst.reset_input_buffer()   # discard stale encoder backlog
+                self.serialInst.write(b'R\n')
+                self.serialInst.flush()
+                print("[RESET] sent to Teensy")
+        except Exception as e:
+            print(f"[RESET] serial error: {e}")
 
     def read_serial(self):
         while self.running:
             try:
-                waiting = self.serialInst.in_waiting
-                if waiting > 0:
-                    response = self.serialInst.readline()
-                    self.encoder = response.decode('utf-8').strip()
-                    if self.encoder.startswith("ENC_RESET"):
-                        self.tare_confirmed = True
-                        print("[RESET] confirmed by Teensy")
-                        continue
-                    values = [v for v in self.encoder.split(",") if v]
-                    if len(values) >= 2:
-                        self.raw_e1 = self.parse_encoder_value(values[0])
-                        self.raw_e2 = self.parse_encoder_value(values[1])
-                        self.enc1 = round(self.raw_e1 - self.offset_e1, 2)
-                        self.enc2 = round(self.raw_e2 - self.offset_e2, 2)
-                        if self.on_update:
-                            self.on_update(self.enc1, self.enc2)
-                else:
-                    time.sleep(0.0005)
+                line = self.serialInst.readline().decode('utf-8', errors='ignore').strip()
+                if not line:
+                    continue
+                if line.startswith("ENC_RESET"):
+                    self._tare_event.set()
+                    print("[RESET] confirmed by Teensy")
+                    continue
+                values = [v for v in line.split(",") if v]
+                if len(values) >= 2:
+                    self.raw_e1 = self.parse_encoder_value(values[0])
+                    self.raw_e2 = self.parse_encoder_value(values[1])
+                    self.enc1 = round(self.raw_e1 - self.offset_e1, 2)
+                    self.enc2 = round(self.raw_e2 - self.offset_e2, 2)
+                    if self.on_update:
+                        self.on_update(self.enc1, self.enc2)
             except Exception as e:
                 if self.running:
                     print(f"\r[ERROR] {e}")
+
+    @property
+    def tare_confirmed(self):
+        return self._tare_event.is_set()
 
     def start(self):
         try:

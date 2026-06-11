@@ -79,7 +79,7 @@ void setup() {
   SPI.begin();
   SPI.beginTransaction(SPISettings(5000000, MSBFIRST, SPI_MODE1));
   writeRegister0_fast(0x02, 0x48);
-  writeRegister0_fast(0x03, 0x01);
+  writeRegister0_fast(0x03, 0xB0);  // DRATE = 2000 SPS
   writeRegister0_fast(0x05, 0x00);
   writeRegister0_fast(0x06, 0x10);
   writeRegister0_fast(0x10, 0x05);
@@ -103,9 +103,7 @@ void loop() {
   F_measured_x = weight1;
   F_measured_y = weight2;
 
-  Serial.print("X: ");
   Serial.print(F_measured_x, 3);
-  Serial.print("\t");
-  Serial.print("Y: ");
+  Serial.print(",");
   Serial.println(F_measured_y, 3);
 }
