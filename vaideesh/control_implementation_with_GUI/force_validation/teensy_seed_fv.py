@@ -3,9 +3,39 @@ import serial.tools.list_ports
 import threading
 import time
 
+# ── USB identity constants ────────────────────────────────────────────────────
+_TEENSY_VID, _TEENSY_PID = 0x16C0, 0x0483   # Teensyduino USB Serial
+_XIAO_VID                = 0x2886            # Seeed XIAO family (any PID)
+
+def _find_port(vid, pid=None, mfr_hint=None):
+    for p in serial.tools.list_ports.comports():
+        if vid and p.vid == vid and (pid is None or p.pid == pid):
+            return p.device
+        if mfr_hint and mfr_hint.lower() in (p.manufacturer or "").lower():
+            return p.device
+    return None
+
+def find_teensy_port():
+    port = _find_port(_TEENSY_VID, _TEENSY_PID) or _find_port(None, mfr_hint="Teensyduino")
+    if port is None:
+        raise RuntimeError("Teensy not found — is it plugged in?")
+    print(f"[auto-detect] Teensy → {port}")
+    return port
+
+def find_seeed_port():
+    port = _find_port(_XIAO_VID) or _find_port(None, mfr_hint="Seeed")
+    if port is None:
+        raise RuntimeError("Seeed XIAO not found — is it plugged in?")
+    print(f"[auto-detect] Seeed XIAO → {port}")
+    return port
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 class SeeduinoPort:
     """Reads load cell X/Y force data from the Seeduino over serial."""
-    def __init__(self, port="/dev/ttyACM1", baud=115200):
+    def __init__(self, port=None, baud=115200):
+        if port is None:
+            port = find_seeed_port()
         self.serialInst = serial.Serial()
         self.serialInst.port = port
         self.serialInst.baudrate = baud
@@ -75,11 +105,8 @@ class SeeduinoPort:
             print(f"[seeeduino tare] {e}")
 class TeensyPort:
     def __init__(self):
-        self.ports = serial.tools.list_ports.comports()
         self.serialInst = serial.Serial()
-        self.serialInst.timeout = 0.1   # 100 ms read timeout — prevents readline() from blocking forever
-        self.portsList = []
-        self.use = None
+        self.serialInst.timeout = 0.1
         self.running = True
         self.e1 = 0
         self.e2 = 0
@@ -91,21 +118,11 @@ class TeensyPort:
         self.enc2 = 0
         self.enc_reset = False
         self.encoder = ""
-        self.on_update = None  # callback for new encoder values: on_update(enc1, enc2)
+        self.on_update = None
         self._tare_event = threading.Event()
         self._tare_event.clear()
-        for port in self.ports:
-            self.portsList.append(str(port))
-        print(self.portsList)
 
-        for i in range(len(self.portsList)):
-            if self.portsList[i].startswith("/dev/ttyACM0"):
-                self.use = "/dev/ttyACM0"
-                break
-
-        if self.use is None:
-            raise Exception("Teensy port /dev/ttyACM0 not found!")
-
+        self.use = find_teensy_port()
         self.serialInst.baudrate = 115200
         self.serialInst.port = self.use
 

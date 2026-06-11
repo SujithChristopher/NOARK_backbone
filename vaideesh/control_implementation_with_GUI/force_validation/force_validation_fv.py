@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QTimer, QPointF, Signal, QRectF
 from data_logger import DataLogger
 sys.path.insert(0, '/home/sujith/Documents/NOARK_backbone')
 from camera_pose_fv import MainClass
-from vaideesh.control_implementation_with_GUI.force_validation.teensy_seed_fv import SeeduinoPort,TeensyPort
+from vaideesh.control_implementation_with_GUI.force_validation.teensy_seed_fv import SeeduinoPort, TeensyPort, find_seeed_port
 
 CAM_TOML   = '/home/sujith/Documents/NOARK_backbone/notebooks/calibration/output/good.toml'
 TABLE_TOML = '/home/sujith/Documents/NOARK_backbone/estimator/charuco_pose/charuco_pose_picam.toml'
@@ -35,7 +35,6 @@ EDGE_MARGIN_DEG = 5.0
 # ── world bounds ──────────────────────────────────────────────────────────
 WX0, WX1 = -0.50,  0.50
 WZ0, WZ1 = -0.80, 0
-SEED_PORT = "/dev/ttyACM1"
 C_BG=QColor('#0d0d0d');
 C_GRID=QColor('#1e1e1e'); 
 C_RAIL=QColor('#3a3a3a')
@@ -216,26 +215,23 @@ STATE = State()
 
 class SeeduinoReceiver:
     """Reads load cell X/Y force data from Seeduino over serial."""
-    def __init__(self, port="/dev/ttyACM1", baud=115200):
+    def __init__(self, port=None, baud=115200):
+        if port is None:
+            port = find_seeed_port()
         self.serialInst = serial.Serial()
         self.serialInst.port = port
         self.serialInst.baudrate = baud
         self._lock = threading.Lock()
         self._fx = 0.0
         self._fy = 0.0
-        self._magnitude = 0.0
-        self._direction = 0.0
         self._timestamp = 0.0
         self._running = True
-        self._tare_confirmed = False
-         # Find sampling frequency
-        self._count = 0
-        self._t0 = time.time()
+        self._tare_event = threading.Event()   # same pattern as TeensyPort
+
     def send_tare(self):
         try:
             if self.serialInst.is_open:
-                with self._lock:
-                    self._tare_confirmed = False # reset before sending
+                self._tare_event.clear()
                 self.serialInst.write(b'T\n')
                 print("[seeeduino] tare command sent")
         except Exception as e:
@@ -244,8 +240,8 @@ class SeeduinoReceiver:
     def _parse_line(self, line: str):
         """Parse: '0.123,-0.456'"""
         if line.startswith("TARE DONE"):
-            with self._lock:
-                self._tare_confirmed = True
+            print("[seeeduino] TARE DONE received")
+            self._tare_event.set()
             return
         try:
             parts = line.split(",")
@@ -266,6 +262,7 @@ class SeeduinoReceiver:
                     line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self._parse_line(line)
+                else:
                     time.sleep(0.0005)
             except Exception as e:
                 if self._running:
@@ -278,13 +275,10 @@ class SeeduinoReceiver:
     @property
     def lc_y(self):
         with self._lock: return self._fy
+
     @property
     def tare_confirmed(self):
-        with self._lock:
-            return self._tare_confirmed
-    @property
-    def lc_direction(self):
-        with self._lock: return self._direction
+        return self._tare_event.is_set()
 
     @property
     def lc_z(self):
@@ -293,7 +287,7 @@ class SeeduinoReceiver:
     def is_stale(self):
         with self._lock:
             ts = self._timestamp
-        return ts == 0.0 or (time.time() - ts) * 1000 > 100  # 100 ms stale threshold
+        return ts == 0.0 or (time.time() - ts) * 1000 > 100
 
     def start(self):
         try:
@@ -533,20 +527,19 @@ class NOARKWindow(QMainWindow):
         self._start_teensy()
         self._sweep = AutoSweep(self, self.state, self._enc, solve_tensions,
                         P2, P4, R_SPOOL, session_dir=self._logger.session_dir)
-        QShortcut(QKeySequence("A"), self, activated=self._sweep.start)
         self._start_loadcell()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
-        self._timer.start(10)
+        self._timer.start(33)       # ~30 Hz display — leaves main thread time for log timer
 
         self._log_timer = QTimer(self)
         self._log_timer.timeout.connect(self._log_tick)
-        self._log_timer.start(5)    # 200 Hz target for data logging, independent of paint
+        self._log_timer.start(5)    # 200 Hz target, independent of paint
 
         self._cam_timer = QTimer(self)
         self._cam_timer.timeout.connect(self.cam_view.update_frame)
-        self._cam_timer.start(10)   # 100 Hz for camera — no need for more
+        self._cam_timer.start(33)   # 30 Hz camera display
         # No continuous send timer — button press sends once
 
     def _build_ui(self):
@@ -757,13 +750,14 @@ class NOARKWindow(QMainWindow):
             return
 
         enc_ok = bool(getattr(self._enc, "tare_confirmed", False))
-        lc_ok  = bool(self._lc.tare_confirmed)
+        lc_ok  = self._lc is not None and self._lc.tare_confirmed
 
         if enc_ok and lc_ok:
             self._arm_timer.stop()
             self._logger.start()
             self._rec_state = "recording"
-            print("[arm] both confirmed → RECORDING")
+            print("[arm] both confirmed → RECORDING, starting sweep")
+            self._sweep.start()
         elif time.time() - self._arm_t0 > 5.0:
             self._arm_timer.stop()
             self._rec_state = "idle"
@@ -866,7 +860,7 @@ class NOARKWindow(QMainWindow):
 
     def _start_loadcell(self):
         try:
-            self._lc = SeeduinoReceiver(port=SEED_PORT)
+            self._lc = SeeduinoReceiver()
             self._lc.start()
             original_parse = self._lc._parse_line
             def _patched_parse(line):

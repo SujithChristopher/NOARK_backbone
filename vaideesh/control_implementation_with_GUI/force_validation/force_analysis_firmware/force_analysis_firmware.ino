@@ -36,8 +36,9 @@ static inline void ads0_stop()  { digitalWrite(CS0_PIN, LOW); SPI.transfer((uint
 static inline int32_t readConv0_24b_signext(int pin1, int pin2) {
   selectDiff0(pin1, pin2);
   digitalWrite(CS0_PIN, LOW);
-  while (digitalRead(DRDY0_PIN) == LOW){}
-  while (digitalRead(DRDY0_PIN) != LOW){}
+  unsigned long t0 = millis();
+  while (digitalRead(DRDY0_PIN) == LOW)  { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
+  while (digitalRead(DRDY0_PIN) != LOW)  { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
   SPI.transfer((uint8_t)0x12);
   (void)SPI.transfer((uint8_t)0x00);
   uint8_t b2 = SPI.transfer((uint8_t)0x00);
@@ -84,7 +85,7 @@ void setup() {
   writeRegister0_fast(0x06, 0x10);
   writeRegister0_fast(0x10, 0x05);
   ads0_start();
-  doTare();
+  // doTare() removed from setup — Pi sends 'T' when ready
 }
 
 void loop() {
