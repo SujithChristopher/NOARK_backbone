@@ -34,8 +34,9 @@ python recorder/calibration_capture.py
 
 ### Force Validation GUI
 ```bash
-# Main force control experiment GUI (requires RPi + Teensy + Seeeduino)
-python vaideesh/control_implementation_with_GUI/force_validation/force_validation.py
+# Must be run from the force_validation/ directory (uses local relative imports)
+cd vaideesh/control_implementation_with_GUI/force_validation
+python force_validation.py
 ```
 
 ## Architecture
@@ -53,7 +54,7 @@ python vaideesh/control_implementation_with_GUI/force_validation/force_validatio
 | TRACKING | 2 | `STOP_TRACK`, `USER:<id>` |
 | RECORDING | 3 | `STOP_TRACK`, `CHANGE:<id>` |
 
-Reference frame auto-saved/loaded from `~/Documents/NOARK/reference_frames/reference_frame.json`. See [UDP_PROTOCOL.md](UDP_PROTOCOL.md) for full wire format.
+Reference frame auto-saved/loaded from `~/Documents/NOARK/reference_frames/reference_frame.json`. See [UDP_PROTOCOL.md](UDP_PROTOCOL.md) for full wire format and GDScript receiving example.
 
 **Marker offsets** (must match physical bracket geometry — [GameStream/stream_optimize_v2.py:22-28](GameStream/stream_optimize_v2.py#L22-L28)):
 ```python
@@ -72,7 +73,7 @@ MARKER_OFFSETS = {
 ```
 Raspberry Pi
 ├── /dev/ttyACM0 → Teensy LC  (dual encoder readback + motor PWM/DIR commands)
-├── /dev/ttyACM1 → Seeeduino  (3-axis HX711 load cell, ~200 Hz)
+├── /dev/ttyACM1 → Seeeduino  (3-axis ADS1256-based load cell, ~200 Hz)
 └── Picamera2   → fisheye camera (160° FOV)
 
 Teensy LC
@@ -82,19 +83,23 @@ Teensy LC
 ```
 
 **Serial protocols:**
-- Teensy → Pi: `{raw_e1},{raw_e2}\n`; reset confirmation: `ENC_RESET\n`
-- Seeeduino → Pi: `avg X: {fx}\tavg Y: {fy}\t...`; tare command: `T\n` → `TARE DONE`
+- Teensy → Pi: `{raw_e1},{raw_e2}\n`; reset confirmation: `ENC_RESET\n`; reset command Pi → Teensy: `R\n`
+- Seeeduino → Pi: `X: {fx}\tY: {fy}\t...`; tare command: `T\n`
 
 **Key files in `vaideesh/control_implementation_with_GUI/force_validation/`:**
-- `force_validation.py` — PySide6 GUI (906 lines). Runs 4 threads (camera, Teensy, load cell, GUI 100 Hz). Solves cable tensions from desired force vector: T1/T3 via linear algebra, then τ = -T × R_spool (R_spool = 0.033 m). Contains `AutoSweep` class for automated force sweeps (7 angles × 5 magnitudes, 5 s/step).
-- `camera_pose_fv.py` — Detects markers [12, 14, 20] on the NOARK handle using fisheye intrinsics + table frame extrinsics. Outputs `noark_in_table_frame` = [x, z] in meters.
-- `teensy_seed_fv.py` — `TeensyPort` and `SeeduinoReceiver` serial classes with callback support. Stale detection: >100 ms without update flags data.
+- `force_validation.py` — PySide6 GUI (~900 lines). Runs 4 threads (camera, Teensy, load cell, GUI 100 Hz). Solves cable tensions from desired force vector: T1/T3 via linear algebra, then τ = -T × R_spool (R_spool = 0.033 m). Contains `AutoSweep` class for automated force sweeps (7 angles × 5 magnitudes, 8 s/step).
+- `camera_pose_fv.py` — Detects markers [12, 14, 20] on the NOARK handle using fisheye intrinsics + table frame extrinsics. Outputs `noark_in_table_frame` = [x, z] in meters. Can also run standalone.
+- `teensy_seed_fv.py` — `TeensyPort` (hardwired to `/dev/ttyACM0`) and `SeeduinoPort` (hardwired to `/dev/ttyACM1`) serial classes with `on_update` callbacks.
 - `data_logger.py` — Non-blocking 4-stream CSV logger. Each stream writes to its own queue/daemon thread: `camera_*.csv`, `encoder_*.csv`, `loadcell_*.csv`, `gui_*.csv`. Sessions in `logs/{stream}_{YYYYMMDD_HHMMSS}.csv`.
+
+**force_validation.py hard-codes absolute paths** at the top of the file for calibration TOMLs and uses `sys.path.insert(0, '/home/sujith/Documents/NOARK_backbone')` for the local imports — update these if the repository moves.
 
 **Calibration files used by force_validation:**
 - Camera intrinsics: `notebooks/calibration/output/good.toml`
 - Table frame extrinsics (R + T, camera → table): `estimator/charuco_pose/charuco_pose_picam.toml`
 - Motor/pulley geometry: `vaideesh/table_frame_data.toml` (pulleys ML/MR at [±0.065, -0.707] m)
+
+**Firmware source:** `vaideesh/FIRMWARE/` (Teensy motor controller) and `vaideesh/control_implementation_with_GUI/force_validation/force_analysis_firmware/` (Seeeduino ADS1256 load cell reader).
 
 ### Configuration System
 

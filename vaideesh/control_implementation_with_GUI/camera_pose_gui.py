@@ -170,10 +170,10 @@ class MainClass:
             #     print(f"Marker ID {marker_id}: {np.round(raw_tvec_cm, 2)} cm")
             #     print(f"Marker ID {marker_id}: {np.round(raw_rvec_cm, 2)} cm")
             
-            # if self.noark_in_table_frame is not None:
-                # print(f"NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
-        # cv_show = cv2.resize(self.video_frame, (480, 320))
-        # cv2.imshow("Optimized Tracker", cv_show)
+            if self.noark_in_table_frame is not None:
+                print(f"NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
+        cv_show = cv2.resize(self.video_frame, (480, 320))
+        cv2.imshow("Optimized Tracker", cv_show)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
             return False

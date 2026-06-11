@@ -5,9 +5,9 @@ import threading
 from datetime import datetime
 import time
 
-class SeeeduinoPort:
+class SeeduinoPort:
     """Reads load cell X/Y force data from the Seeeduino over serial."""
-    def __init__(self, port="/dev/ttyACM0", baud=115200):
+    def __init__(self, port="/dev/ttyACM1", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
         self.serialInst.baudrate = baud
@@ -26,19 +26,19 @@ class SeeeduinoPort:
             parts = {}
             for segment in line.split("\t"):
                 segment = segment.strip()
-                if segment.startswith("avg X:"):
+                if segment.startswith("X:"):
                     parts["fx"] = float(segment.replace("avg X:", "").strip())
-                elif segment.startswith("avg Y:"):
+                elif segment.startswith("Y:"):
                     parts["fy"] = float(segment.replace("avg Y:", "").strip())
-                elif segment.startswith("magnitude:"):
-                    parts["mag"] = float(segment.replace("magnitude:", "").strip())
-                elif segment.startswith("direction:"):
-                    parts["dir"] = float(segment.replace("direction:", "").strip())
+                # elif segment.startswith("magnitude:"):
+                #     parts["mag"] = float(segment.replace("magnitude:", "").strip())
+                # elif segment.startswith("direction:"):
+                    # parts["dir"] = float(segment.replace("direction:", "").strip())
             if "fx" in parts and "fy" in parts:
                 self.fx = parts["fx"]
                 self.fy = parts["fy"]
-                self.magnitude = parts.get("mag", 0.0)
-                self.direction = parts.get("dir", 0.0)
+                # self.magnitude = parts.get("mag", 0.0)
+                # self.direction = parts.get("dir", 0.0)
         except Exception as e:
             print(f"[seeeduino parse] {e} | raw: {line}")
 
@@ -47,9 +47,9 @@ class SeeeduinoPort:
         while self.running:
             try:
                 waiting = self.serialInst.in_waiting
-                if waiting > 500:
-                    self.serialInst.reset_input_buffer()
-                elif waiting > 0:
+                # if waiting > 500:
+                #     self.serialInst.reset_input_buffer()
+                if waiting > 0:
                     line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self._parse_line(line)
@@ -99,8 +99,8 @@ class TeensyPort:
         print(self.portsList)
 
         for i in range(len(self.portsList)):
-            if self.portsList[i].startswith("/dev/ttyACM1"):
-                self.use = "/dev/ttyACM1"
+            if self.portsList[i].startswith("/dev/ttyACM0"):
+                self.use = "/dev/ttyACM0"
                 break
 
         if self.use is None:
@@ -132,9 +132,9 @@ class TeensyPort:
         while self.running:
             try:
                 waiting = self.serialInst.in_waiting
-                if waiting > 500:
-                    self.serialInst.reset_input_buffer()
-                elif waiting > 0:
+                # if waiting > 500:
+                #     self.serialInst.reset_input_buffer()
+                if waiting > 0:
                     response = self.serialInst.readline()
                     self.encoder = response.decode('utf-8').strip()
                     if self.encoder.startswith("ENC_RESET"):
