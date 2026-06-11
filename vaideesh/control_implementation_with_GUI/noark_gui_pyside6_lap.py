@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QTimer, QPointF, Signal, QRectF
 
 sys.path.insert(0, '/home/sujith/Documents/NOARK_backbone')
 from camera_pose_gui import MainClass
-from vaideesh.control_implementation_with_GUI.teensyseed import SeeeduinoPort,TeensyPort
+from vaideesh.control_implementation_with_GUI.teensyseed import SeeduinoPort,TeensyPort
 
 CAM_TOML   = '/home/sujith/Documents/NOARK_backbone/notebooks/calibration/output/good.toml'
 TABLE_TOML = '/home/sujith/Documents/NOARK_backbone/estimator/charuco_pose/charuco_pose_picam.toml'
@@ -75,8 +75,8 @@ class State:
 
 STATE = State()
 
-class SeeeduinoReceiver:
-    """Reads load cell X/Y force data from Seeeduino over serial."""
+class SeeduinoReceiver:
+    """Reads load cell X/Y force data from Seeduino over serial."""
     def __init__(self, port="/dev/ttyACM1", baud=115200):
         self.serialInst = serial.Serial()
         self.serialInst.port = port
@@ -84,9 +84,9 @@ class SeeeduinoReceiver:
         self._lock = threading.Lock()
         self._fx = 0.0
         self._fy = 0.0
-        self._magnitude = 0.0
-        self._direction = 0.0
-        self._timestamp = 0.0
+        # self._magnitude = 0.0
+        # self._direction = 0.0
+        # self._timestamp = 0.0
         self._running = True
          # Find sampling frequency
         self._count = 0
@@ -105,20 +105,20 @@ class SeeeduinoReceiver:
             parts = {}
             for seg in line.split("\t"):
                 seg = seg.strip()
-                if seg.startswith("avg X:"):
-                    parts["fx"] = float(seg.replace("avg X:", "").strip())
-                elif seg.startswith("avg Y:"):
-                    parts["fy"] = float(seg.replace("avg Y:", "").strip())
-                elif seg.startswith("magnitude:"):
-                    parts["mag"] = float(seg.replace("magnitude:", "").strip())
-                elif seg.startswith("direction:"):
-                    parts["dir"] = float(seg.replace("direction:", "").strip())
+                if seg.startswith("X:"):
+                    parts["fx"] = float(seg.replace("X:", "").strip())
+                elif seg.startswith("Y:"):
+                    parts["fy"] = float(seg.replace("Y:", "").strip())
+                # elif seg.startswith("magnitude:"):
+                #     parts["mag"] = float(seg.replace("magnitude:", "").strip())
+                # elif seg.startswith("direction:"):
+                #     parts["dir"] = float(seg.replace("direction:", "").strip())
             if "fx" in parts and "fy" in parts:
                 with self._lock:
                     self._fx = parts["fx"]
                     self._fy = parts["fy"]
-                    self._magnitude = parts.get("mag", math.hypot(parts["fx"], parts["fy"]))
-                    self._direction = parts.get("dir", math.atan2(parts["fy"], parts["fx"]))
+                    # self._magnitude = parts.get("mag", math.hypot(parts["fx"], parts["fy"]))
+                    # self._direction = parts.get("dir", math.atan2(parts["fy"], parts["fx"]))
                     self._timestamp = time.time()
         except Exception as e:
             print(f"[seeeduino parse] {e} | raw: {line}")
@@ -127,9 +127,9 @@ class SeeeduinoReceiver:
         while self._running:
             try:
                 waiting = self.serialInst.in_waiting
-                if waiting > 500:
-                    self.serialInst.reset_input_buffer()
-                elif waiting > 0:
+                # if waiting > 500:
+                #     self.serialInst.reset_input_buffer()
+                if waiting > 0:
                     line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
                     if line:
                         self._parse_line(line)
@@ -672,7 +672,7 @@ class NOARKWindow(QMainWindow):
 
     def _start_loadcell(self):
         try:
-            self._lc = SeeeduinoReceiver(port=SEED_PORT)
+            self._lc = SeeduinoReceiver(port=SEED_PORT)
             self._lc.start()
         except Exception as e:
             print(f'[loadcell] {e}'); self._lc = None; return

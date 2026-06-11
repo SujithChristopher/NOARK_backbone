@@ -27,7 +27,7 @@ MAX_F   = 24.0           # N
 T_MIN = 0.0
 
 
-HOLD_TIME = 5.0          # seconds to hold for recording
+HOLD_TIME = 8.0          # seconds to hold for recording
 ANGLE_STEPS = 7         # number of angle steps from 0 to 180 (inclusive) for recording
 
 MAG_LIST = [0.0, 5.0, 10.0, 15.0, 24.0]
@@ -35,7 +35,6 @@ EDGE_MARGIN_DEG = 5.0
 # ── world bounds ──────────────────────────────────────────────────────────
 WX0, WX1 = -0.50,  0.50
 WZ0, WZ1 = -0.80, 0
-
 SEED_PORT = "/dev/ttyACM1"
 C_BG=QColor('#0d0d0d');
 C_GRID=QColor('#1e1e1e'); 
@@ -253,10 +252,10 @@ class SeeduinoReceiver:
             parts = {}
             for seg in line.split("\t"):
                 seg = seg.strip()
-                if seg.startswith("avg X:"):
-                    parts["fx"] = float(seg.replace("avg X:", "").strip())
-                elif seg.startswith("avg Y:"):
-                    parts["fy"] = float(seg.replace("avg Y:", "").strip())
+                if seg.startswith("X:"):
+                    parts["fx"] = float(seg.replace("X:", "").strip())
+                elif seg.startswith("Y:"):
+                    parts["fy"] = float(seg.replace("Y:", "").strip())
                 # elif seg.startswith("magnitude:"):
                 #     parts["mag"] = float(seg.replace("magnitude:", "").strip())
                 # elif seg.startswith("direction:"):
@@ -555,7 +554,7 @@ class NOARKWindow(QMainWindow):
 
         self._cam_timer = QTimer(self)
         self._cam_timer.timeout.connect(self.cam_view.update_frame)
-        self._cam_timer.start(16)   # 60 Hz for camera — no need for more
+        self._cam_timer.start(10)   # 100 Hz for camera — no need for more
         # No continuous send timer — button press sends once
 
     def _build_ui(self):
@@ -833,7 +832,7 @@ class NOARKWindow(QMainWindow):
                         if pos is not None:
                             self.state.noark_x = float(pos[0])
                             self.state.noark_z = float(pos[2])
-                            self.logger.log_camera(float(pos[0]), float(pos[2]))
+                            self._logger.log_camera(float(pos[0]), float(pos[2]))
                         self.state.video_frame = frame
                         
                 except Exception as e:

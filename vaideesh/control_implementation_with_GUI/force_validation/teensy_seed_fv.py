@@ -24,17 +24,15 @@ class SeeduinoPort:
 
     def _parse_line(self, line: str):
         """Parse lines like: 'avg X: 0.123\tavg Y: -0.456\tmagnitude: 0.789'"""
-        def _parse_line(self, line: str):
-            self._tare_confirmed = True
-            return 
+        self._tare_confirmed = True
         try:
             parts = {}
             for segment in line.split("\t"):
                 segment = segment.strip()
-                if segment.startswith("avg X:"):
-                    parts["fx"] = float(segment.replace("avg X:", "").strip())
-                elif segment.startswith("avg Y:"):
-                    parts["fy"] = float(segment.replace("avg Y:", "").strip())
+                if segment.startswith("X:"):
+                    parts["fx"] = float(segment.replace("X:", "").strip())
+                elif segment.startswith("Y:"):
+                    parts["fy"] = float(segment.replace("Y:", "").strip())
                 # elif segment.startswith("magnitude:"):
                 #     parts["mag"] = float(segment.replace("magnitude:", "").strip())
                 # elif segment.startswith("direction:"):
@@ -147,9 +145,6 @@ class TeensyPort:
         while self.running:
             try:
                 waiting = self.serialInst.in_waiting
-                # if waiting > 500:
-                #     self.serialInst.reset_input_buffer()
-                # elif waiting > 0:
                 if waiting > 0:
                     response = self.serialInst.readline()
                     self.encoder = response.decode('utf-8').strip()
