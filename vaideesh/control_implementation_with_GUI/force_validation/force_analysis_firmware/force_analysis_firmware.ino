@@ -3,7 +3,6 @@
 #define CS0_PIN     D1
 #define DRDY0_PIN   D2
 #define RESET0_PIN  D0
-
 // ================= LOAD CELLS CALIBRATION =================
 #define CAL_FACTOR_1  -5628.5f
 #define CAL_FACTOR_2  -5548.1f
@@ -38,6 +37,7 @@ static inline int32_t readConv0_24b_signext(int pin1, int pin2) {
   digitalWrite(CS0_PIN, LOW);
   unsigned long t0 = millis();
   while (digitalRead(DRDY0_PIN) == LOW)  { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
+  t0 = millis();
   while (digitalRead(DRDY0_PIN) != LOW)  { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
   SPI.transfer((uint8_t)0x12);
   (void)SPI.transfer((uint8_t)0x00);
@@ -80,7 +80,7 @@ void setup() {
   SPI.begin();
   SPI.beginTransaction(SPISettings(5000000, MSBFIRST, SPI_MODE1));
   writeRegister0_fast(0x02, 0x48);
-  writeRegister0_fast(0x03, 0xB0);  // DRATE = 2000 SPS
+  writeRegister0_fast(0x03, 0x0A);  // MODE1: sinc1 filter, 2400 SPS
   writeRegister0_fast(0x05, 0x00);
   writeRegister0_fast(0x06, 0x10);
   writeRegister0_fast(0x10, 0x05);
