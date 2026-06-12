@@ -53,20 +53,23 @@ static inline int32_t readConv0_24b_signext(int pin1, int pin2) {
 void doTare() {
   delay(200);
   int64_t sum1 = 0, sum2 = 0;
-  unsigned long sampleCount = 0;
+  long count1 = 0, count2 = 0;
   unsigned long startTime = millis();
 
   while (millis() - startTime < 1000) {
-    sum1 += readConv0_24b_signext(9, 10);
-    sum2 += readConv0_24b_signext(1, 2);
-    sampleCount++;
+    long v1 = readConv0_24b_signext(9, 10);
+    if (v1 != 0) { sum1 += v1; count1++; }
+    long v2 = readConv0_24b_signext(1, 2);
+    if (v2 != 0) { sum2 += v2; count2++; }
   }
 
-  if (sampleCount > 0) {
-    tare1 = (long)(sum1 / sampleCount);
-    tare2 = (long)(sum2 / sampleCount);
-  }
-  Serial.println("TARE DONE");
+  if (count1 > 0) tare1 = (long)(sum1 / count1);
+  if (count2 > 0) tare2 = (long)(sum2 / count2);
+
+  Serial.print("TARE DONE t1=");
+  Serial.print(tare1);
+  Serial.print(" t2=");
+  Serial.println(tare2);
 }
 
 void setup() {
