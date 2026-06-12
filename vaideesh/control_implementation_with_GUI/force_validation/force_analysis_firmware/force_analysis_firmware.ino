@@ -85,7 +85,7 @@ void setup() {
   writeRegister0_fast(0x06, 0x10);
   writeRegister0_fast(0x10, 0x05);
   ads0_start();
-  // doTare() removed from setup — Pi sends 'T' when ready
+  delay(300);  // allow ADS1256 to settle before loop starts
 }
 
 void loop() {
