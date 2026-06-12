@@ -4,7 +4,8 @@ import csv
 from datetime import datetime
 import cv2, numpy as np
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget,
-    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy)
+    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame, QSizePolicy,
+    QInputDialog)
 from PySide6.QtGui import (QPainter, QPen, QColor, QBrush, QFont, QPixmap,
     QImage, QPolygonF, QPainterPath, QShortcut, QKeySequence)
 from PySide6.QtCore import Qt, QTimer, QPointF, Signal, QRectF
@@ -27,10 +28,10 @@ MAX_F   = 24.0           # N
 T_MIN = 0.0
 
 
-HOLD_TIME = 8.0          # seconds to hold for recording
+HOLD_TIME = 2         # seconds to hold
 ANGLE_STEPS = 7         # number of angle steps from 0 to 180 (inclusive) for recording
 
-MAG_LIST = [0.0, 5.0, 10.0, 15.0, 24.0]
+MAG_LIST = [5.0, 10.0, 15.0, 24.0]   # skip 0N — no meaningful data at zero force
 EDGE_MARGIN_DEG = 5.0
 # ── world bounds ──────────────────────────────────────────────────────────
 WX0, WX1 = -0.50,  0.50
@@ -344,7 +345,7 @@ class WorkspaceCanvas(QWidget):
             has_noark = s.has_noark
             dx, dz = s.dir_x, s.dir_z
             fm = s.force_mag
-            mfx = s.meas_fx; mfz = s.meas_fz; mm = s.meas_mag
+            meas_fx = s.meas_fx; meas_fz = s.meas_fz; meas_mag = s.meas_mag
 
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
@@ -421,13 +422,14 @@ class WorkspaceCanvas(QWidget):
             p.drawLine(QPointF(np_.x(), np_.y()), QPointF(ax, ay))
             self._head(p, np_.x(), np_.y(), ax, ay, C_RED); p.setPen(C_RED)
             p.drawText(QPointF(ax+6, ay-4), f'{fm:.1f}N cmd')
-        if mm > 0.1 and has_noark:
-            mdx = mfx/mm; mdz = mfz/mm; ln = 35 + mm/MAX_F*45
+        if meas_mag > 0.1 and has_noark:
+            mdx = meas_fx/meas_mag; mdz = meas_fz/meas_mag
+            ln = 35 + meas_mag/MAX_F*45
             mx = np_.x()+mdx*ln; my = np_.y()+mdz*ln
             p.setPen(QPen(C_GREEN, 2))
             p.drawLine(QPointF(np_.x(), np_.y()), QPointF(mx, my))
             self._head(p, np_.x(), np_.y(), mx, my, C_GREEN); p.setPen(C_GREEN)
-            p.drawText(QPointF(mx+6, my+10), f'{mm:.1f}N meas')
+            p.drawText(QPointF(mx+6, my+10), f'{meas_mag:.1f}N meas')
         p.end()
 
     @staticmethod
@@ -511,7 +513,11 @@ class NOARKWindow(QMainWindow):
         self.state = STATE; self.running = True
         self._enc = None; self._lc = None; self._sending = False
         self._threads = []  # FIX 7 - track threads for join on close
-        self._logger = DataLogger(base_dir="csv_data")
+
+        name, ok = QInputDialog.getText(self, "Session Name", "Enter session name:")
+        if not ok or not name.strip():
+            name = "session"
+        self._logger = DataLogger(base_dir="csv_data", session_name=name.strip())
         self._rec_state = "idle"
         self._arm_t0 = 0.0
 
@@ -531,15 +537,14 @@ class NOARKWindow(QMainWindow):
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
-        self._timer.start(33)       # ~30 Hz display — leaves main thread time for log timer
-
-        self._log_timer = QTimer(self)
-        self._log_timer.timeout.connect(self._log_tick)
-        self._log_timer.start(5)    # 200 Hz target, independent of paint
+        self._timer.start(10)       # 100 Hz display
 
         self._cam_timer = QTimer(self)
         self._cam_timer.timeout.connect(self.cam_view.update_frame)
         self._cam_timer.start(33)   # 30 Hz camera display
+
+        t = threading.Thread(target=self._log_loop, daemon=True)
+        t.start(); self._threads.append(t)
         # No continuous send timer — button press sends once
 
     def _build_ui(self):
@@ -653,11 +658,12 @@ class NOARKWindow(QMainWindow):
         else:
             for w in (self.v_t1, self.v_t3, self.v_tau1, self.v_tau2):
                 w.setText('--')
-        mfx = lc_x; mfz = lc_y 
-        mm = math.hypot(mfx, mfz)
-        mdir = math.degrees(math.atan2(mfz, mfx))
+        meas_fx = lc_x
+        meas_fz = lc_y   # load cell Y axis → table-frame Z axis
+        meas_mag = math.hypot(meas_fx, meas_fz)
+        meas_dir = math.degrees(math.atan2(meas_fz, meas_fx))
         with s.lock:
-            s.meas_fx = mfx; s.meas_fz = mfz; s.meas_mag = mm
+            s.meas_fx = meas_fx; s.meas_fz = meas_fz; s.meas_mag = meas_mag
         if lc_stale:
             self.v_lc_status.setText('no data')
             self.v_lc_status.setStyleSheet('color:#f05050;')
@@ -666,11 +672,11 @@ class NOARKWindow(QMainWindow):
         else:
             self.v_lc_status.setText('live')
             self.v_lc_status.setStyleSheet('color:#44cc88;')
-            self.v_lc_mag.setText(f'{mm:.2f} N')
-            self.v_lc_dir.setText(f'{mdir:.1f} deg')
-            # err_mag = abs((mm - fm) / fm) if fm > 1e-6 else 0.0
-            err_mag = abs(mm - fm)
-            err_dir = abs(cmd_dir - mdir)
+            self.v_lc_mag.setText(f'{meas_mag:.2f} N')
+            self.v_lc_dir.setText(f'{meas_dir:.1f} deg')
+            # err_mag = abs((meas_mag - fm) / fm) if fm > 1e-6 else 0.0
+            err_mag = abs(meas_mag - fm)
+            err_dir = abs(cmd_dir - meas_dir)
             err_mag_pcnt = (err_mag /fm)* 100 if fm > 1e-6 else 0.0
             if err_dir > 180:
                 err_dir -= 360
@@ -688,21 +694,24 @@ class NOARKWindow(QMainWindow):
         self.workspace.update()
         # self.cam_view.update_frame()
 
-    def _log_tick(self):
-        s = self.state
-        with s.lock:
-            has_noark = s.has_noark
-            nx, nz = s.noark_x, s.noark_z
-            dir_x, dir_z = s.dir_x, s.dir_z
-            fm = s.force_mag
-        sol = solve_tensions(nx, nz, fm * dir_x, fm * dir_z)
-        if sol and has_noark:
-            T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
-            tau1 = -(T1 * R_SPOOL); tau2 = T3 * R_SPOOL
-        else:
-            T1 = T3 = tau1 = tau2 = 0.0
-        self._logger.log_gui(fm, math.degrees(math.atan2(fm * dir_z, fm * dir_x)),
-                             T1, T3, tau1, tau2)
+    def _log_loop(self):
+        while self.running:
+            s = self.state
+            with s.lock:
+                has_noark = s.has_noark
+                nx, nz = s.noark_x, s.noark_z
+                dir_x, dir_z = s.dir_x, s.dir_z
+                fm = s.force_mag
+            sol = solve_tensions(nx, nz, fm * dir_x, fm * dir_z)
+            if sol and has_noark:
+                T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
+                tau1 = -(T1 * R_SPOOL); tau2 = T3 * R_SPOOL
+            else:
+                T1 = T3 = tau1 = tau2 = 0.0
+            self._logger.log_gui(fm, math.degrees(math.atan2(fm * dir_z, fm * dir_x)),
+                                 fm * dir_x, fm * dir_z,
+                                 T1, T3, tau1, tau2)
+            time.sleep(0.005)
 
     def _on_direction(self, dx, dz):
         with self.state.lock:
@@ -884,7 +893,6 @@ class NOARKWindow(QMainWindow):
     def closeEvent(self, event):
         self.running = False
         self._timer.stop()
-        self._log_timer.stop()
         if self._enc:
             try: self._enc.serialInst.write(b'0.000,0.000\n')  # FIX 1
             except Exception: pass

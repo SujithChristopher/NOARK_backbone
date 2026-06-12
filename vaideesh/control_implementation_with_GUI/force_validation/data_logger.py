@@ -76,9 +76,9 @@ class _StreamWriter:
 # ── public logger ─────────────────────────────────────────────────────────────
 
 class DataLogger:
-    def __init__(self, base_dir: str = "csv_data"):
+    def __init__(self, base_dir: str = "csv_data", session_name: str = "session"):
         tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_dir = os.path.join(base_dir, f"session_{tag}")
+        session_dir = os.path.join(base_dir, f"{session_name}_{tag}")
         os.makedirs(session_dir, exist_ok=True)
         self.session_dir = session_dir
 
@@ -96,7 +96,7 @@ class DataLogger:
         )
         self._gui  = _StreamWriter(
             os.path.join(session_dir, "gui.csv"),
-            ["timestamp", "magnitude", "direction",
+            ["timestamp", "magnitude", "direction", "Fx", "Fz",
              "T1_left", "T3_right", "tau1", "tau2"]
         )
         self._active = False
@@ -144,13 +144,14 @@ class DataLogger:
         self._lc.log([self._ts(), f"{fx:.6f}", f"{fy:.6f}"])
 
     def log_gui(self, magnitude: float, direction: float,
+                Fx: float, Fz: float,
                 T1: float, T3: float, tau1: float, tau2: float):
-        """Call at the end of NOARKWindow._refresh (every 10 ms timer tick)."""
         if not self._active:
             return
         self._gui.log([
             self._ts(),
             f"{magnitude:.6f}", f"{direction:.6f}",
+            f"{Fx:.6f}",        f"{Fz:.6f}",
             f"{T1:.6f}",        f"{T3:.6f}",
             f"{tau1:.6f}",      f"{tau2:.6f}",
         ])
