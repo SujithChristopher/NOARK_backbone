@@ -258,13 +258,9 @@ class SeeduinoReceiver:
     def _loop(self):
         while self._running:
             try:
-                waiting = self.serialInst.in_waiting
-                if waiting > 0:
-                    line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
-                    if line:
-                        self._parse_line(line)
-                else:
-                    time.sleep(0.0005)
+                line = self.serialInst.readline().decode("utf-8", errors="ignore").strip()
+                if line:
+                    self._parse_line(line)
             except Exception as e:
                 if self._running:
                     print(f"[seeeduino] {e}")
@@ -292,6 +288,7 @@ class SeeduinoReceiver:
 
     def start(self):
         try:
+            self.serialInst.timeout = 0.01   # 10ms — readline returns if no \n within this time
             self.serialInst.open()
             print(f"[seeeduino] Connected to {self.serialInst.port}")
             threading.Thread(target=self._loop, daemon=True).start()
@@ -514,7 +511,17 @@ class NOARKWindow(QMainWindow):
         self._enc = None; self._lc = None; self._sending = False
         self._threads = []  # FIX 7 - track threads for join on close
 
-        name, ok = QInputDialog.getText(self, "Session Name", "Enter session name:")
+        dlg = QInputDialog(self)
+        dlg.setWindowTitle("Session Name")
+        dlg.setLabelText("Enter session name:")
+        dlg.setStyleSheet(
+            "QDialog,QWidget{background:#f0f0f0;color:#111;}"
+            "QLineEdit{background:#fff;color:#111;border:1px solid #aaa;padding:4px;}"
+            "QPushButton{background:#ddd;color:#111;border:1px solid #aaa;padding:4px 12px;}"
+            "QPushButton:hover{background:#bbb;}"
+        )
+        ok = dlg.exec()
+        name = dlg.textValue()
         if not ok or not name.strip():
             name = "session"
         self._logger = DataLogger(base_dir="csv_data", session_name=name.strip())
@@ -537,11 +544,11 @@ class NOARKWindow(QMainWindow):
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
-        self._timer.start(10)       # 100 Hz display
+        self._timer.start(5)       # 100 Hz display
 
         self._cam_timer = QTimer(self)
         self._cam_timer.timeout.connect(self.cam_view.update_frame)
-        self._cam_timer.start(33)   # 30 Hz camera display
+        self._cam_timer.start(16)   # 30 Hz camera display
 
         t = threading.Thread(target=self._log_loop, daemon=True)
         t.start(); self._threads.append(t)
@@ -702,8 +709,11 @@ class NOARKWindow(QMainWindow):
                 nx, nz = s.noark_x, s.noark_z
                 dir_x, dir_z = s.dir_x, s.dir_z
                 fm = s.force_mag
+            if not has_noark:
+                time.sleep(0.005)
+                continue                   # skip logging when NOARK is not detected
             sol = solve_tensions(nx, nz, fm * dir_x, fm * dir_z)
-            if sol and has_noark:
+            if sol:
                 T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
                 tau1 = -(T1 * R_SPOOL); tau2 = T3 * R_SPOOL
             else:
@@ -774,7 +784,7 @@ class NOARKWindow(QMainWindow):
 
     def _stop_recording(self):
         if self._rec_state == "recording":
-            self._logger._active = False   # stop logging, keep files open
+            self._logger._active = False
             self._rec_state = "idle"
             print("[arm] recording stopped")
 
@@ -873,6 +883,9 @@ class NOARKWindow(QMainWindow):
             self._lc.start()
             original_parse = self._lc._parse_line
             def _patched_parse(line):
+                if line.startswith("TARE DONE"):
+                    original_parse(line)   # sets tare event, no force update
+                    return                 # skip log — lc_x/lc_y are stale pre-tare values
                 original_parse(line)
                 self._logger.log_loadcell(self._lc.lc_x, self._lc.lc_y)
             self._lc._parse_line = _patched_parse
@@ -894,13 +907,13 @@ class NOARKWindow(QMainWindow):
         self.running = False
         self._timer.stop()
         if self._enc:
-            try: self._enc.serialInst.write(b'0.000,0.000\n')  # FIX 1
+            try: self._enc.serialInst.write(b'0.000,0.000\n')
             except Exception: pass
         if self._lc:
             self._lc.stop()
         for t in self._threads:
-            t.join(timeout=1.0)
-        self._logger.stop()
+            t.join(timeout=3.0)      # wait for log_loop and camera to stop adding data
+        self._logger.stop()          # drain queues and close files only after threads are done
         if getattr(self, "_sweep", None):
             self._sweep.stop()
         event.accept()

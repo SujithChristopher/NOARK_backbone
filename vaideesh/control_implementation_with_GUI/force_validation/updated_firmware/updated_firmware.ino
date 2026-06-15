@@ -53,7 +53,7 @@ void doTare() {
   if (count1 > 0) tare1 = (long)(sum1 / count1);
   if (count2 > 0) tare2 = (long)(sum2 / count2);
 
-  Serial.print("TARE DONE");
+  Serial.println("TARE DONE");
 }
 // ======================================================================================
 static inline void ads0_start() { digitalWrite(CS0_PIN, LOW); SPI.transfer((uint8_t)0x08);  digitalWrite(CS0_PIN, HIGH); }

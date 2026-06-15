@@ -12,7 +12,7 @@ import os
 import numpy as np
 import pandas as pd
 
-CSV_ROOT       = "/home/sujith/Documents/NOARK_backbone/csv_data"
+CSV_ROOT       = "/home/sujith/Documents/NOARK_backbone/csv_data/trial1/loadcell.csv"
 GAP_THRESHOLD_MS = 20.0   # intervals longer than this are USB gaps, not ADC gaps
 
 

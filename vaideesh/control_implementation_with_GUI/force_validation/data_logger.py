@@ -9,7 +9,7 @@ Four files, each logged at its own natural sampling rate:
     gui_YYYYMMDD_HHMMSS.csv      → timestamp, magnitude, direction,
                                     T1_left, T3_right, tau1, tau2
 
-Timestamps are time.time() 6-decimal float (Unix seconds).
+Timestamps are ISO strings: YYYY-MM-DD HH:MM:SS.ffffff (datetime.now()).
 
 Usage
 -----
@@ -51,7 +51,7 @@ class _StreamWriter:
         self._writer = csv.writer(self._fh)
         self._writer.writerow(header)
         self._running = True
-        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread = threading.Thread(target=self._drain, daemon=False)
         self._thread.start()
 
     def log(self, row: list):
@@ -68,7 +68,7 @@ class _StreamWriter:
 
     def stop(self):
         self._running = False
-        self._thread.join(timeout=2.0)
+        self._thread.join()          # wait until queue is fully drained
         self._fh.flush()
         self._fh.close()
 
@@ -77,8 +77,7 @@ class _StreamWriter:
 
 class DataLogger:
     def __init__(self, base_dir: str = "csv_data", session_name: str = "session"):
-        tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_dir = os.path.join(base_dir, f"{session_name}_{tag}")
+        session_dir = os.path.join(base_dir, session_name)
         os.makedirs(session_dir, exist_ok=True)
         self.session_dir = session_dir
 
