@@ -1,5 +1,5 @@
 #include <SPI.h>
-
+#include <Adafruit_TinyUSB.h>
 #define CS0_PIN     D1
 #define DRDY0_PIN   D2
 #define RESET0_PIN  D0
@@ -34,11 +34,12 @@ static inline void ads0_stop()  { digitalWrite(CS0_PIN, LOW); SPI.transfer((uint
 
 static inline int32_t readConv0_24b_signext(int pin1, int pin2) {
   selectDiff0(pin1, pin2);
+  // Restart ADC1 with new MUX so we wait for only one DRDY falling edge
+  ads0_stop();
+  ads0_start();
   digitalWrite(CS0_PIN, LOW);
   unsigned long t0 = millis();
-  while (digitalRead(DRDY0_PIN) == LOW)  { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
-  t0 = millis();
-  while (digitalRead(DRDY0_PIN) != LOW)  { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
+  while (digitalRead(DRDY0_PIN) != LOW) { if (millis() - t0 > 50) { digitalWrite(CS0_PIN, HIGH); return 0; } }
   SPI.transfer((uint8_t)0x12);
   (void)SPI.transfer((uint8_t)0x00);
   uint8_t b2 = SPI.transfer((uint8_t)0x00);
@@ -73,7 +74,7 @@ void doTare() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(460800);
   pinMode(CS0_PIN, OUTPUT);
   pinMode(DRDY0_PIN, INPUT);
   pinMode(RESET0_PIN, OUTPUT);
@@ -110,4 +111,5 @@ void loop() {
   Serial.print(F_measured_x, 3);
   Serial.print(",");
   Serial.println(F_measured_y, 3);
+
 }
