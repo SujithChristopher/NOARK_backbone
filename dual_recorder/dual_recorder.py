@@ -5,6 +5,7 @@ Camera 1: OV9281 (1280x800)
 """
 
 import cv2
+import numpy as np
 import os
 import datetime
 import msgpack as mp
@@ -71,6 +72,7 @@ class RecordData:
         self._pth = _pth
         self.start_recording = False
         self.display = display
+        self.fps_value = fps_value
         
         # GPIO Setup
         sync_pin = 17
@@ -100,18 +102,40 @@ class RecordData:
             req.release()
             return arr, meta
 
+        frame_period_us = 1_000_000 / self.fps_value
+
         with ThreadPoolExecutor(max_workers=2) as executor:
+
+            # --- Phase offset measurement (runs before 's' is pressed) ---
+            n_warmup = int(self.fps_value * 2)  # 2 seconds of frames
+            print(f"Measuring phase offset over {n_warmup} frames...")
+            skews = []
+            for _ in range(n_warmup):
+                f0 = executor.submit(_grab, self.picam0)
+                f1 = executor.submit(_grab, self.picam1)
+                _, m0 = f0.result()
+                _, m1 = f1.result()
+                ts0 = m0.get("SensorTimestamp", 0)
+                ts1 = m1.get("SensorTimestamp", 0)
+                skews.append((ts1 - ts0) / 1000)
+
+            mean_skew_us = sum(skews) / len(skews)
+            std_skew_us = (sum((s - mean_skew_us) ** 2 for s in skews) / len(skews)) ** 0.5
+            print(
+                f"Phase offset: {mean_skew_us:.0f} µs ± {std_skew_us:.0f} µs  "
+                f"({mean_skew_us / frame_period_us * 100:.1f}% of frame period)"
+            )
+            print("Offset saved to timestamps — correct in post using sensor_ts columns.")
+            print("Press 's' to start recording, 'q' to quit.")
+
             while True:
-                # Submit both grabs to the persistent thread pool — no per-frame thread creation.
                 f0 = executor.submit(_grab, self.picam0)
                 f1 = executor.submit(_grab, self.picam1)
                 frame0, meta0 = f0.result()
                 frame1, meta1 = f1.result()
 
-                # SensorTimestamp is a hardware nanosecond counter from each sensor.
                 sensor_ts0 = meta0.get("SensorTimestamp", 0)
                 sensor_ts1 = meta1.get("SensorTimestamp", 0)
-                skew_us = (sensor_ts1 - sensor_ts0) / 1000
 
                 img0 = frame0[:800, :1280]
                 img1 = frame1[:800, :1280]
@@ -120,30 +144,25 @@ class RecordData:
                     _time_stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                     sync_val = self.sync_line.get_value()
 
-                    # Write Cam 0 — store sensor timestamp (ns) alongside wall clock
                     _packed_file0 = mp.packb(img0, default=mpn.encode)
                     _save_file0.write(_packed_file0)
                     _packed_timestamp0 = mp.packb([sync_val, _time_stamp, sensor_ts0])
                     _timestamp_file0.write(_packed_timestamp0)
 
-                    # Write Cam 1
                     _packed_file1 = mp.packb(img1, default=mpn.encode)
                     _save_file1.write(_packed_file1)
                     _packed_timestamp1 = mp.packb([sync_val, _time_stamp, sensor_ts1])
                     _timestamp_file1.write(_packed_timestamp1)
 
-                    if abs(skew_us) > 5000:  # warn if cameras drift > 5 ms
-                        print(f"[WARN] frame skew: {skew_us:.0f} µs")
-
                 if self.display:
                     image_scale0 = cv2.resize(img0, (250, 200))
-                    gray_image_scale1 = cv2.resize(img1, (250, 200))
-                    cv2.imshow("webcam 0 (IMX219)", image_scale0)
-                    cv2.imshow("webcam 1 (OV9281)", gray_image_scale1)
+                    image_scale1 = cv2.resize(img1, (250, 200))
+                    combined = np.hstack([image_scale0, image_scale1])
+                    cv2.imshow("cam0 | cam1", combined)
                     cv2.waitKey(1)
 
                 if keyboard.is_pressed("s") and not self.start_recording:
-                    print("You Pressed a Key!, started recording from dual webcams")
+                    print("Started recording.")
                     self.start_recording = True
 
                 if keyboard.is_pressed("q"):
