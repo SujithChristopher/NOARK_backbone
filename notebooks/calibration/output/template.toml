@@ -33,7 +33,7 @@ dist_coeffs = [
 reprojection_error = 0.618311473454879
 method = "fisheye"
 pattern_size = [6, 4]
-notes = "Calibrated using k-means sampled frames from OV9281 160� FOV camera"
+notes = "Calibrated using k-means sampled frames from OV9281 160 FOV camera"
 
 [aruco]
 marker_length = 0.05
