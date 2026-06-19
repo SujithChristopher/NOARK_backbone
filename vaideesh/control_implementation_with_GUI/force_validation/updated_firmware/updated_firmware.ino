@@ -136,6 +136,7 @@ if (Serial.available() > 0) {
   Serial.print(F_measured_x, 3);
   Serial.print(",");
   Serial.println(F_measured_y, 3);
+  Serial.flush();   // force USB packet sent immediately, no batching
 //  digitalWrite(sample_pin, LOW);
   
 }

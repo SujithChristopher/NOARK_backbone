@@ -35,6 +35,7 @@ import csv
 import os
 import queue
 import threading
+import time
 from datetime import datetime
 
 
@@ -47,7 +48,7 @@ class _StreamWriter:
     """
     def __init__(self, filepath: str, header: list[str]):
         self._q: queue.Queue = queue.Queue()
-        self._fh = open(filepath, "w", newline="", buffering=1)   # line-buffered
+        self._fh = open(filepath, "w", newline="", buffering=131072)  # 128KB buffer
         self._writer = csv.writer(self._fh)
         self._writer.writerow(header)
         self._running = True
@@ -59,10 +60,16 @@ class _StreamWriter:
         self._q.put(row)
 
     def _drain(self):
+        last_flush = time.monotonic()
         while self._running or not self._q.empty():
             try:
                 row = self._q.get(timeout=0.05)
                 self._writer.writerow(row)
+                # flush every 100ms instead of every row — reduces syscall overhead
+                now = time.monotonic()
+                if now - last_flush >= 0.1:
+                    self._fh.flush()
+                    last_flush = now
             except queue.Empty:
                 pass
 

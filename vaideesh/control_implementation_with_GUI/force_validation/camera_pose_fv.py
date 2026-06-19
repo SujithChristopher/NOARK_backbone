@@ -171,7 +171,7 @@ class MainClass:
             #     print(f"Marker ID {marker_id}: {np.round(raw_rvec_cm, 2)} cm")
             # cv_show = cv2.resize(self.video_frame, (480, 320))
             # cv2.imshow("Optimized Tracker", cv_show)
-            
+            # cv2.waitKey(1)
             # if self.noark_in_table_frame is not None:
             #     print(f"NOARK in Table Frame: {np.round(self.noark_in_table_frame * 100, 2)} cm")
         return True

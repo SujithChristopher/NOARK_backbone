@@ -28,8 +28,8 @@ MAX_F   = 24.0           # N
 T_MIN = 0.0
 
 
-HOLD_TIME = 2         # seconds to hold
-ANGLE_STEPS = 7         # number of angle steps from 0 to 180 (inclusive) for recording
+HOLD_TIME   = 4         # seconds to hold each step (analyse last 1s)
+ANGLE_STEPS = 7         # number of angle steps
 
 MAG_LIST = [5.0, 10.0, 15.0, 24.0]   # skip 0N — no meaningful data at zero force
 EDGE_MARGIN_DEG = 5.0
@@ -78,7 +78,7 @@ class AutoSweep:
         self._events = None
         self._events_fh = None
 
-        self._timer = QTimer(parent)          # parent the timer to the window
+        self._timer = QTimer(parent)
         self._timer.timeout.connect(self._advance)
       
     def start(self):
@@ -97,7 +97,7 @@ class AutoSweep:
         self._open_events_log()
         dur = len(self._steps) * HOLD_TIME
         print(f"[sweep] {len(self._steps)} steps, ~{dur:.0f}s "
-              f"({len(MAG_LIST)} mag x {ANGLE_STEPS} angle)")
+              f"({len(MAG_LIST)} mag x {ANGLE_STEPS} angle, {HOLD_TIME}s/step)")
         self._running = True
         self._idx = -1
         self._advance()
@@ -135,7 +135,15 @@ class AutoSweep:
         else:
             angles = [a_start + span * i / (ANGLE_STEPS - 1)
                       for i in range(ANGLE_STEPS)]
-        return [(theta, m) for theta in angles for m in MAG_LIST]
+        # zigzag: angle is outer loop, magnitude alternates direction each angle
+        # even angle: 5→10→15→24N  |  odd angle: 24→15→10→5N
+        # force is continuous at angle boundaries — no sudden drops
+        result = []
+        for i, theta in enumerate(angles):
+            mags = MAG_LIST if i % 2 == 0 else list(reversed(MAG_LIST))
+            for m in mags:
+                result.append((theta, m))
+        return result
 
     def _advance(self):
         self._idx += 1
@@ -288,7 +296,7 @@ class SeeduinoReceiver:
 
     def start(self):
         try:
-            self.serialInst.timeout = 0.01   # 10ms — readline returns if no \n within this time
+            self.serialInst.timeout = None   # blocking readline — avoids throttling at 348 Hz
             self.serialInst.open()
             print(f"[seeeduino] Connected to {self.serialInst.port}")
             threading.Thread(target=self._loop, daemon=True).start()
@@ -527,6 +535,7 @@ class NOARKWindow(QMainWindow):
         self._logger = DataLogger(base_dir="csv_data", session_name=name.strip())
         self._rec_state = "idle"
         self._arm_t0 = 0.0
+        self._display_tick = 0   # throttle widget repaints to ~50 Hz
 
         self._arm_timer = QTimer(self)
         self._arm_timer.timeout.connect(self._check_arm)
@@ -638,6 +647,26 @@ class NOARKWindow(QMainWindow):
             fm = s.force_mag; lc_stale = s.lc_stale
             lc_x, lc_y = s.lc_x, s.lc_y
             ox, oy = s.lc_offset_x, s.lc_offset_y
+
+        cmd_fx = fm*dir_x; cmd_fz = fm*dir_z
+
+        # read cached solution — _log_loop owns solve_tensions
+        with s.lock:
+            sol = s.cached_sol
+
+        # update measured state every tick
+        meas_fx = lc_x
+        meas_fz = lc_y   # load cell Y axis → table-frame Z axis
+        meas_mag = math.hypot(meas_fx, meas_fz)
+        with s.lock:
+            s.meas_fx = meas_fx; s.meas_fz = meas_fz; s.meas_mag = meas_mag
+
+        # widget repaints at ~50 Hz (every 4th tick)
+        self._display_tick += 1
+        if self._display_tick % 4 != 0:
+            return
+
+        cmd_dir = math.degrees(math.atan2(cmd_fz, cmd_fx))
         if has_noark:
             self.v_nx.setText(f'{nx:.4f}'); self.v_nz.setText(f'{nz:.4f}')
             self.v_cam.setText('tracking')
@@ -647,16 +676,10 @@ class NOARKWindow(QMainWindow):
             self.v_cam.setText('searching')
             self.v_cam.setStyleSheet('color:#f05050;')
         self.v_e1.setText(f'{e1:.2f}'); self.v_e2.setText(f'{e2:.2f}')
-        cmd_fx = fm*dir_x; cmd_fz = fm*dir_z
-        cmd_dir = math.degrees(math.atan2(cmd_fz, cmd_fx))
         self.v_fmag.setText(f'{fm:.1f} N')
         self.v_fdir.setText(f'{cmd_dir:.1f} deg')
         self.v_cmd_mag.setText(f'{fm:.2f} N')
         self.v_cmd_dir.setText(f'{cmd_dir:.1f} deg')
-        # FIX 4 - solve once; cache result for _send_force to reuse
-        sol = solve_tensions(nx, nz, cmd_fx, cmd_fz)
-        with s.lock:
-            s.cached_sol = sol
         if sol and has_noark:
             T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
             tau1 = -(T1*R_SPOOL); tau2 = T3*R_SPOOL
@@ -665,12 +688,7 @@ class NOARKWindow(QMainWindow):
         else:
             for w in (self.v_t1, self.v_t3, self.v_tau1, self.v_tau2):
                 w.setText('--')
-        meas_fx = lc_x
-        meas_fz = lc_y   # load cell Y axis → table-frame Z axis
-        meas_mag = math.hypot(meas_fx, meas_fz)
         meas_dir = math.degrees(math.atan2(meas_fz, meas_fx))
-        with s.lock:
-            s.meas_fx = meas_fx; s.meas_fz = meas_fz; s.meas_mag = meas_mag
         if lc_stale:
             self.v_lc_status.setText('no data')
             self.v_lc_status.setStyleSheet('color:#f05050;')
@@ -681,10 +699,9 @@ class NOARKWindow(QMainWindow):
             self.v_lc_status.setStyleSheet('color:#44cc88;')
             self.v_lc_mag.setText(f'{meas_mag:.2f} N')
             self.v_lc_dir.setText(f'{meas_dir:.1f} deg')
-            # err_mag = abs((meas_mag - fm) / fm) if fm > 1e-6 else 0.0
             err_mag = abs(meas_mag - fm)
             err_dir = abs(cmd_dir - meas_dir)
-            err_mag_pcnt = (err_mag /fm)* 100 if fm > 1e-6 else 0.0
+            err_mag_pcnt = (err_mag / fm) * 100 if fm > 1e-6 else 0.0
             if err_dir > 180:
                 err_dir -= 360
             elif err_dir < -180:
@@ -693,7 +710,7 @@ class NOARKWindow(QMainWindow):
             self.v_err_mag.setText(f'{err_mag:.2f} N')
             self.v_err_dir.setText(f'{err_dir:.1f} deg')
             self.v_err_mag_per.setText(f'{err_mag_pcnt:.1f} %')
-            self.v_err_dir_per.setText(f'{err_dir_pcnt:.1f} %') 
+            self.v_err_dir_per.setText(f'{err_dir_pcnt:.1f} %')
             mc = '#44cc88' if err_mag < 1 else '#ffbb00' if err_mag < 3 else '#f05050'
             dc = '#44cc88' if err_dir < 5 else '#ffbb00' if err_dir < 15 else '#f05050'
             self.v_err_mag.setStyleSheet(f'color:{mc};')
@@ -711,8 +728,10 @@ class NOARKWindow(QMainWindow):
                 fm = s.force_mag
             if not has_noark:
                 time.sleep(0.005)
-                continue                   # skip logging when NOARK is not detected
+                continue
             sol = solve_tensions(nx, nz, fm * dir_x, fm * dir_z)
+            with s.lock:
+                s.cached_sol = sol          # _refresh and _send_force read from here
             if sol:
                 T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
                 tau1 = -(T1 * R_SPOOL); tau2 = T3 * R_SPOOL

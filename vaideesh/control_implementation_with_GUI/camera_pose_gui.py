@@ -14,7 +14,7 @@ class Config:
     MARKER_LENGTH = 0.05
     DEFAULT_IDS = [12, 14, 20]
     MARKER_OFFSETS = {
-        12: np.array([0, 0, -0.055]),
+        12: np.array([0, 0, -0.0575]),
         #12: np.array([0, 0, 0.0]),
         14: np.array([-0.126, 0, -0.054]),
         20: np.array([0.126, 0, -0.054]),
