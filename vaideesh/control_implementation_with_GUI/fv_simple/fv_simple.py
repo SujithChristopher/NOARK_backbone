@@ -24,7 +24,7 @@ MR = ( 0.065, -0.707)
 R_SPOOL     = 0.033
 MAX_F       = 24.0
 T_MIN       = 0.0
-HOLD_TIME   = 2
+HOLD_TIME   = 4.0
 ANGLE_STEPS = 7
 MAG_LIST    = [5.0, 10.0, 15.0, 24.0]
 EDGE_MARGIN_DEG = 5.0
@@ -155,7 +155,9 @@ class AutoSweep:
         self._running    = False
         self._events     = None
         self._events_fh  = None
+        self._sweep_t0   = 0.0
         self._timer      = QTimer(parent)
+        self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._advance)
 
     def start(self):
@@ -171,10 +173,10 @@ class AutoSweep:
         if not self._steps: return
         self._open_events_log()
         print(f'[sweep] {len(self._steps)} steps, ~{len(self._steps)*HOLD_TIME:.0f}s')
-        self._running = True
-        self._idx = -1
+        self._running  = True
+        self._idx      = -1
+        self._sweep_t0 = time.perf_counter()
         self._advance()
-        self._timer.start(int(HOLD_TIME * 1000))
 
     def stop(self):
         if not self._running: return
@@ -209,6 +211,11 @@ class AutoSweep:
                 result.append((theta, m))
         return result
 
+    def _arm_timer(self):
+        next_deadline = self._sweep_t0 + (self._idx + 1) * HOLD_TIME
+        delay_ms = max(1, int((next_deadline - time.perf_counter()) * 1000))
+        self._timer.start(delay_ms)
+
     def _advance(self):
         self._idx += 1
         if self._idx >= len(self._steps):
@@ -232,6 +239,7 @@ class AutoSweep:
         ang_deg = math.degrees(theta)
         print(f'[sweep] {self._idx+1}/{len(self._steps)}  ang={ang_deg:.1f}  mag={mag:.1f}N')
         self._log_event(self._idx, ang_deg, mag, T1, T3, tau1, tau2, sol is not None)
+        self._arm_timer()
 
     def _send_torque(self, tau1, tau2):
         try:
@@ -519,30 +527,53 @@ class NOARKWindow(QMainWindow):
         t = threading.Thread(target=self._log_loop, daemon=True)
         t.start(); self._threads.append(t)
 
-    # ── camera: one-shot capture ──────────────────────────────────────────────
+    # ── camera: 100-sample averaged capture ──────────────────────────────────
     def _capture_position_once(self):
         cam = MainClass(CAM_TOML, TABLE_TOML)
+        N_SAMPLES = 100
 
         def _search():
+            samples_x, samples_z = [], []
             t0 = time.time()
-            while time.time() - t0 < 15.0:
+            while time.time() - t0 < 30.0 and len(samples_x) < N_SAMPLES:
                 try:
                     cam.process_frame()
                     pos = cam.noark_in_table_frame
                     if pos is not None:
-                        nx, nz = float(pos[0]), float(pos[2])
+                        samples_x.append(float(pos[0]))
+                        samples_z.append(float(pos[2]))
                         with self.state.lock:
-                            self.state.noark_x  = nx
-                            self.state.noark_z  = nz
+                            self.state.noark_x   = float(pos[0])
+                            self.state.noark_z   = float(pos[2])
                             self.state.has_noark = True
-                            self.state.cam_status = 'captured'
-                        print(f'[cam] position captured: x={nx:.4f}  z={nz:.4f}')
-                        return
+                            self.state.cam_status = f'collecting {len(samples_x)}/{N_SAMPLES}'
                 except Exception as e:
                     print(f'[cam] {e}'); time.sleep(0.05)
+
+            if len(samples_x) == 0:
+                with self.state.lock:
+                    self.state.cam_status = 'timeout'
+                print('[cam] NOARK not found within 30 s')
+                return
+
+            nx = float(np.mean(samples_x))
+            nz = float(np.mean(samples_z))
             with self.state.lock:
-                self.state.cam_status = 'timeout'
-            print('[cam] NOARK not found within 15 s')
+                self.state.noark_x   = nx
+                self.state.noark_z   = nz
+                self.state.has_noark = True
+                self.state.cam_status = 'captured'
+            print(f'[cam] position captured (n={len(samples_x)}): x={nx:.4f}  z={nz:.4f}'
+                  f'  std_x={np.std(samples_x):.4f}  std_z={np.std(samples_z):.4f}')
+
+            import csv, datetime
+            pos_path = os.path.join(self._logger.session_dir, 'position.csv')
+            with open(pos_path, 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow(['x', 'z', 'std_x', 'std_z', 'n_samples', 'timestamp'])
+                w.writerow([nx, nz, np.std(samples_x), np.std(samples_z),
+                            len(samples_x), datetime.datetime.now().isoformat()])
+            print(f'[cam] position saved → {pos_path}')
 
         t = threading.Thread(target=_search, daemon=True)
         t.start(); self._threads.append(t)
