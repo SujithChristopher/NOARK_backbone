@@ -1,0 +1,24 @@
+[calibration]
+camera_matrix = [ [ 597.6118289927056, 0.0, 626.9406250554289,], [ 0.0, 599.0125735416196, 464.79339490145446,], [ 0.0, 0.0, 1.0,],]
+dist_coeffs = [ [ -0.04283704480678117,], [ 0.006838762565384697,], [ -0.00733291322857459,], [ 0.0013831097657989986,],]
+reprojection_error = 0.618311473454879
+method = "fisheye"
+pattern_size = [ 12, 8,]
+notes = "Calibration performed using AprilTag 36h11 markers, with a 30mm lens. The calibration was validated against mocap data, and the optimal transformation was applied to align the camera's translation vectors with the mocap system."
+
+[aruco]
+marker_length = 0.05
+marker_spacing = 0.01
+
+[camera]
+resolution = [ 1280, 800,]
+model = "OV9281"
+fov = 160
+
+[stream_data]
+udp = false
+ip = "localhost"
+port = 12345
+
+[display]
+display = false
