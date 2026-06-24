@@ -39,7 +39,8 @@
       "Bash(ls -1 dual_data)",
       "Bash(ls -1 recordings)",
       "Bash(ls -1 calibration/dual_160)",
-      "Bash(MPLBACKEND=Agg python verification_dual_camera.py)"
+      "Bash(MPLBACKEND=Agg python verification_dual_camera.py)",
+      "Bash(MPLBACKEND=Agg python verification_dual_undistort_compare.py)"
     ],
     "deny": []
   }
