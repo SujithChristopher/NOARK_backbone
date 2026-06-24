@@ -36,7 +36,7 @@ project_root = Path(__file__).parents[3]
 data_root = "data"
 recording_type = "calibration"
 camera_type = "dual_160"
-calib_folder_name = "dual_ov9281_parallel_calib_cz_30mm"
+calib_folder_name = "calib_cz30_dual_v2"
 
 calib_data_folder = os.path.join(
     project_root, data_root, recording_type, camera_type, calib_folder_name

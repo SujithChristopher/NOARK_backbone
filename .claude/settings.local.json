@@ -33,7 +33,13 @@
       "Bash(uv pip *)",
       "Bash(.venv/Scripts/python.exe -c ' *)",
       "Bash(Remove-Item uv.lock -ErrorAction SilentlyContinue)",
-      "PowerShell(Invoke-WebRequest -Uri \"https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite\" -OutFile \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\selfie_segmenter.tflite\")"
+      "PowerShell(Invoke-WebRequest -Uri \"https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite\" -OutFile \"E:\\\\CMC\\\\pyprojects\\\\programs_rpi\\\\NOARK_backbone\\\\notebooks\\\\calibration\\\\dual_notebooks\\\\selfie_segmenter.tflite\")",
+      "Bash(cd \"E:/CMC/pyprojects/programs_rpi/NOARK_backbone/notebooks/calibration/data\")",
+      "Bash(ls -1 \"E:/CMC/pyprojects/programs_rpi/NOARK_backbone/data\")",
+      "Bash(ls -1 dual_data)",
+      "Bash(ls -1 recordings)",
+      "Bash(ls -1 calibration/dual_160)",
+      "Bash(MPLBACKEND=Agg python verification_dual_camera.py)"
     ],
     "deny": []
   }
