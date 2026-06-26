@@ -375,8 +375,8 @@ class WorkspaceCanvas(QWidget):
         # Solve tensions
         Fx = fm*dx; Fz = fm*dz
         sol = solve_tensions(nx_w, nz_w, Fx, Fz)
-        T1 = max(0.0, sol['T1']) if sol else 0.0
-        T3 = max(0.0, sol['T3']) if sol else 0.0
+        T1 = max(2.2, sol['T1']) if sol else 0.0
+        T3 = max(2.2, sol['T3']) if sol else 0.0
 
         np_ = self._w2c(nx_w, nz_w)
         ml  = self._w2c(*ML)
@@ -421,20 +421,12 @@ class WorkspaceCanvas(QWidget):
         p.drawText(QRectF(np_.x()-8, np_.y()-6, 16, 12), Qt.AlignCenter, 'N')
         p.setPen(ncol); p.setFont(f9)
         p.drawText(QPointF(np_.x()-30, np_.y()-14), f'({nx_w:.3f}, {nz_w:.3f})')
-        if fm > 0.1 and has_noark:
+        if fm > 0.1:
             ln = 35 + fm/MAX_F*45; ax = np_.x()+dx*ln; ay = np_.y()+dz*ln
             p.setPen(QPen(C_RED, 2))
             p.drawLine(QPointF(np_.x(), np_.y()), QPointF(ax, ay))
             self._head(p, np_.x(), np_.y(), ax, ay, C_RED); p.setPen(C_RED)
             p.drawText(QPointF(ax+6, ay-4), f'{fm:.1f}N cmd')
-        if meas_mag > 0.1 and has_noark:
-            mdx = meas_fx/meas_mag; mdz = meas_fz/meas_mag
-            ln = 35 + meas_mag/MAX_F*45
-            mx = np_.x()+mdx*ln; my = np_.y()+mdz*ln
-            p.setPen(QPen(C_GREEN, 2))
-            p.drawLine(QPointF(np_.x(), np_.y()), QPointF(mx, my))
-            self._head(p, np_.x(), np_.y(), mx, my, C_GREEN); p.setPen(C_GREEN)
-            p.drawText(QPointF(mx+6, my+10), f'{meas_mag:.1f}N meas')
         p.end()
 
     @staticmethod
@@ -616,20 +608,6 @@ class NOARKWindow(QMainWindow):
         sv.addWidget(_sec('Motor torques (Nm)')); sv.addWidget(_sep())
         self.v_tau1 = _row(sv, 'tau1', '#50b4ff')
         self.v_tau2 = _row(sv, 'tau2', '#44cc88')
-        sv.addWidget(_sec('Commanded force')); sv.addWidget(_sep())
-        self.v_cmd_mag = _row(sv, 'magnitude', '#f05050')
-        self.v_cmd_dir = _row(sv, 'direction', '#f05050')
-        sv.addWidget(_sec('Measured force')); sv.addWidget(_sep())
-        self.v_lc_status = _row(sv, 'status', '#888')
-        self.v_lc_mag = _row(sv, 'magnitude', '#44cc88')
-        self.v_lc_dir = _row(sv, 'direction', '#44cc88')
-        btn_tare = _btn('tare load cell', '#44cc88', '#0a1a10', '#44cc88')
-        btn_tare.clicked.connect(self._tare_loadcell); _wrap(sv, btn_tare)
-        sv.addWidget(_sec('Error')); sv.addWidget(_sep())
-        self.v_err_mag = _row(sv, 'mag error', '#ffbb00')
-        self.v_err_dir = _row(sv, 'dir error', '#ffbb00')
-        self.v_err_mag_per = _row(sv,'mag_error_pcnt', '#ffbb00')
-        self.v_err_dir_per = _row(sv,'dir_error_pcnt', '#ffbb00')   
         sv.addStretch()
         self.btn_send = _btn('send to Teensy', '#50b4ff', '#0a1020', '#50b4ff')
         self.btn_send.clicked.connect(self._toggle_send); _wrap(sv, self.btn_send)
@@ -644,7 +622,7 @@ class NOARKWindow(QMainWindow):
             has_noark = s.has_noark; nx, nz = s.noark_x, s.noark_z
             e1, e2 = s.enc1, s.enc2
             dir_x, dir_z = s.dir_x, s.dir_z
-            fm = s.force_mag; lc_stale = s.lc_stale
+            fm = s.force_mag
             lc_x, lc_y = s.lc_x, s.lc_y
             ox, oy = s.lc_offset_x, s.lc_offset_y
 
@@ -666,7 +644,7 @@ class NOARKWindow(QMainWindow):
         if self._display_tick % 4 != 0:
             return
 
-        cmd_dir = math.degrees(math.atan2(cmd_fz, cmd_fx))
+        cmd_dir = math.degrees(math.atan2(dir_z, dir_x))
         if has_noark:
             self.v_nx.setText(f'{nx:.4f}'); self.v_nz.setText(f'{nz:.4f}')
             self.v_cam.setText('tracking')
@@ -678,9 +656,7 @@ class NOARKWindow(QMainWindow):
         self.v_e1.setText(f'{e1:.2f}'); self.v_e2.setText(f'{e2:.2f}')
         self.v_fmag.setText(f'{fm:.1f} N')
         self.v_fdir.setText(f'{cmd_dir:.1f} deg')
-        self.v_cmd_mag.setText(f'{fm:.2f} N')
-        self.v_cmd_dir.setText(f'{cmd_dir:.1f} deg')
-        if sol and has_noark:
+        if sol:
             T1 = max(T_MIN, sol['T1']); T3 = max(T_MIN, sol['T3'])
             tau1 = -(T1*R_SPOOL); tau2 = T3*R_SPOOL
             self.v_t1.setText(f'{T1:.2f} N'); self.v_t3.setText(f'{T3:.2f} N')
@@ -688,33 +664,6 @@ class NOARKWindow(QMainWindow):
         else:
             for w in (self.v_t1, self.v_t3, self.v_tau1, self.v_tau2):
                 w.setText('--')
-        meas_dir = math.degrees(math.atan2(meas_fz, meas_fx))
-        if lc_stale:
-            self.v_lc_status.setText('no data')
-            self.v_lc_status.setStyleSheet('color:#f05050;')
-            for w in (self.v_lc_mag, self.v_lc_dir, self.v_err_mag, self.v_err_dir):
-                w.setText('--')
-        else:
-            self.v_lc_status.setText('live')
-            self.v_lc_status.setStyleSheet('color:#44cc88;')
-            self.v_lc_mag.setText(f'{meas_mag:.2f} N')
-            self.v_lc_dir.setText(f'{meas_dir:.1f} deg')
-            err_mag = abs(meas_mag - fm)
-            err_dir = abs(cmd_dir - meas_dir)
-            err_mag_pcnt = (err_mag / fm) * 100 if fm > 1e-6 else 0.0
-            if err_dir > 180:
-                err_dir -= 360
-            elif err_dir < -180:
-                err_dir += 360
-            err_dir_pcnt = (err_dir / 360.0) * 100
-            self.v_err_mag.setText(f'{err_mag:.2f} N')
-            self.v_err_dir.setText(f'{err_dir:.1f} deg')
-            self.v_err_mag_per.setText(f'{err_mag_pcnt:.1f} %')
-            self.v_err_dir_per.setText(f'{err_dir_pcnt:.1f} %')
-            mc = '#44cc88' if err_mag < 1 else '#ffbb00' if err_mag < 3 else '#f05050'
-            dc = '#44cc88' if err_dir < 5 else '#ffbb00' if err_dir < 15 else '#f05050'
-            self.v_err_mag.setStyleSheet(f'color:{mc};')
-            self.v_err_dir.setStyleSheet(f'color:{dc};')
         self.workspace.update()
         # self.cam_view.update_frame()
 
@@ -726,9 +675,6 @@ class NOARKWindow(QMainWindow):
                 nx, nz = s.noark_x, s.noark_z
                 dir_x, dir_z = s.dir_x, s.dir_z
                 fm = s.force_mag
-            if not has_noark:
-                time.sleep(0.005)
-                continue
             sol = solve_tensions(nx, nz, fm * dir_x, fm * dir_z)
             with s.lock:
                 s.cached_sol = sol          # _refresh and _send_force read from here
