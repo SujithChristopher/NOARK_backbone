@@ -173,3 +173,5 @@ dual_data1
 dual_data2
 notebooks/calibration/dual_notebooks/upperlimb_3d.mp4
 notebooks/calibration/dual_notebooks/upperlimb_combined.mp4
+/smpl/
+/smplx/

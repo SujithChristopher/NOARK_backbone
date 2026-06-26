@@ -131,6 +131,140 @@ Compares camera pose estimates against OptiTrack on every synced frame.
 
 ---
 
+## 3.5 Pose algorithms — full reconstruction recipe
+
+Everything needed to re-implement the four estimators from scratch in another
+project. OpenCV ≥ 4.7 (the `cv2.fisheye.*` and `cv2.aruco.ArucoDetector` API).
+
+### 3.5.0 Conventions & shared inputs
+
+- **Coordinate frame**: right-handed, camera looks down **+Z**, X right, Y down
+  (OpenCV convention). A pose `(rvec, tvec)` maps **model → camera**:
+  `X_cam = R(rvec) · X_model + tvec`, where `R = cv2.Rodrigues(rvec)`.
+- **Intrinsics**: each camera has `K` (3×3) and fisheye distortion `D` (4×1,
+  `[k1,k2,k3,k4]`, the Kannala–Brandt model used by `cv2.fisheye`).
+- **Stereo extrinsics** `(R_st, T_st)` map **cam0 → cam1**:
+  `X_cam1 = R_st · X_cam0 + T_st`. Stored in the TOML; **T is in mm → divide by
+  1000** to work in metres (so it matches the tag size).
+- **Tag model** (object points, metres), with corner order matching the AprilTag
+  detector output **TL, TR, BR, BL**:
+  ```
+  L = MARKER_LENGTH                      # e.g. 0.05 m
+  MARKER_PTS = [[-L/2, +L/2, 0],         # TL
+               [+L/2, +L/2, 0],          # TR
+               [+L/2, -L/2, 0],          # BR
+               [-L/2, -L/2, 0]]          # BL
+  ```
+- **Corners**: `cv2.aruco.ArucoDetector.detectMarkers` → refine each marker's 4
+  corners with `cv2.cornerSubPix` (window 5×5, 40 iters, eps 0.01) on the
+  grayscale image. Corner array shape `(4, 2)`, float.
+
+### 3.5.1 `cam0` / `cam1` — single-view planar PnP
+
+The estimator name in code is "mono". Algorithm:
+
+```
+# corners: (4,2) pixel coords from one camera; K, D for that camera
+und = cv2.fisheye.undistortPoints(corners.reshape(-1,1,2), K, D, P=K)
+# und are now pixel coords in an ideal pinhole camera with matrix K, zero dist
+ok, rvec, tvec = cv2.solvePnP(MARKER_PTS, und, K, distCoeffs=None,
+                              flags=cv2.SOLVEPNP_ITERATIVE)
+R = cv2.Rodrigues(rvec)[0]
+# tag-centre position = tvec (model is centred at origin)
+```
+
+- `undistortPoints(..., P=K)` removes fisheye distortion and re-projects to the
+  same `K`, so we can call the **pinhole** `solvePnP` with `distCoeffs=None`.
+- `SOLVEPNP_ITERATIVE` is Levenberg–Marquardt reprojection minimisation seeded
+  by a planar homography (DLT). **Weakness**: for a small coplanar tag the depth
+  (Z) and out-of-plane tilt are weakly observable → jitter + occasional 180°
+  flip ambiguity. This is exactly what stereo fixes.
+
+### 3.5.2 `stereo_tri` — triangulation + Kabsch (algebraic)
+
+Triangulate each of the 4 corners with the stereo baseline, then fit the rigid
+tag model to the 4 metric 3D points.
+
+```
+# normalise corners to z=1 image plane (no P argument → normalized coords)
+n0 = cv2.fisheye.undistortPoints(c0.reshape(-1,1,2), K0, D0).reshape(-1,2).T  # (2,4)
+n1 = cv2.fisheye.undistortPoints(c1.reshape(-1,1,2), K1, D1).reshape(-1,2).T  # (2,4)
+P0 = [I | 0]                         # 3×4, cam0 is the reference
+P1 = [R_st | T_st]                   # 3×4, T_st in METRES
+Xh = cv2.triangulatePoints(P0, P1, n0, n1)   # 4×4 homogeneous
+pts3d = (Xh[:3] / Xh[3]).T                    # (4,3) metres, in cam0 frame
+R, t = kabsch(MARKER_PTS, pts3d)              # fit model → world (see 3.5.4)
+# bad-corner rejection: if one corner's fit residual >> median, drop it & refit
+res = norm((R @ MARKER_PTS.T).T + t - pts3d, axis=1)
+if res.max() > 3*median(res): refit kabsch on the best 3 corners
+# tag-centre position = t ; orientation = R
+```
+
+- Because `n0, n1` are **normalized** (z=1) coordinates, the projection matrices
+  use identity intrinsics; depth comes from the baseline (disparity), not from
+  the tag's perspective. That is the source of the depth improvement.
+- This is algebraic (DLT) + a rigid fit; it does not minimise pixel
+  reprojection error, hence it is slightly noisier than 3.5.3.
+
+### 3.5.3 `stereo_pnp` — joint multi-view PnP (maximum likelihood) ← recommended
+
+One 6-DOF pose minimising **reprojection error in both cameras simultaneously**
+(8 image points, 16 residuals). Initialise from the `stereo_tri` solution.
+
+```
+rvec1_st = cv2.Rodrigues(R_st)[0]            # stereo rotation as rvec
+def residual(p):                              # p = [rvec(3), tvec(3)]
+    rvec, tvec = p[:3], p[3:]
+    # cam0: model → cam0 directly
+    proj0 = project(MARKER_PTS, rvec,  tvec,  K0, D0)        # (4,2)
+    # cam1: compose model→cam0 with cam0→cam1
+    rvec1, tvec1 = cv2.composeRT(rvec, tvec, rvec1_st, T_st)[:2]
+    proj1 = project(MARKER_PTS, rvec1, tvec1, K1, D1)        # (4,2)
+    return concat([(proj0 - c0).ravel(), (proj1 - c1).ravel()])  # length 16
+
+x0 = concat([rvec_init, tvec_init])           # from stereo_tri (Rodrigues(R), t)
+sol = scipy.optimize.least_squares(residual, x0, method="lm")
+rvec, tvec = sol.x[:3], sol.x[3:]
+R = cv2.Rodrigues(rvec)[0]
+```
+
+- `project(...)` is the camera projection model. For the **corner-undistort**
+  pipeline use the fisheye model on the raw corners:
+  `cv2.fisheye.projectPoints(obj.reshape(-1,1,3), rvec, tvec, K, D)`.
+  For the **full-image-undistort** pipeline the corners are already pinhole, so
+  use `cv2.projectPoints(obj, rvec, tvec, K_new, zeros)`.
+- `cv2.composeRT(rvecA, tvecA, rvecB, tvecB)` returns the transform equal to
+  applying A (model→cam0) then B (cam0→cam1). Order matters.
+- `least_squares(..., method="lm")` is Levenberg–Marquardt; the 16 residuals
+  over 6 unknowns are well-conditioned given two viewpoints, which removes the
+  planar depth/flip weakness. This is the maximum-likelihood pose under
+  isotropic Gaussian pixel noise.
+
+### 3.5.4 Kabsch (rigid point-set alignment)
+
+Closed-form least-squares rotation+translation mapping `src → dst`
+(`dst ≈ R·src + t`). Used both to fit the tag model in 3.5.2 and to align a
+whole trajectory to mocap before scoring.
+
+```
+cs, cd = mean(src), mean(dst)
+H = (src - cs).T @ (dst - cd)         # 3×3 covariance
+U, S, Vt = svd(H)
+R = Vt.T @ U.T
+if det(R) < 0:                        # reflection fix
+    Vt[2] *= -1
+    R = Vt.T @ U.T
+t = cd - R @ cs
+```
+
+### 3.5.5 Which to use
+
+`stereo_pnp` on **corner-undistorted** points (3.5.1's `undistortPoints`, no
+full-image remap). Best translation accuracy and rotation; ~half the
+single-camera jitter. Use `stereo_tri` only to initialise it.
+
+---
+
 ## 4. Findings
 
 ### 4.1 Does a second camera reduce jitter? — Yes, mainly in depth
