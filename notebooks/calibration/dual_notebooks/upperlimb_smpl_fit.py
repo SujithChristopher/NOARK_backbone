@@ -23,6 +23,8 @@ Run:
     python notebooks/calibration/dual_notebooks/upperlimb_smpl_fit.py
 """
 
+import os
+
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -45,7 +47,12 @@ from upperlimb_3d_kinematics import (
 # ---------------------------------------------------------------------------
 # Paths / constants
 # ---------------------------------------------------------------------------
-SMPL_MODEL_DIR = PROJECT_ROOT / "data" / "body_models"   # contains smpl/SMPL_NEUTRAL.pkl
+# smplx.create(model_path, model_type=X) resolves <model_path>/<X>/<MODEL_FILE>.
+# Repo root holds smplx/SMPLX_NEUTRAL.npz (and smpl/SMPL_NEUTRAL.pkl as fallback).
+SMPL_MODEL_DIR = PROJECT_ROOT
+MODEL_TYPE     = "smplx"        # "smplx" (body+hands+face) or "smpl"
+MODEL_GENDER   = "neutral"
+N_BODY_POSE    = 63 if MODEL_TYPE == "smplx" else 69   # 21 vs 23 body joints * 3
 OUT_VIDEO      = DATA_DIR / "upperlimb_smpl_fit.mp4"
 OUT_PARAMS     = DATA_DIR / "upperlimb_smpl_params.npz"
 
@@ -73,17 +80,26 @@ VERT_DRAW_STRIDE = 12   # subsample SMPL verts when overlaying / scattering
 #                23/24 hips 25/26 knees 27/28 ankles
 # ---------------------------------------------------------------------------
 # name -> (mediapipe_idx, smpl_joint_idx).  Pelvis handled specially (mid-hips).
+# Upper-body only: legs are frozen, so knee/ankle targets are excluded (they would
+# fight the fixed leg pose). Hips are kept — they anchor pelvis/global translation
+# without depending on leg joint rotations.
 JOINT_MAP = {
     "L_shoulder": (11, 16), "R_shoulder": (12, 17),
     "L_elbow":    (13, 18), "R_elbow":    (14, 19),
     "L_wrist":    (15, 20), "R_wrist":    (16, 21),
     "L_hip":      (23,  1), "R_hip":      (24,  2),
-    "L_knee":     (25,  4), "R_knee":     (26,  5),
-    "L_ankle":    (27,  7), "R_ankle":    (28,  8),
     "head":       (0,  15),
 }
 # Upper-limb joints get higher confidence weight (primary interest)
 UPPER_NAMES = {"L_shoulder", "R_shoulder", "L_elbow", "R_elbow", "L_wrist", "R_wrist"}
+
+# Body-pose joints to OPTIMIZE (kinematic joint indices 1..21; pelvis=0 is global_orient).
+# Everything not listed (hips, knees, ankles, feet) stays frozen at the rest pose.
+#   3,6,9 = spine1/2/3   12 = neck   13,14 = collars   15 = head
+#   16,17 = shoulders    18,19 = elbows    20,21 = wrists
+_UPPER_BODY_JOINTS   = [3, 6, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+# body_pose param index for kinematic joint j is 3*(j-1)+k  (root excluded)
+UPPER_POSE_PARAM_IDX = [3 * (j - 1) + k for j in _UPPER_BODY_JOINTS for k in range(3)]
 
 
 # ---------------------------------------------------------------------------
@@ -141,35 +157,51 @@ def triangulate_targets(lms0, lms1, Q, W, H):
 # SMPL fitting
 # ---------------------------------------------------------------------------
 class SmplFitter:
-    """Per-frame SMPL fit, warm-started from previous frame."""
+    """Per-frame SMPL fit, warm-started from previous frame.
+
+    Only the upper-body joints (UPPER_POSE_PARAM_IDX) are optimized; legs stay
+    frozen at the rest pose. The free variable is `upper_pose`, scattered into a
+    zero-initialized full body_pose each forward pass.
+    """
 
     def __init__(self, model_dir, device):
         self.device = device
-        self.model = smplx.create(
+        kwargs = dict(
             model_path=str(model_dir),
-            model_type="smpl",
-            gender="neutral",
+            model_type=MODEL_TYPE,
+            gender=MODEL_GENDER,
             num_betas=10,
             batch_size=1,
-        ).to(device)
+        )
+        if MODEL_TYPE == "smplx":
+            # Don't optimize hands/face — keep them fixed at a neutral flat pose.
+            kwargs.update(use_pca=False, flat_hand_mean=True, use_face_contour=False)
+        self.model = smplx.create(**kwargs).to(device)
+
+        self.upper_idx = torch.as_tensor(UPPER_POSE_PARAM_IDX, device=device)
 
         z = lambda n: torch.zeros(1, n, device=device, requires_grad=True)  # noqa: E731
         self.global_orient = z(3)
-        self.body_pose     = z(69)
+        self.upper_pose    = z(len(UPPER_POSE_PARAM_IDX))   # only optimized joints
         self.betas         = z(10)
         self.transl        = z(3)
-        self._prev_pose    = None   # detached body_pose for temporal term
+        self._prev_upper   = None   # detached upper_pose for temporal term
+
+    def _body_pose(self):
+        """Scatter upper_pose into a frozen (zero) full body_pose. Differentiable."""
+        full = torch.zeros(1, N_BODY_POSE, device=self.device)
+        return full.index_copy(1, self.upper_idx, self.upper_pose)
 
     def _forward(self):
         return self.model(
             betas=self.betas,
-            body_pose=self.body_pose,
+            body_pose=self._body_pose(),
             global_orient=self.global_orient,
             transl=self.transl,
         )
 
     def fit(self, targets_m, weights, smpl_idx):
-        """Fit to 3D joint targets. Returns (vertices_m (6890,3), joints_m (24,3))."""
+        """Fit to 3D joint targets. Returns (vertices_m, body_joints_m)."""
         tgt = torch.as_tensor(targets_m, device=self.device)
         w   = torch.as_tensor(weights, device=self.device).unsqueeze(1)
         idx = torch.as_tensor(smpl_idx, device=self.device)
@@ -191,33 +223,33 @@ class SmplFitter:
             return loss
         opt1.step(closure1)
 
-        # Stage 2: full pose + shape, with priors
+        # Stage 2: upper-body pose + shape, with priors
         opt2 = torch.optim.LBFGS(
-            [self.global_orient, self.transl, self.body_pose, self.betas],
+            [self.global_orient, self.transl, self.upper_pose, self.betas],
             lr=LR, max_iter=STAGE2_ITERS, line_search_fn="strong_wolfe")
 
         def closure2():
             opt2.zero_grad()
             loss = data_loss()
             loss = loss + W_BETA * (self.betas ** 2).sum()
-            loss = loss + W_POSE * (self.body_pose ** 2).sum()
-            if self._prev_pose is not None:
-                loss = loss + W_TEMPORAL * ((self.body_pose - self._prev_pose) ** 2).sum()
+            loss = loss + W_POSE * (self.upper_pose ** 2).sum()
+            if self._prev_upper is not None:
+                loss = loss + W_TEMPORAL * ((self.upper_pose - self._prev_upper) ** 2).sum()
             loss.backward()
             return loss
         opt2.step(closure2)
 
-        self._prev_pose = self.body_pose.detach().clone()
+        self._prev_upper = self.upper_pose.detach().clone()
 
         with torch.no_grad():
             out = self._forward()
         return (out.vertices[0].cpu().numpy(),
-                out.joints[0, :24].cpu().numpy())
+                out.joints[0, :22].cpu().numpy())   # 22 body joints (SMPL-X / SMPL)
 
     def params(self):
         return {
             "global_orient": self.global_orient.detach().cpu().numpy().ravel(),
-            "body_pose":     self.body_pose.detach().cpu().numpy().ravel(),
+            "body_pose":     self._body_pose().detach().cpu().numpy().ravel(),
             "betas":         self.betas.detach().cpu().numpy().ravel(),
             "transl":        self.transl.detach().cpu().numpy().ravel(),
         }
@@ -285,11 +317,14 @@ class MeshRenderer:
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    smpl_pkl = SMPL_MODEL_DIR / "smpl" / "SMPL_NEUTRAL.pkl"
-    if not smpl_pkl.exists():
+    sub = MODEL_TYPE                                  # "smplx" or "smpl"
+    fname = f"{MODEL_TYPE.upper()}_{MODEL_GENDER.upper()}"
+    cand = [SMPL_MODEL_DIR / sub / f"{fname}.npz",
+            SMPL_MODEL_DIR / sub / f"{fname}.pkl"]
+    if not any(p.exists() for p in cand):
         raise FileNotFoundError(
-            f"SMPL model not found at {smpl_pkl}\n"
-            "Register at https://smpl.is.tue.mpg.de and place SMPL_NEUTRAL.pkl there."
+            f"{MODEL_TYPE} model not found. Looked for:\n  " +
+            "\n  ".join(str(p) for p in cand)
         )
 
     print(f"Device: {DEVICE}")
@@ -302,6 +337,9 @@ def main():
     frames0 = load_all_frames(CAM0_VIDEO)
     frames1 = load_all_frames(CAM1_VIDEO)
     n = min(len(frames0), len(frames1))
+    max_frames = int(os.environ.get("SMPL_MAX_FRAMES", "0"))   # 0 = all
+    if max_frames > 0:
+        n = min(n, max_frames)
     print(f"  {n} paired frames")
 
     ts0_ms = load_timestamps(CAM0_TIMESTAMP)

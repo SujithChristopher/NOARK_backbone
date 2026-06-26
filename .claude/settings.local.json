@@ -42,7 +42,10 @@
       "Bash(MPLBACKEND=Agg python verification_dual_camera.py)",
       "Bash(MPLBACKEND=Agg python verification_dual_undistort_compare.py)",
       "Bash(ls -1 *.md)",
-      "Bash(ls -1 docs)"
+      "Bash(ls -1 docs)",
+      "Bash(pip --version)",
+      "Bash(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader)",
+      "Bash(SMPL_MAX_FRAMES=5 uv run python upperlimb_smpl_fit.py)"
     ],
     "deny": []
   }

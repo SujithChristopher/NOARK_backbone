@@ -1361,10 +1361,12 @@ dependencies = [
     { name = "polars" },
     { name = "pyrender" },
     { name = "scipy" },
+    { name = "smplx" },
     { name = "toml" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "tqdm" },
+    { name = "trimesh" },
 ]
 
 [package.metadata]
@@ -1382,10 +1384,12 @@ requires-dist = [
     { name = "polars", specifier = ">=1.40.0" },
     { name = "pyrender", specifier = ">=0.1.45" },
     { name = "scipy", specifier = ">=1.17.1" },
+    { name = "smplx", specifier = ">=0.1.28" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "torch", specifier = ">=2.11.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "torchvision", specifier = ">=0.26.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "tqdm", specifier = ">=4.67.3" },
+    { name = "trimesh", specifier = ">=4.12.2" },
 ]
 
 [[package]]
@@ -2263,6 +2267,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "smplx"
+version = "0.1.28"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/69/eb/51da17b291fb1221317a1ff65a301fb2cf9c6c0dd87a0caec4cbcd06c1da/smplx-0.1.28.tar.gz", hash = "sha256:c3a1e2c3069cdf7a4b34fd250c2484c8bb1a4fd9c14490da9359af5fbc64fbe6", size = 28500, upload-time = "2021-05-26T12:14:10.194Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c9/33/bd37416aec828e7465652d9e2525fe52de0a29a581f1519cc51a74485091/smplx-0.1.28-py3-none-any.whl", hash = "sha256:e8ff3d278a015c097dc86d44a38475da4ac170042943c84c08eee433629406a7", size = 29903, upload-time = "2021-05-26T12:14:08.641Z" },
 ]
 
 [[package]]

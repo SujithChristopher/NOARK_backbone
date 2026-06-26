@@ -22,6 +22,8 @@ dependencies = [
     "torch>=2.11.0",
     "torchvision>=0.26.0",
     "pyrender>=0.1.45",
+    "smplx>=0.1.28",
+    "trimesh>=4.12.2",
 ]
 
 
