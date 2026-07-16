@@ -24,6 +24,7 @@ dependencies = [
     "pyrender>=0.1.45",
     "smplx>=0.1.28",
     "trimesh>=4.12.2",
+    "maturin>=1.14.1",
 ]
 
 

@@ -61,9 +61,16 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 VISIBILITY_THRESH = 0.5
 Z_MAX_MM          = 4000
 
+# Speed knobs (env-overridable for quick previews)
+#   SMPL_MAX_FRAMES   cap total frames        (0 = all)
+#   SMPL_FRAME_STRIDE process every Nth frame (1 = all)
+#   SMPL_RENDER_SCALE pyrender resolution scale (0.5 = half res, ~4x faster)
+FRAME_STRIDE = max(1, int(os.environ.get("SMPL_FRAME_STRIDE", "1")))
+RENDER_SCALE = float(os.environ.get("SMPL_RENDER_SCALE", "1.0"))
+
 # Optimization
-STAGE1_ITERS = 30    # global orient + translation only
-STAGE2_ITERS = 60    # full body pose + betas
+STAGE1_ITERS = int(os.environ.get("SMPL_STAGE1_ITERS", "30"))   # global orient + translation
+STAGE2_ITERS = int(os.environ.get("SMPL_STAGE2_ITERS", "60"))   # upper-body pose + betas
 LR           = 1.0   # LBFGS step
 W_BETA       = 1e-3  # shape regularization
 W_POSE       = 5e-4  # pose regularization (toward rest pose)
@@ -280,13 +287,14 @@ class MeshRenderer:
     rectified intrinsics — the shaded mesh aligns with the cam0 image.
     """
 
-    def __init__(self, Q, size, faces):
+    def __init__(self, Q, size, faces, scale=1.0):
         w, h = size
-        self.w, self.h = int(w), int(h)
+        self.w, self.h = int(w * scale), int(h * scale)
         self.faces = faces
-        self.fx = self.fy = float(Q[2, 3])
-        self.cx = float(-Q[0, 3])
-        self.cy = float(-Q[1, 3])
+        # Scale intrinsics with the render resolution so the view stays correct.
+        self.fx = self.fy = float(Q[2, 3]) * scale
+        self.cx = float(-Q[0, 3]) * scale
+        self.cy = float(-Q[1, 3]) * scale
 
         self.renderer = pyrender.OffscreenRenderer(self.w, self.h)
         self.cam = pyrender.IntrinsicsCamera(
@@ -354,20 +362,24 @@ def main():
     lmk1    = make_pose_landmarker()
     fitter  = SmplFitter(SMPL_MODEL_DIR, DEVICE)
     faces   = fitter.model.faces.astype(np.int64)
-    mesh_renderer = MeshRenderer(Q, CAM_SIZE, faces)
+    mesh_renderer = MeshRenderer(Q, CAM_SIZE, faces, scale=RENDER_SCALE)
 
     W, H        = CAM_SIZE
     cam_panel_w = int(W * PANEL_HEIGHT / H)
     mesh_w      = cam_panel_w               # mesh panel matches cam aspect (shared intrinsics)
     total_w     = cam_panel_w + mesh_w
 
+    frame_idx = list(range(0, n, FRAME_STRIDE))
+    # Keep playback near real-time: dropping frames -> lower output fps.
+    out_fps = max(1.0, writer_fps / FRAME_STRIDE)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(OUT_VIDEO), fourcc, writer_fps, (total_w, PANEL_HEIGHT))
-    print(f"Output: {OUT_VIDEO}  ({total_w}x{PANEL_HEIGHT})")
+    writer = cv2.VideoWriter(str(OUT_VIDEO), fourcc, out_fps, (total_w, PANEL_HEIGHT))
+    print(f"Output: {OUT_VIDEO}  ({total_w}x{PANEL_HEIGHT})  "
+          f"frames={len(frame_idx)} stride={FRAME_STRIDE} render_scale={RENDER_SCALE}")
 
     params_log = []
 
-    for i in range(n):
+    for count, i in enumerate(frame_idx):
         f0, f1 = frames0[i], frames1[i]
         f0_bgr = cv2.cvtColor(f0, cv2.COLOR_GRAY2BGR) if f0.ndim == 2 else f0
         f1_bgr = cv2.cvtColor(f1, cv2.COLOR_GRAY2BGR) if f1.ndim == 2 else f1
@@ -405,9 +417,9 @@ def main():
 
         writer.write(np.concatenate([cam_panel, mesh_panel], axis=1))
 
-        if i % 25 == 0:
+        if count % 20 == 0:
             njt = 0 if targets is None else len(targets)
-            print(f"  {i:4d}/{n}  fit joints={njt}")
+            print(f"  {count:4d}/{len(frame_idx)} (frame {i})  fit joints={njt}")
 
     writer.release()
     mesh_renderer.close()
