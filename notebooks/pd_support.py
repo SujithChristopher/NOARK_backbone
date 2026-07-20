@@ -295,7 +295,6 @@ def read_rigid_body_csv(_pth):
             _col_head = _rb_df[i].iloc[0].lower()
             _col_head = _col_head.split(":")[1].strip()
             _col_head = _col_head.replace("marker", "")
-            _m_idx = int(_col_head)
 
             if isinstance(_rb_df[i].iloc[3], str):
                 _col = _rb_df[i].iloc[3].lower()
@@ -312,7 +311,6 @@ def read_rigid_body_csv(_pth):
             _col_head = _rb_df[i].iloc[0].lower()
             _col_head = _col_head.split(":")[1].strip()
             _col_head = _col_head.replace("marker", "")
-            _m_idx = int(_col_head)
 
             if isinstance(_rb_df[i].iloc[3], str):
                 _col = _rb_df[i].iloc[3].lower()
