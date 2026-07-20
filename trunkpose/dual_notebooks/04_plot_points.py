@@ -46,6 +46,10 @@ CAM_SIZE = (1280, 800)  # (W, H) -- both OV9281
 VISIBILITY_THRESH = 0.5
 PANEL = 720  # square video panel, px
 AXIS_PAD_M = 0.3
+Z_MAX_M = 5.0  # reject triangulated points beyond this depth in cam0 -- misdetections
+# (e.g. background clutter mistaken for a joint, or near-parallel rays from a bad
+# stereo correspondence) can triangulate to wildly wrong depth; a plausible person
+# is within a few metres of the rig.
 
 # BlazePose landmark indices (MediaPipe PoseLandmarker, 33-point)
 UPPER_LIMB = {
@@ -141,7 +145,12 @@ def triangulate(p0_px, p1_px, K0, D0, K1, D1, R, T):
     P0 = np.hstack([np.eye(3), np.zeros((3, 1))])
     P1 = np.hstack([R, T])
     h = cv2.triangulatePoints(P0, P1, n0, n1)
-    return (h[:3] / h[3]).ravel()
+    if abs(h[3, 0]) < 1e-9:
+        return None
+    p_cam0 = (h[:3] / h[3]).ravel()
+    if not (0 < p_cam0[2] < Z_MAX_M):
+        return None
+    return p_cam0
 
 
 # %% MediaPipe PoseLandmarker
@@ -209,11 +218,14 @@ def render_frame(fig, ax, cam_pts, mocap_pts, limits):
 
 
 def compute_limits(all_pts, pad=AXIS_PAD_M):
+    """1st/99th percentile bounds -- robust to the rare stray triangulated point."""
     pts = np.array(all_pts)
+    lo = np.percentile(pts, 1, axis=0)
+    hi = np.percentile(pts, 99, axis=0)
     return {
-        "x": (pts[:, 0].min() - pad, pts[:, 0].max() + pad),
-        "y": (pts[:, 1].min() - pad, pts[:, 1].max() + pad),
-        "z": (pts[:, 2].min() - pad, pts[:, 2].max() + pad),
+        "x": (lo[0] - pad, hi[0] + pad),
+        "y": (lo[1] - pad, hi[1] + pad),
+        "z": (lo[2] - pad, hi[2] + pad),
     }
 
 
@@ -266,8 +278,9 @@ def main():
             xyz = None
             if p0 is not None and p1 is not None:
                 p_cam0 = triangulate(p0, p1, K0, D0, K1, D1, R_st, T_st)
-                xyz = to_board(p_cam0, R0_c, t0_c)
-                all_pts.append(xyz)
+                if p_cam0 is not None:
+                    xyz = to_board(p_cam0, R0_c, t0_c)
+                    all_pts.append(xyz)
             cam_pts[name] = xyz
         cam_frames.append(cam_pts)
 
