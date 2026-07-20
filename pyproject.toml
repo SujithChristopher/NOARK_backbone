@@ -26,6 +26,9 @@ dependencies = [
     "trimesh>=4.12.2",
     "maturin>=1.14.1",
     "fiftyone>=1.19.0",
+    "requests>=2.34.2",
+    "pycocotools>=2.0.11",
+    "ultralytics>=8.4.102",
 ]
 
 

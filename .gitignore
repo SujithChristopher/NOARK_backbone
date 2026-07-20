@@ -175,3 +175,9 @@ notebooks/calibration/dual_notebooks/upperlimb_3d.mp4
 notebooks/calibration/dual_notebooks/upperlimb_combined.mp4
 /smpl/
 /smplx/
+/trunkpose/runs/
+/trunkpose/dataset/
+/trunkpose/plots/
+/runs/
+yolo26n.pt
+yolov8n-pose.pt
