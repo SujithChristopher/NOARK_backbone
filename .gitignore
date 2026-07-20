@@ -181,3 +181,5 @@ notebooks/calibration/dual_notebooks/upperlimb_combined.mp4
 /runs/
 yolo26n.pt
 yolov8n-pose.pt
+trunkpose/dual_notebooks/selfie_segmenter.tflite
+trunkpose/dual_notebooks/pose_landmarker_full.task
