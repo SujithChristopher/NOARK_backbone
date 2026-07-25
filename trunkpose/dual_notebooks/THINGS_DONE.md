@@ -151,9 +151,13 @@ the axial axis already showed r=−0.90 (pure axis flip → signal was always th
 **ICP rigid registration is validated as the camera trunk-angle method.**
 
 Open items:
-- ICP still dies after the big axial turn at ~41 s (wrong local minimum, stuck to
-  end of recording). Not visible in segment-B validation; fix later (multi-view
-  neutral model / better re-acquisition) or avoid such turns in protocol.
+- ICP still dies after the big axial turn (**~36 s**, corrected below), wrong local
+  minimum, stuck to end of recording. Not visible in segment-B validation; fix later
+  (multi-view neutral model / better re-acquisition) or avoid such turns in protocol.
+  Refined by the video (section 8): ICP keeps *converging* there — good rms, ~100%
+  matched — but onto a pose >45° from neutral, so `ROT_MAX_DEG` throws every frame
+  away. It is not a loss of registration, it is a confidently wrong one. Fixing it
+  means a neutral model that covers the turned-away torso, not a looser gate.
 - Camera shows 15–18° bouts at ~9.5 s and ~14 s where mocap shows only ~4° —
   suspect arm movement contaminating the torso cloud; investigate mask/cloud there.
 - The charuco [mocap] basis rotation is genuinely wrong (~110–130°); re-derive it
@@ -183,6 +187,45 @@ Three small validators in `trunkpose/dual_notebooks/`, reusing `06_trunk_axis.py
 3. `v_shoulder_only_angles.py` — lateral + axial from shoulder line only (no plane) vs
    mocap → separates "plane broken" from "everything broken".
 
+## 8. ICP video (`08_icp_video.py`, 2026-07-25)
+
+Same idea as `06_trunk_axis.py`'s 2x2 video, but for the ICP tracker. To keep one source
+of truth, `07_icp_trunk.py` was split into reusable pieces — `load_inputs()`,
+`run_icp_pass()`, `compare_mocap()` — and 08 calls all three, so the video shows exactly
+the series that produced the validation numbers. Refactor verified: 07's printed output
+is unchanged, number for number.
+
+Layout:
+
+| | |
+|---|---|
+| **TL** cam0 + ICP trunk axes reprojected | **TR** alignment check |
+| **BL** torso cloud + ICP axes + mocap markers (board frame) | **BR** live 3-angle plots (ICP / mocap / plane) |
+
+The **TR panel is the point of it**: grey = neutral cloud, cyan = the current cloud pushed
+through the ICP transform, plus a per-frame rms/match% recomputed at render time. Poses the
+`ROT_MAX_DEG` gate rejected are drawn **orange** and labelled, so a wrong minimum is
+watchable rather than simply absent.
+
+`run_icp_pass()` now also returns the raw per-frame `A` (cur->neutral) transforms plus the
+`gated` mask; the video needs them and nothing else consumed them before.
+
+**Two things the video corrected, both worth keeping in mind:**
+
+1. *The flat tail after ~36 s was never tracking.* `smooth_series()` interpolates across
+   NaN gaps, and with no valid frame after the loss `np.interp` clamps to the last good
+   value — so total tracking loss rendered as a perfectly flat, confident-looking line.
+   08 uses `smooth_masked()` (smooth, then restore the NaN mask) so gaps stay blank.
+   The 07 plot still uses the interpolating smoother; its flat tails mean "no data".
+2. *The failure is a confident wrong answer, not a dropout.* Of the 448 frames missing
+   from the 1219/1667 valid count, nearly all are `ROT_MAX_DEG` rejections rather than
+   failures to converge — ICP fits the cloud well, at the wrong pose. This is the whole
+   reason that gate exists, and it is why rms and match-fraction cannot be trusted as
+   the only health metrics.
+
+Note: mocap markers in BL sit well away from the torso — that is the known-wrong charuco
+`[mocap]` basis rotation (~110 deg, item above), not a bug in the video.
+
 ## Knobs / repro
 
 ```powershell
@@ -191,7 +234,10 @@ $env:TRUNK_GEOM_CACHE="...\dual_160_trunk_ragav\geom_cache.pkl"   # delete after
 $env:TRUNK_MAX_FRAMES="60"     # quick test runs (cache skipped)
 $env:TRUNK_DROP_M="0.12"       # plane/frame drop below shoulders; 0 = old behavior
 $env:GLOG_minloglevel="3"      # mute MediaPipe telemetry noise
+$env:TRUNK_VIDEO_FRAMES="24"   # 08 only: cap the RENDER length (series still full-length)
 uv run python trunkpose\dual_notebooks\06_trunk_axis.py
+uv run python trunkpose\dual_notebooks\07_icp_trunk.py    # numbers + icp_trunk_angles.png
+uv run python trunkpose\dual_notebooks\08_icp_video.py    # icp_trunk_video.mp4
 ```
 
 **Gotcha log:** stale `geom_cache.pkl` silently masks geometry changes — delete it whenever

@@ -183,4 +183,5 @@ yolo26n.pt
 yolov8n-pose.pt
 trunkpose/dual_notebooks/selfie_segmenter.tflite
 trunkpose/dual_notebooks/pose_landmarker_full.task
+trunkpose/dataset_seg_v1/
 trunkpose/dataset_seg/

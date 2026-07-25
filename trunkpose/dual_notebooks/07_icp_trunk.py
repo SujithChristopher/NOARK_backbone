@@ -95,8 +95,9 @@ def icp(src, dst, tree, R, t, anchors=None):
     return R, t, rms, matched
 
 
-# %% Main
-def main():
+# %% Inputs
+def load_inputs():
+    """Basis + mocap CSV + camera timestamps + the (cached) 06 geometry pass."""
     print("Loading basis + mocap + timestamps...")
     R0_c, t0_c, Rm_c, tm_c = m6.load_charuco_basis(m6.CHARUCO_TOML)
     mocap_df, st_time = m6.read_rigid_body_csv(
@@ -127,9 +128,17 @@ def main():
                 pickle.dump(frames, f)
             print(f"Cached geometry -> {cache}")
 
-    # ---- baseline: plane+shoulder pipeline angles (unchanged 06 path) ----
-    _R_t_list, R_neu, flex_p, lat_p, axi_p, _ = m6.assemble(frames)
+    return dict(R0_c=R0_c, t0_c=t0_c, Rm_c=Rm_c, tm_c=tm_c, mocap_df=mocap_df,
+                mocap_time=mocap_time, ts0=ts0, n=n, frames=frames)
 
+
+# %% ICP pass
+def run_icp_pass(frames, R_neu, n):
+    """Register every frame's torso front-shell cloud to the neutral cloud.
+
+    Returns the per-frame body rotation Rb (neutral -> current), the raw cur->neutral
+    transforms A (kept for rendering), the neutral-zeroed angle series and the pooled
+    neutral cloud."""
     # ---- neutral cloud from first N_NEUTRAL frames with clouds ----
     neu = [fr["cloud"] for fr in frames[: m6.N_NEUTRAL] if fr["cloud"] is not None]
     if not neu:
@@ -157,6 +166,9 @@ def main():
 
     flex_i = np.full(n, np.nan); lat_i = np.full(n, np.nan); axi_i = np.full(n, np.nan)
     Rb_icp = [None] * n
+    A_list = [None] * n             # accepted cur->neutral transform (for rendering)
+    A_raw = [None] * n              # incl. poses the plausibility gate threw away
+    gated = np.zeros(n, bool)       # converged but rejected as physically implausible
     rms_l, match_l = [], []
     A = (np.eye(3), np.zeros(3))   # warm start / current estimate: cur -> neutral
     key = None                     # (tree, cloud, A_k) fallback keyframe
@@ -195,17 +207,33 @@ def main():
                         key = (cKDTree(src), src, got)
         if got is None:
             continue                       # keep previous estimate as warm start
+        A_raw[i] = got                     # what ICP converged to, gate or no gate
         if rot_deg(got[0]) > ROT_MAX_DEG:
+            gated[i] = True
             A = got                        # keep as warm start so we can re-converge,
             continue                       # but never report an implausible pose
         A = got
         last_good = (src, A)
         # A maps current -> neutral, so the body rotation from neutral is A[0].T
         Rb_icp[i] = A[0].T
+        A_list[i] = A
         flex_i[i], lat_i[i], axi_i[i] = m6.trunk_angles(A[0].T @ R_neu, R_neu)
     print(f"ICP valid {int(np.isfinite(flex_i).sum())}/{n} "
-          f"(direct {n_direct}, odometry {n_odo})  "
+          f"(direct {n_direct}, odometry {n_odo}, gated {int(gated.sum())})  "
           f"rms {np.mean(rms_l)*1000:.1f}mm  matched ~{int(np.mean(match_l))} pts")
+    return dict(Rb_icp=Rb_icp, A_list=A_list, A_raw=A_raw, gated=gated, neutral=neu,
+                flex=flex_i, lat=lat_i, axi=axi_i)
+
+
+# %% Mocap comparison
+def compare_mocap(inp, Rb_icp, R_neu):
+    """GPIO-synced, teleport-split, convention-free comparison against mocap.
+
+    Returns the re-zeroed angle series for both systems plus the pieces a renderer
+    needs (zero rotations, residual frame rotation S, per-frame mocap markers)."""
+    Rm_c, tm_c = inp["Rm_c"], inp["tm_c"]
+    mocap_df, mocap_time = inp["mocap_df"], inp["mocap_time"]
+    ts0, n = inp["ts0"], inp["n"]
 
     # ---- mocap: convention-free comparison on the longest clean segment ----
     # Mocap markers are mapped into the board frame (ChArUco mocap<->board basis) and
@@ -246,8 +274,9 @@ def main():
             f"{(mt[s1] - mt[0]) / np.timedelta64(1, 's'):.1f}s")
     in_win = (ts0 >= mt[s0]) & (ts0 <= mt[s1])
 
+    midx = np.array([m6.nearest_index(mt, t) for t in ts0])
     R_moc = [m6.mocap_trunk_frame(m1b[j], m4b[j], m2b[j]) if in_win[i] else None
-             for i, j in enumerate(m6.nearest_index(mt, t) for t in ts0)]
+             for i, j in enumerate(midx)]
 
     # zero both systems over the first frames of the segment where both are valid
     both = [i for i in range(n) if R_moc[i] is not None and Rb_icp[i] is not None]
@@ -313,6 +342,27 @@ def main():
         print(f"  {lab:8s}: r={r:+.2f} RMSE={e:4.1f}d")
 
     mflex, mlat, maxi, mag_m = moc_angles(S)
+    return dict(flex_iz=flex_iz, lat_iz=lat_iz, axi_iz=axi_iz, mag_i=mag_i,
+                mflex=mflex, mlat=mlat, maxi=maxi, mag_m=mag_m,
+                in_win=in_win, zwin=zwin, Rz_i=Rz_i, Rz_m=Rz_m, S=S,
+                m1b=m1b, m4b=m4b, m2b=m2b, midx=midx, R_moc=R_moc)
+
+
+# %% Main
+def main():
+    inp = load_inputs()
+    frames, n, ts0 = inp["frames"], inp["n"], inp["ts0"]
+
+    # ---- baseline: plane+shoulder pipeline angles (unchanged 06 path) ----
+    _R_t_list, R_neu, flex_p, lat_p, axi_p, _ = m6.assemble(frames)
+    icp = run_icp_pass(frames, R_neu, n)
+    cmp_ = compare_mocap(inp, icp["Rb_icp"], R_neu)
+    flex_iz, lat_iz, axi_iz, mag_i = (cmp_["flex_iz"], cmp_["lat_iz"],
+                                      cmp_["axi_iz"], cmp_["mag_i"])
+    mflex, mlat, maxi, mag_m = (cmp_["mflex"], cmp_["mlat"],
+                                cmp_["maxi"], cmp_["mag_m"])
+    in_win, zwin = cmp_["in_win"], cmp_["zwin"]
+
     i0 = zwin[0]
     t_s = ((ts0 - ts0[i0]) / np.timedelta64(1, "s")).astype(np.float64)
 

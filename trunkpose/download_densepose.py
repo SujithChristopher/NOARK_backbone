@@ -1,6 +1,7 @@
 """Download DensePose COCO minival annotations + N images, plot IUV labels."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -24,17 +25,33 @@ ANNOT_PATH = DATA_DIR / "densepose_coco_2014_minival.json"
 PART_CMAP = plt.get_cmap("tab20b", 24)
 
 
-def download_file(url: str, dest: Path) -> None:
+def download_file(url: str, dest: Path, retries: int = 3, show_progress: bool = True) -> None:
     if dest.exists():
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        with open(dest, "wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc=dest.name) as pbar:
-            for chunk in r.iter_content(chunk_size=1 << 16):
-                f.write(chunk)
-                pbar.update(len(chunk))
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    last_err: Exception | None = None
+    for _ in range(retries):
+        try:
+            with requests.get(url, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                total = int(r.headers.get("content-length", 0))
+                ctx = tqdm(total=total, unit="B", unit_scale=True, desc=dest.name) if show_progress else None
+                try:
+                    with open(tmp, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=1 << 16):
+                            f.write(chunk)
+                            if ctx:
+                                ctx.update(len(chunk))
+                finally:
+                    if ctx:
+                        ctx.close()
+            tmp.replace(dest)
+            return
+        except (requests.exceptions.RequestException, OSError) as e:
+            last_err = e
+            tmp.unlink(missing_ok=True)
+    raise RuntimeError(f"failed to download {url} after {retries} attempts") from last_err
 
 
 def download_annotations() -> None:
@@ -55,11 +72,16 @@ def load_densepose_image_ids(coco: COCO, n: int) -> list[int]:
     return img_ids
 
 
-def download_images(coco: COCO, img_ids: list[int]) -> None:
-    for img_id in tqdm(img_ids, desc="images"):
+def download_images(coco: COCO, img_ids: list[int], workers: int = 16) -> None:
+    def _fetch(img_id: int) -> None:
         info = coco.loadImgs(img_id)[0]
         dest = IMG_DIR / info["file_name"]
-        download_file(IMG_URL_TMPL.format(img_id), dest)
+        download_file(IMG_URL_TMPL.format(img_id), dest, show_progress=False)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_fetch, img_id) for img_id in img_ids]
+        for f in tqdm(as_completed(futures), total=len(futures), desc="images"):
+            f.result()
 
 
 def decode_dp_mask(dp_masks_entry, bbox) -> np.ndarray:
@@ -109,8 +131,9 @@ def plot_sample(coco: COCO, img_id: int, out_path: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n-images", type=int, default=100)
+    parser.add_argument("--n-images", type=int, default=10000)
     parser.add_argument("--n-plots", type=int, default=6)
+    parser.add_argument("--workers", type=int, default=16)
     args = parser.parse_args()
 
     print("Downloading DensePose annotations...")
@@ -121,7 +144,7 @@ def main():
     print(f"Selected {len(img_ids)} images with DensePose labels")
 
     print("Downloading images...")
-    download_images(coco, img_ids)
+    download_images(coco, img_ids, workers=args.workers)
 
     print(f"Plotting {args.n_plots} samples...")
     for img_id in img_ids[: args.n_plots]:
