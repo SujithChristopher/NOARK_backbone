@@ -100,6 +100,13 @@ RANSAC_ITERS = 200
 RANSAC_THRESH_M = 0.012
 FIT_MAX_PTS = 8000
 SGBM_MIN_DISP, SGBM_NUM_DISP, SGBM_BLOCK = 0, 160, 5
+# Edge-preserving smoothing on raw disparity before reprojection (cuts SGBM
+# speckle/quantization noise without blurring across depth discontinuities).
+# cv2.ximgproc's WLS disparity filter would be the sharper tool here, but this
+# build's opencv-contrib-python doesn't compile the ximgproc contrib module in.
+BILATERAL_D = 7
+BILATERAL_SIGMA_COLOR = 8.0   # disparity units (px); ~ expected noise, keeps edges
+BILATERAL_SIGMA_SPACE = 7.0
 SEG_CONF = 0.25
 
 N_WORKERS = int(os.environ.get("TRUNK_WORKERS", "4"))
@@ -236,10 +243,13 @@ def stereo_step(gray0, gray1, mask0, sgbm, maps0, maps1, R1, Q):
     depth image (0 = no data, 1..255 = near..far over [DEPTH_MIN_M, SCENE_DEPTH_MAX_M])."""
     rect0 = cv2.remap(gray0, *maps0, cv2.INTER_LINEAR)
     rect1 = cv2.remap(gray1, *maps1, cv2.INTER_LINEAR)
-    disp = sgbm.compute(rect0, rect1).astype(np.float32) / 16.0
+    disp_raw = sgbm.compute(rect0, rect1).astype(np.float32) / 16.0
+    # smooth for the 3D values, but gate validity on the UNsmoothed disparity so the
+    # invalid-pixel boundary (SGBM's own confidence) doesn't get blurred away
+    disp = cv2.bilateralFilter(disp_raw, BILATERAL_D, BILATERAL_SIGMA_COLOR, BILATERAL_SIGMA_SPACE)
     pts = cv2.reprojectImageTo3D(disp, Q) / 1000.0  # meters, rectified-cam0 frame
     z = pts[..., 2]
-    valid = (disp > SGBM_MIN_DISP) & np.isfinite(pts).all(axis=2)
+    valid = (disp_raw > SGBM_MIN_DISP) & np.isfinite(pts).all(axis=2)
 
     depth_ok = valid & (z > DEPTH_MIN_M) & (z < SCENE_DEPTH_MAX_M)
     norm = np.clip((z - DEPTH_MIN_M) / (SCENE_DEPTH_MAX_M - DEPTH_MIN_M), 0, 1)

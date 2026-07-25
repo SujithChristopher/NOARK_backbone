@@ -10,12 +10,60 @@ epipolar err ~0.82). Board frame from ChArUco basis
 Dataset: `data/trunk_july1_2026/dual_160_trunk_ragav` (1667 frames, ~30 fps) + Motive CSV
 with trunk rigid body (`trunk:Marker1` origin, Marker4 x-vec, Marker2 z-vec).
 
-**Status: VALIDATED (2026-07-24).** ICP rigid-registration camera angles agree with
-mocap on the clean data segment: held-out r = 0.81 / 0.96 / 0.95 (flex/lat/axial),
-RMSE 2.6 / 4.8 / 1.3°. The earlier "camera doesn't match mocap" mystery was three
-stacked data problems, not the method: wrong time sync (fixed by GPIO hardware sync),
-wrong ChArUco mocap→board rotation, and a mocap CSV corrupted by two Motive re-lock
+**Status: VALIDATED (2026-07-24, depth/ICP refined 2026-07-25).** ICP rigid-registration
+camera angles agree with mocap on the clean data segment: held-out r = 0.82 / 0.97 / 0.97
+(flex/lat/axial), RMSE 3.5 / 4.2 / 1.9°. The earlier "camera doesn't match mocap" mystery
+was three stacked data problems, not the method: wrong time sync (fixed by GPIO hardware
+sync), wrong ChArUco mocap→board rotation, and a mocap CSV corrupted by two Motive re-lock
 teleports (details in section 7).
+
+---
+
+## Current status (what runs right now)
+
+Working, run and verified:
+- **`07_icp_trunk.py`** — validated method, numbers above. Point-to-plane ICP as of
+  2026-07-25 (was point-to-point Kabsch) — local-PCA normals on the neutral cloud,
+  small-angle linearized update. Registration rms 6.6mm, 1568/1667 frames valid
+  (36 gated as physically-implausible poses — see §6/§8 "confidently wrong" note).
+- **`06_trunk_axis.py`** — plane+shoulder baseline (ICP beats it on every axis).
+  Depth stage: StereoSGBM → `cv2.bilateralFilter` on raw disparity as of 2026-07-25
+  (edge-preserving smoothing before reprojection; validity mask still gated on the
+  *unfiltered* disparity). Substitute for a WLS disparity filter — see "Broken" below.
+- **`08_icp_video.py`** — 2x2 diagnostic video for the ICP run, reuses 07's
+  `load_inputs()`/`run_icp_pass()`/`compare_mocap()` so numbers match exactly.
+- **`00_filecheck.py`, `01_corner_detection.py`, `02_dual_calibration.py`,
+  `03_get_charuco_basis.py`, `04_plot_points.py`, `05_create_plane.py`** — calibration
+  infra. Not re-run recently, but their outputs (`stereo_calibration.toml`,
+  `charuco_basis.toml`) are what 06/07/08 load and consume successfully, so presumed
+  working.
+- **`ar_support.py`, `pd_support.py`** — support libs, imported fine by the above.
+- **`video_convert.py`** — standalone msgpack→mp4 utility, unrelated to the pipeline.
+
+Broken:
+- **`upperlimb_3d_analysis.py`** crashes on import:
+  `AttributeError: module 'cv2.ximgproc' has no attribute 'createRightMatcher'`
+  (module scope, line 163). This environment's opencv-contrib-python (5.0.0) doesn't
+  compile the `ximgproc` contrib module in at all (confirmed via
+  `cv2.getBuildInformation()` and direct attribute check) — not a code bug, an
+  environment/dependency gap. Same root cause hit adding depth filtering to 06 on
+  2026-07-25, worked around there with `cv2.bilateralFilter` instead of WLS.
+- **`upperlimb_3d_kinematics.py`, `upperlimb_smpl_fit.py`, `trunk_angle.py`,
+  `bench_depth.py`** — all `from upperlimb_3d_analysis import (...)` at module level,
+  so all four crash on import too, same cause.
+
+Unverified (predate the trunk-angle pipeline, not exercised recently):
+`verification_dual_camera.py`, `verification_dual_undistort_compare.py`,
+`verification_single_camera.py`, `verification_notebook.ipynb` — earlier-stage
+ArUco-vs-mocap jitter comparisons.
+
+Dangling reference: `08_basis_check.py`'s header comment names a `09_fix_basis.py`
+that was never committed — the earlier fix attempt it would have applied was reverted
+as circular (§7b). Re-deriving the true basis is still open (see below).
+
+If `ximgproc` becomes available in this environment, swapping in the real WLS filter
+in 06 — and fixing the five files above that already assume it exists — is the natural
+next step.
 
 ---
 

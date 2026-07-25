@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import cKDTree
+from scipy.spatial.transform import Rotation
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 m6 = importlib.import_module("06_trunk_axis")
@@ -32,6 +33,7 @@ NEUTRAL_MAX_PTS = 6000       # pooled neutral cloud size
 ICP_ITERS = 20
 ICP_DISTS = (0.06, 0.03, 0.02)   # trimming threshold annealing (m)
 ICP_MIN_MATCH = 200
+NORMAL_K = 15                 # neighbors for local-PCA normal estimation
 # direct-to-neutral acceptance; on failure fall back to keyframe odometry.
 # Very loose on purpose: wrong minima are prevented by the shoulder anchors, and
 # odometry composition drifts (it twisted the whole series ~138 deg when it ran for
@@ -66,9 +68,42 @@ def kabsch(P, Q, w=None):
     return R, cq - R @ cp
 
 
-def icp(src, dst, tree, R, t, anchors=None):
-    """Refine (R, t) aligning src->dst. `anchors` = (a_src, a_dst) known-identity
-    correspondence pairs mixed in with total weight ANCHOR_FRAC of the cloud matches.
+def estimate_normals(pts, k=NORMAL_K):
+    """Local-PCA point normals, oriented outward from the cloud centroid (valid for
+    a convex-ish front shell, which is what the torso cloud is)."""
+    k = min(k, len(pts) - 1)
+    if k < 3:
+        return np.tile(np.array([0.0, 0.0, -1.0]), (len(pts), 1))
+    tree = cKDTree(pts)
+    _, idx = tree.query(pts, k=k)
+    neigh = pts[idx]
+    centered = neigh - neigh.mean(axis=1, keepdims=True)
+    cov = np.einsum("nki,nkj->nij", centered, centered) / k
+    _, eigvecs = np.linalg.eigh(cov)   # ascending eigenvalues -> normal = first column
+    normals = eigvecs[:, :, 0]
+    outward = pts - pts.mean(axis=0)
+    flip = np.einsum("ni,ni->n", normals, outward) < 0
+    normals[flip] *= -1
+    return normals
+
+
+def solve_point_to_plane(rp, t, q, n, w):
+    """Small-angle point-to-plane update: rotation vector d and translation dt
+    minimizing weighted sum w * (n . (rp + t - q) + n . (d x rp) + n . dt)^2, where
+    rp = R @ p (current rotation applied, no translation). Returns (d, dt)."""
+    resid = np.einsum("ni,ni->n", n, rp + t - q)
+    A = np.concatenate([np.cross(rp, n), n], axis=1)
+    sw = np.sqrt(w)
+    x, *_ = np.linalg.lstsq(A * sw[:, None], -resid * sw, rcond=None)
+    return x[:3], x[3:]
+
+
+def icp(src, dst, tree, R, t, dst_normals=None, anchors=None):
+    """Refine (R, t) aligning src->dst. Point-to-plane when `dst_normals` is given
+    (lower-noise, better-conditioned than point-to-point on a smooth torso shell);
+    falls back to point-to-point Kabsch otherwise. `anchors` = (a_src, a_dst)
+    known-identity correspondence pairs mixed in with total weight ANCHOR_FRAC of the
+    cloud matches (point-to-point only -- unused while USE_SHOULDER_ANCHORS=False).
     Returns (R, t, rms, n_matched) or None."""
     rms, matched = np.nan, 0
     for dist in ICP_DISTS:
@@ -81,12 +116,18 @@ def icp(src, dst, tree, R, t, anchors=None):
                 return None
             P, Q = src[m], dst[idx[m]]
             w = np.ones(len(P))
-            if anchors is not None:
-                a_src, a_dst = anchors
-                wa = ANCHOR_FRAC * matched / len(a_src)
-                P = np.vstack([P, a_src]); Q = np.vstack([Q, a_dst])
-                w = np.concatenate([w, np.full(len(a_src), wa)])
-            Rn, tn = kabsch(P, Q, w)
+            if dst_normals is not None:
+                N = dst_normals[idx[m]]
+                dvec, dt = solve_point_to_plane(P @ R.T, t, Q, N, w)
+                Rn = Rotation.from_rotvec(dvec).as_matrix() @ R
+                tn = t + dt
+            else:
+                if anchors is not None:
+                    a_src, a_dst = anchors
+                    wa = ANCHOR_FRAC * matched / len(a_src)
+                    P = np.vstack([P, a_src]); Q = np.vstack([Q, a_dst])
+                    w = np.concatenate([w, np.full(len(a_src), wa)])
+                Rn, tn = kabsch(P, Q, w)
             delta = np.degrees(np.arccos(np.clip((np.trace(Rn @ R.T) - 1) / 2, -1, 1)))
             R, t = Rn, tn
             rms = float(np.sqrt((d[m] ** 2).mean()))
@@ -146,6 +187,7 @@ def run_icp_pass(frames, R_neu, n):
     neu = m6.voxel_downsample(np.concatenate(neu).astype(np.float64),
                               max_pts=NEUTRAL_MAX_PTS)
     tree = cKDTree(neu)
+    neu_normals = estimate_normals(neu)
     print(f"Neutral cloud: {len(neu)} pts from first {m6.N_NEUTRAL} frames")
 
     # ---- ICP per frame: direct-to-neutral, keyframe odometry as fallback ----
@@ -186,25 +228,26 @@ def run_icp_pass(frames, R_neu, n):
                 anch = (np.array([p for p, _ in pairs]),
                         np.array([q for _, q in pairs]))
         got = None
-        res = icp(src, neu, tree, *A, anchors=anch)
+        res = icp(src, neu, tree, *A, dst_normals=neu_normals, anchors=anch)
         if res and res[2] <= DIRECT_RMS_M and res[3] >= DIRECT_FRAC * len(src):
             got = (res[0], res[1]); key = None; odo_run = 0; n_direct += 1
             rms_l.append(res[2]); match_l.append(res[3])
         else:
             if key is None and last_good is not None:
                 kc, kA = last_good
-                key = (cKDTree(kc), kc, kA)
+                key = (cKDTree(kc), kc, kA, estimate_normals(kc))
             if key is not None and odo_run < ODO_MAX_RUN:
-                ktree, kc, (Rk, tk) = key
+                ktree, kc, (Rk, tk), kc_normals = key
                 res2 = icp(src, kc, ktree,
-                           Rk.T @ A[0], Rk.T @ (A[1] - tk))  # warm cur->key
+                           Rk.T @ A[0], Rk.T @ (A[1] - tk),  # warm cur->key
+                           dst_normals=kc_normals)
                 if res2 and res2[2] <= ODO_RMS_M and res2[3] >= ODO_FRAC * len(src):
                     Rrel, trel = res2[0], res2[1]
                     got = (Rk @ Rrel, Rk @ trel + tk)
                     odo_run += 1; n_odo += 1
                     rms_l.append(res2[2]); match_l.append(res2[3])
                     if rot_deg(Rrel) > KEY_ROT_DEG:
-                        key = (cKDTree(src), src, got)
+                        key = (cKDTree(src), src, got, estimate_normals(src))
         if got is None:
             continue                       # keep previous estimate as warm start
         A_raw[i] = got                     # what ICP converged to, gate or no gate
