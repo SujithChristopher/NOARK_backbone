@@ -87,6 +87,10 @@ PLANE_HALF_M = 0.075
 # the reflective-marker object mounted on the chest, which would otherwise corrupt the
 # plane fit. The plane is refit on the lower torso band; the drawn frame moves with it.
 TRUNK_DROP_M = float(os.environ.get("TRUNK_DROP_M", "0.12"))
+# Downsampled torso front-shell cloud cached per frame (board frame, float32) so
+# rigid-registration experiments (07_icp_trunk.py) can run without re-doing stereo.
+CLOUD_VOXEL_M = 0.01
+CLOUD_MAX_PTS = 2000
 DEPTH_W, DEPTH_H = 512, 320              # stored depth-map resolution (colorized at render)
 DEPTH_CMAP = cv2.COLORMAP_TURBO
 AXIS_PAD_M = 0.3
@@ -182,6 +186,14 @@ def load_frame_times(path):
     return np.array([datetime.fromisoformat(r[1]) for r in recs], dtype="datetime64[us]")
 
 
+def load_sync_flags(path):
+    """GPIO sync bit per frame (column 0 of the timestamp msgpack). High while the
+    mocap system is recording, so the first rising edge marks mocap t=0."""
+    with open(path, "rb") as f:
+        recs = list(msgpack.Unpacker(f, object_hook=mpn.decode))
+    return np.array([int(r[0]) for r in recs])
+
+
 def nearest_index(times, t):
     j = int(np.searchsorted(times, t))
     cands = [k for k in (j - 1, j) if 0 <= k < len(times)]
@@ -248,6 +260,21 @@ def stereo_step(gray0, gray1, mask0, sgbm, maps0, maps1, R1, Q):
         zc = np.percentile(tp[:, 2], FRONT_PCTL)
         tp = tp[tp[:, 2] <= zc + SHELL_M]
     return tp @ R1, depth_u8
+
+
+def voxel_downsample(pts, voxel=CLOUD_VOXEL_M, max_pts=CLOUD_MAX_PTS, rng=None):
+    """Mean point per occupied voxel; random-subsample to max_pts if still too many."""
+    if len(pts) == 0:
+        return pts
+    keys = np.floor(pts / voxel).astype(np.int64)
+    _, inv, cnt = np.unique(keys, axis=0, return_inverse=True, return_counts=True)
+    sums = np.zeros((len(cnt), 3))
+    np.add.at(sums, inv, pts)
+    ds = sums / cnt[:, None]
+    if len(ds) > max_pts:
+        idx = (rng or np.random.default_rng(0)).choice(len(ds), max_pts, replace=False)
+        ds = ds[idx]
+    return ds
 
 
 def torso_mask(seg_model, gray, size):
@@ -552,8 +579,15 @@ def _geom_chunk(rng_tuple):
             centroid_b = to_board(fit[0], g["R0_c"], g["t0_c"])
             normal_b = dir_to_board(fit[1], g["R0_c"])
 
+        # full front-shell cloud (incl. chest object -- it is rigid with the trunk),
+        # board frame, downsampled: input for ICP experiments (07_icp_trunk.py)
+        cloud_b = None
+        if len(tp) >= 50:
+            ds = voxel_downsample(tp, rng=g["rng"])
+            cloud_b = to_board_bulk(ds, g["R0_c"], g["t0_c"]).astype(np.float32)
+
         out.append(dict(cam_pts=cam_pts, sh_px=sh_px, centroid=centroid_b,
-                        normal=normal_b, depth=depth_u8))
+                        normal=normal_b, depth=depth_u8, cloud=cloud_b))
     return start, out
 
 
