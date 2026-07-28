@@ -30,6 +30,8 @@ Working, run and verified:
   Depth stage: StereoSGBM → `cv2.bilateralFilter` on raw disparity as of 2026-07-25
   (edge-preserving smoothing before reprojection; validity mask still gated on the
   *unfiltered* disparity). Substitute for a WLS disparity filter — see "Broken" below.
+  `torso_mask()` as of 2026-07-25 is class-aware (torso minus dilated arm) — needs a
+  retrained seg model before it actually changes behavior, see §9 below.
 - **`08_icp_video.py`** — 2x2 diagnostic video for the ICP run, reuses 07's
   `load_inputs()`/`run_icp_pass()`/`compare_mocap()` so numbers match exactly.
 - **`00_filecheck.py`, `01_corner_detection.py`, `02_dual_calibration.py`,
@@ -208,6 +210,7 @@ Open items:
   means a neutral model that covers the turned-away torso, not a looser gate.
 - Camera shows 15–18° bouts at ~9.5 s and ~14 s where mocap shows only ~4° —
   suspect arm movement contaminating the torso cloud; investigate mask/cloud there.
+  → addressed (not yet re-validated) by the multi-class seg model, §9.
 - The charuco [mocap] basis rotation is genuinely wrong (~110–130°); re-derive it
   properly in a dedicated recording (T-frame + board simultaneously visible, no
   occlusions) instead of trusting the data-fitted S long-term.
@@ -273,6 +276,36 @@ watchable rather than simply absent.
 
 Note: mocap markers in BL sit well away from the torso — that is the known-wrong charuco
 `[mocap]` basis rotation (~110 deg, item above), not a bug in the video.
+
+## 9. Multi-class DensePose segmentation (`trunkpose/segdataset.py`, 2026-07-25)
+
+Motivation: §6/§7's open item — arm crossing the chest contaminates the torso point
+cloud (15–18° camera bouts vs mocap's ~4° at ~9.5s/14s). The seg model was single-class
+(`chest`, DensePose part 1 only), so an arm overlapping the chest had no way to be told
+apart from torso in the mask.
+
+- Re-downloaded the DensePose COCO minival image pool with `download_densepose.py`
+  (parallelized earlier the same day) — 1508 images now vs. the original 100.
+- `segdataset.py` rewritten to emit 3 classes instead of 1: `torso` (part 1), `arm`
+  (parts 2,3,10,11,12,13 — hands + upper/lower arm, L/R merged since side doesn't
+  matter for exclusion and merging doubles the per-class signal), `head` (part 14).
+  Legs/feet (parts 4-9) dropped — this rig is seated with hips occluded below a desk,
+  legs are never in frame, so those classes would just be empty.
+- Regenerated `dataset_seg/`: 1503 images kept (4 skipped, no valid mask), balanced
+  classes — torso 2198, arm 2208, head 2174 instances.
+- `06_trunk_axis.py`'s `torso_mask()` now filters by class name and subtracts a
+  dilated (`ARM_EXCLUDE_DILATE_PX=9`) `arm` mask from `torso` before returning —
+  arm-on-chest pixels are excluded at the source instead of trusted as part of one
+  undifferentiated blob.
+
+**Not yet done:** `segtrain.py` needs an actual training run on the new
+`dataset_seg/data.yaml` (unchanged script, just points at more/multi-class data now).
+`SEG_WEIGHTS` in `06_trunk_axis.py` still points at the old single-class
+`runs/trunk_seg-2/weights/best.pt` — override with env `TRUNK_SEG_WEIGHTS` (or edit the
+default) once the new run's weights exist. Until then `torso_mask()`'s class filtering
+is a no-op (the old model only ever emits class 0, no "arm" instances to subtract), so
+the arm-contamination bug is not yet actually fixed — only wired up to be, pending
+retraining + a re-run of 06/07 to confirm the ~9.5s/14s bouts shrink.
 
 ## Knobs / repro
 

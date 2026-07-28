@@ -63,7 +63,12 @@ CHARUCO_TOML = (
     PROJECT_ROOT / "data" / "trunk_july1_2026"
     / "dual_160_tframe_july1" / "charuco_basis.toml"
 )
-SEG_WEIGHTS = PROJECT_ROOT / "trunkpose" / "runs" / "trunk_seg-2" / "weights" / "best.pt"
+# NOTE: default still points at the old single-class model. After retraining on the
+# multi-class (torso/arm/head) dataset, either edit the default or set env TRUNK_SEG_WEIGHTS
+# (ultralytics names each run trunk_segN, so the new path isn't known ahead of time).
+SEG_WEIGHTS = Path(os.environ.get(
+    "TRUNK_SEG_WEIGHTS",
+    str(PROJECT_ROOT / "trunkpose" / "runs" / "trunk_seg-2" / "weights" / "best.pt")))
 POSE_MODEL = SCRIPT_DIR / "pose_landmarker_full.task"
 OUT_VIDEO = RECORDING_DIR / "trunk_axis_charuco.mp4"
 
@@ -73,6 +78,7 @@ VISIBILITY_THRESH = 0.5
 DEPTH_MIN_M, DEPTH_MAX_M = 0.2, 3.0     # torso-fit depth gate
 SCENE_DEPTH_MAX_M = 4.0                  # depth-heatmap far clip
 MASK_ERODE_FRAC = 0.06                   # erode torso mask by ~this * sqrt(area) px
+ARM_EXCLUDE_DILATE_PX = 9                # dilate 'arm' class mask before subtracting from torso
 FRONT_PCTL = 5.0                         # frontmost-depth percentile for the front shell
 SHELL_M = 0.10                           # keep points within this depth of the front cap
 Z_MAX_M = 5.0
@@ -288,14 +294,28 @@ def voxel_downsample(pts, voxel=CLOUD_VOXEL_M, max_pts=CLOUD_MAX_PTS, rng=None):
 
 
 def torso_mask(seg_model, gray, size):
+    """Torso mask = class 'torso' minus a small dilation of class 'arm'. The
+    multi-class model (segdataset.py) exists so an arm resting on/crossing the
+    chest can be explicitly excluded instead of bleeding into one undifferentiated
+    blob -- see THINGS_DONE.md's arm-contamination bouts."""
     W, H = size
     res = seg_model.predict(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB),
                             conf=SEG_CONF, verbose=False)[0]
-    mask = np.zeros((H, W), dtype=np.uint8)
+    torso = np.zeros((H, W), dtype=np.uint8)
+    arm = np.zeros((H, W), dtype=np.uint8)
     if res.masks is not None:
-        for m in res.masks.data.cpu().numpy():
-            mask[cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST) > 0.5] = 255
-    return mask
+        names = res.names
+        cls_ids = res.boxes.cls.cpu().numpy().astype(int)
+        for m, cid in zip(res.masks.data.cpu().numpy(), cls_ids):
+            resized = cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST) > 0.5
+            if names[cid] == "torso":
+                torso[resized] = 255
+            elif names[cid] == "arm":
+                arm[resized] = 255
+    if arm.any():
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ARM_EXCLUDE_DILATE_PX,) * 2)
+        torso[cv2.dilate(arm, k) > 0] = 0
+    return torso
 
 
 def fit_plane(pts, rng):
