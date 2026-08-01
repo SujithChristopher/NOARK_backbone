@@ -18,7 +18,7 @@ from pycocotools.coco import COCO
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
 IMG_DIR = DATA_DIR / "images"
-ANNOT_PATH = DATA_DIR / "densepose_coco_2014_minival.json"
+ANNOT_PATH = DATA_DIR / "densepose_coco_2014_train.json"
 
 DATASET_DIR = ROOT / "dataset"
 MIN_TORSO_AREA_PX = 400  # skip degenerate/tiny torso masks

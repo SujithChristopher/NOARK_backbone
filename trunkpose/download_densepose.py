@@ -12,14 +12,19 @@ from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 from tqdm import tqdm
 
-ANNOT_URL = "https://dl.fbaipublicfiles.com/densepose/densepose_coco_2014_minival.json"
-IMG_URL_TMPL = "http://images.cocodataset.org/val2014/COCO_val2014_{:012d}.jpg"
+ANNOT_BASE_URL = "https://dl.fbaipublicfiles.com/densepose"
+# split -> annotation file. minival ~1.5k images, valminusminival ~6k, train ~26k.
+ANNOT_FILES = {
+    "minival": "densepose_coco_2014_minival.json",
+    "valminusminival": "densepose_coco_2014_valminusminival.json",
+    "train": "densepose_coco_2014_train.json",
+}
+IMG_BASE_URL = "http://images.cocodataset.org"
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
 IMG_DIR = DATA_DIR / "images"
 PLOT_DIR = ROOT / "plots"
-ANNOT_PATH = DATA_DIR / "densepose_coco_2014_minival.json"
 
 # DensePose body-part index -> color (24 parts)
 PART_CMAP = plt.get_cmap("tab20b", 24)
@@ -54,8 +59,11 @@ def download_file(url: str, dest: Path, retries: int = 3, show_progress: bool = 
     raise RuntimeError(f"failed to download {url} after {retries} attempts") from last_err
 
 
-def download_annotations() -> None:
-    download_file(ANNOT_URL, ANNOT_PATH)
+def download_annotations(split: str) -> Path:
+    fname = ANNOT_FILES[split]
+    dest = DATA_DIR / fname
+    download_file(f"{ANNOT_BASE_URL}/{fname}", dest)
+    return dest
 
 
 def load_densepose_image_ids(coco: COCO, n: int) -> list[int]:
@@ -75,8 +83,12 @@ def load_densepose_image_ids(coco: COCO, n: int) -> list[int]:
 def download_images(coco: COCO, img_ids: list[int], workers: int = 16) -> None:
     def _fetch(img_id: int) -> None:
         info = coco.loadImgs(img_id)[0]
-        dest = IMG_DIR / info["file_name"]
-        download_file(IMG_URL_TMPL.format(img_id), dest, show_progress=False)
+        fname = info["file_name"]
+        dest = IMG_DIR / fname
+        # coco_url in the 2014 jsons points at a dead mscoco.org page, so build the
+        # image URL from the file name: COCO_<split>_<id>.jpg -> <split>/<file name>
+        split_dir = fname.split("_")[1]
+        download_file(f"{IMG_BASE_URL}/{split_dir}/{fname}", dest, show_progress=False)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_fetch, img_id) for img_id in img_ids]
@@ -131,15 +143,16 @@ def plot_sample(coco: COCO, img_id: int, out_path: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--split", choices=sorted(ANNOT_FILES), default="minival")
     parser.add_argument("--n-images", type=int, default=10000)
     parser.add_argument("--n-plots", type=int, default=6)
     parser.add_argument("--workers", type=int, default=16)
     args = parser.parse_args()
 
-    print("Downloading DensePose annotations...")
-    download_annotations()
+    print(f"Downloading DensePose annotations ({args.split})...")
+    annot_path = download_annotations(args.split)
 
-    coco = COCO(str(ANNOT_PATH))
+    coco = COCO(str(annot_path))
     img_ids = load_densepose_image_ids(coco, args.n_images)
     print(f"Selected {len(img_ids)} images with DensePose labels")
 

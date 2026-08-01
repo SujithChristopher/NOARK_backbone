@@ -51,8 +51,11 @@ from pd_support import read_rigid_body_csv  # noqa: E402
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-RECORDING_NAME = "dual_160_trunk_ragav"
-RECORDING_DIR = PROJECT_ROOT / "data" / "trunk_july1_2026" / RECORDING_NAME
+RECORDING_NAME = os.environ.get("TRUNK_RECORDING_NAME", "july_27_sujith_no_comp")
+RECORDING_DIR = Path(os.environ.get(
+    "TRUNK_RECORDING_DIR",
+    str(PROJECT_ROOT / "data" / "july27" / RECORDING_NAME),
+))
 CAM0_FRAMES = RECORDING_DIR / "cam0_frame.msgpack"
 CAM1_FRAMES = RECORDING_DIR / "cam1_frame.msgpack"
 STEREO_TOML = (
@@ -60,8 +63,8 @@ STEREO_TOML = (
     / "calib_cz30_dual_v2" / "stereo_calibration.toml"
 )
 CHARUCO_TOML = (
-    PROJECT_ROOT / "data" / "trunk_july1_2026"
-    / "dual_160_tframe_july1" / "charuco_basis.toml"
+    PROJECT_ROOT / "data" / "july27"
+    / "july_27_calib" / "charuco_basis.toml"
 )
 # NOTE: default still points at the old single-class model. After retraining on the
 # multi-class (torso/arm/head) dataset, either edit the default or set env TRUNK_SEG_WEIGHTS
@@ -116,6 +119,20 @@ BILATERAL_SIGMA_SPACE = 7.0
 SEG_CONF = 0.25
 
 N_WORKERS = int(os.environ.get("TRUNK_WORKERS", "4"))
+# Motive's solved rigid body can re-lock at a ghost pose after a brief occlusion
+# (this take: 326 mm across one 10 ms dropped frame). Marker distances stay exactly
+# constant because the output is solved, so teleports are detected as position jumps
+# across NaN gaps. Rotations either side carry different constant offsets, so the
+# camera<->mocap comparison is restricted to the longest teleport-free segment.
+SEG_JUMP_M = 0.10
+
+# July-27 `trunk` rigid body mounting:
+#   Marker3 = frame origin, Marker1 = +X direction, Marker4 = +Z direction.
+# These are intentionally separate from the calibration T-frame mapping
+# (calibration: origin=4, +X=1, +Z=3).
+TRUNK_ORIGIN_MARKER = 3
+TRUNK_X_MARKER = 1
+TRUNK_Z_MARKER = 4
 
 UPPER_LIMB = {
     "L_shoulder": 11, "R_shoulder": 12,
@@ -127,11 +144,10 @@ BONES = [
     ("L_shoulder", "L_elbow"), ("L_elbow", "L_wrist"),
     ("R_shoulder", "R_elbow"), ("R_elbow", "R_wrist"),
 ]
-MOCAP_MARKERS = {
-    "L_shoulder": "mls", "R_shoulder": "mrs",
-    "L_elbow": "mle", "R_elbow": "mre",
-    "L_wrist": "mlw", "R_wrist": "mrw",
-}
+MOCAP_BONES = [
+    ("trunk_origin", "trunk_x"),
+    ("trunk_origin", "trunk_z"),
+]
 CAM_JOINT_COLORS = {
     "L_shoulder": "limegreen", "R_shoulder": "dodgerblue",
     "L_elbow": "green", "R_elbow": "royalblue",
@@ -294,10 +310,11 @@ def voxel_downsample(pts, voxel=CLOUD_VOXEL_M, max_pts=CLOUD_MAX_PTS, rng=None):
 
 
 def torso_mask(seg_model, gray, size):
-    """Torso mask = class 'torso' minus a small dilation of class 'arm'. The
-    multi-class model (segdataset.py) exists so an arm resting on/crossing the
-    chest can be explicitly excluded instead of bleeding into one undifferentiated
-    blob -- see THINGS_DONE.md's arm-contamination bouts."""
+    """Torso mask from either the new ``torso`` class or legacy ``chest`` class.
+
+    With the multi-class model, subtract a small dilation of class ``arm`` so an arm
+    resting on/crossing the chest does not bleed into the torso surface.
+    """
     W, H = size
     res = seg_model.predict(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB),
                             conf=SEG_CONF, verbose=False)[0]
@@ -308,7 +325,7 @@ def torso_mask(seg_model, gray, size):
         cls_ids = res.boxes.cls.cpu().numpy().astype(int)
         for m, cid in zip(res.masks.data.cpu().numpy(), cls_ids):
             resized = cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST) > 0.5
-            if names[cid] == "torso":
+            if names[cid] in ("torso", "chest"):
                 torso[resized] = 255
             elif names[cid] == "arm":
                 arm[resized] = 255
@@ -415,10 +432,17 @@ def smooth_series(arr, window=SAVGOL_WINDOW, poly=SAVGOL_POLY):
     return savgol_filter(a, w, poly)
 
 
-# %% Mocap trunk rigid body (trunk:Marker1 origin, Marker4 xvec, Marker2 zvec)
-def load_trunk_rb(path):
-    """Return (m1, m4, m2) each (N_mocap, 3), the trunk rigid-body markers in mocap
-    world coords, row-aligned with read_rigid_body_csv output."""
+# %% Mocap trunk rigid body
+def load_trunk_rb(
+        path,
+        origin_marker=TRUNK_ORIGIN_MARKER,
+        x_marker=TRUNK_X_MARKER,
+        z_marker=TRUNK_Z_MARKER):
+    """Return (origin, x-marker, z-marker), each (N_mocap, 3), in mocap world.
+
+    Marker indices describe the physical rigid-body mounting and are independent of
+    the T-frame marker indices used to create ``charuco_basis.toml``.
+    """
     raw = pd.read_csv(path, skiprows=2, header=None, dtype=str)
     types, names, poslab, xyz = raw.iloc[0], raw.iloc[1], raw.iloc[3], raw.iloc[4]
     data = raw.iloc[5:].reset_index(drop=True)
@@ -433,20 +457,20 @@ def load_trunk_rb(path):
         return np.stack([pd.to_numeric(data[cols[a]], errors="coerce").to_numpy()
                          for a in ("X", "Y", "Z")], axis=1)
 
-    return vec(1), vec(4), vec(2)
+    return vec(origin_marker), vec(x_marker), vec(z_marker)
 
 
-def mocap_trunk_frame(o, m4, m2):
+def mocap_trunk_frame(o, mx, mz):
     """Trunk frame from rigid-body markers, columns [lateral, up, anterior] to match
-    the camera convention (lateral = toward Marker4, anterior = toward Marker2)."""
-    if not (np.isfinite(o).all() and np.isfinite(m4).all() and np.isfinite(m2).all()):
+    the camera convention (lateral = origin->X marker, anterior = origin->Z marker)."""
+    if not (np.isfinite(o).all() and np.isfinite(mx).all() and np.isfinite(mz).all()):
         return None
-    x = m4 - o
+    x = mx - o
     nx = np.linalg.norm(x)
     if nx < 1e-6:
         return None
     x /= nx
-    a = (m2 - o)
+    a = (mz - o)
     a = a - (a @ x) * x
     na = np.linalg.norm(a)
     if na < 1e-6:
@@ -456,6 +480,152 @@ def mocap_trunk_frame(o, m4, m2):
     u /= np.linalg.norm(u)
     a = np.cross(x, u)
     return np.column_stack([x, u, a])
+
+
+def kabsch(A, B):
+    """Rigid (R, t) mapping points A onto points B, no scaling."""
+    ca, cb = A.mean(0), B.mean(0)
+    U, _, Vt = np.linalg.svd((A - ca).T @ (B - cb))
+    d = np.sign(np.linalg.det(Vt.T @ U.T))
+    R = Vt.T @ np.diag([1.0, 1.0, d]) @ U.T
+    return R, cb - R @ ca
+
+
+def gpio_mocap_time(ts0, seconds, sync):
+    """Mocap timeline on the CAMERA clock. The GPIO pin-17 bit is HIGH while Motive
+    records, so its first rising edge IS mocap seconds=0 -- the two systems share a
+    wire. Motive's own 'Capture Start Time' header is seconds off (this take: -2.38 s),
+    and best_lag() xcorr is worse still (+3.03 s at r=0.20, i.e. 5.4 s / 162 frames from
+    truth), so neither is used for sync. best_lag is kept only for 08_basis_check."""
+    if not (sync == 1).any():
+        raise SystemExit("No GPIO sync pulse in cam0_timestamp.msgpack.")
+    rise = int(np.argmax(sync == 1))
+    return ts0[rise] + (seconds * 1e6).astype("timedelta64[us]"), rise
+
+
+def teleport_free_window(m1, mocap_time, ts0, in_win):
+    """Restrict in_win to the longest span of mocap rows free of solver re-lock jumps."""
+    ok = np.isfinite(m1).all(axis=1)
+    vidx = np.where(ok)[0]
+    if len(vidx) < 2:
+        return in_win
+    cut = np.where(np.linalg.norm(np.diff(m1[vidx], axis=0), axis=1) > SEG_JUMP_M)[0]
+    bounds = np.concatenate(([0], cut + 1, [len(vidx)]))
+    segs = [(vidx[a], vidx[b - 1]) for a, b in zip(bounds[:-1], bounds[1:])]
+    s0, s1 = max(segs, key=lambda ab: mocap_time[ab[1]] - mocap_time[ab[0]])
+    span = [(mocap_time[a] - mocap_time[0]) / np.timedelta64(1, "s") for a, _ in segs]
+    print(f"  mocap teleport-split into {len(segs)} segment(s) starting at "
+          + ", ".join(f"{s:.1f}s" for s in span)
+          + f" -> using {(mocap_time[s0] - mocap_time[0]) / np.timedelta64(1, 's'):.1f}"
+            f"-{(mocap_time[s1] - mocap_time[0]) / np.timedelta64(1, 's'):.1f}s")
+    return in_win & (ts0 >= mocap_time[s0]) & (ts0 <= mocap_time[s1])
+
+
+def fit_marker_alignment(frames, in_win):
+    """Rigid transform putting mocap marker positions in the board frame, FITTED from
+    paired joints (fit on first half of the overlap, scored on the held-out second).
+
+    charuco_basis.toml's [mocap] block cannot do this: 03_get_charuco_basis.py assumes
+    the 4 'tframe' markers lie on the board face, but they sit on the stand's base --
+    their plane normal is Motive +Y while the board normal is near-horizontal, ~90 deg
+    apart, and the marker-to-pattern offset was never measured. Straight through that
+    basis the mocap skeleton lands 671 mm / 160 deg off. This fit is a visualisation
+    aid; it must never be written back into the TOML."""
+    idx = [i for i in range(len(frames)) if in_win[i] and any(
+        frames[i]["cam_pts"][k] is not None and frames[i]["mocap_world"][k] is not None
+        for k in UPPER_LIMB)]
+    if len(idx) < 20:
+        raise SystemExit("Too few paired camera/mocap frames to fit a marker alignment.")
+    split = idx[len(idx) // 2]
+
+    def pairs(lo, hi):
+        A, B = [], []
+        for i in range(lo, hi):
+            for k in UPPER_LIMB:
+                c, m = frames[i]["cam_pts"][k], frames[i]["mocap_world"][k]
+                if c is not None and m is not None:
+                    A.append(m)
+                    B.append(c)
+        return np.array(A), np.array(B)
+
+    A_fit, B_fit = pairs(idx[0], split)
+    R, t = kabsch(A_fit, B_fit)
+    A_val, B_val = pairs(split, idx[-1] + 1)
+    val = np.linalg.norm((A_val @ R.T + t) - B_val, axis=1)
+    print(f"  marker alignment: {np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1))):.1f} deg, "
+          f"{np.linalg.norm(t) * 1000:.0f} mm; HELD-OUT n={len(val)} "
+          f"mean {val.mean() * 1000:.0f} mm median {np.median(val) * 1000:.0f} mm")
+    return R, t
+
+
+def mocap_angles_in_camera_axes(R_moc, R_t_list, R_neu, in_win, n):
+    """Mocap trunk angles expressed in the CAMERA anatomical axes, per 07_icp_trunk.
+
+    Both systems are reduced to rotation-from-zero (R(t) @ Rz^T), so each one's absolute
+    frame convention drops out -- that is what makes this immune to the broken [mocap]
+    basis. What does NOT drop out is how each labels its axes: mocap_trunk_frame assumes
+    trunk:Marker4 is lateral and Marker2 anterior, which is a mounting fact nobody
+    verified. So the residual frame rotation S is fitted (Kabsch on rotation vectors of
+    well-excited frames), first half only, and scored on the held-out second half."""
+    both = [i for i in range(n) if in_win[i]
+            and R_moc[i] is not None and R_t_list[i] is not None]
+    if len(both) < N_NEUTRAL:
+        raise SystemExit("Too few frames with both camera and mocap trunk frames.")
+    zwin = both[:N_NEUTRAL]
+    Rz_c = Rotation.from_matrix(np.array([R_t_list[i] for i in zwin])).mean().as_matrix()
+    Rz_m = Rotation.from_matrix(np.array([R_moc[i] for i in zwin])).mean().as_matrix()
+
+    def cam_angles():
+        f = np.full(n, np.nan); l = np.full(n, np.nan); a = np.full(n, np.nan)
+        for i, R_t in enumerate(R_t_list):
+            if R_t is None:
+                continue
+            f[i], l[i], a[i] = trunk_angles((R_t @ Rz_c.T) @ R_neu, R_neu)
+        return f, l, a
+
+    def moc_angles(S):
+        f = np.full(n, np.nan); l = np.full(n, np.nan); a = np.full(n, np.nan)
+        for i, R_f in enumerate(R_moc):
+            if R_f is None:
+                continue
+            Rc = S @ (R_f @ Rz_m.T) @ S.T
+            f[i], l[i], a[i] = trunk_angles(Rc @ R_neu, R_neu)
+        return f, l, a
+
+    pairs = []
+    for i in both:
+        ra = Rotation.from_matrix(R_t_list[i] @ Rz_c.T).as_rotvec()
+        rm = Rotation.from_matrix(R_moc[i] @ Rz_m.T).as_rotvec()
+        if np.degrees(np.linalg.norm(ra)) > 5 and np.degrees(np.linalg.norm(rm)) > 5:
+            pairs.append((i, ra, rm))
+    if len(pairs) < 50:
+        raise SystemExit("Too few well-excited rotation pairs to estimate S.")
+    half = pairs[len(pairs) // 2][0]
+    S_half, _ = kabsch(np.array([p[2] for p in pairs if p[0] < half]),
+                       np.array([p[1] for p in pairs if p[0] < half]))
+    S, _ = kabsch(np.array([p[2] for p in pairs]), np.array([p[1] for p in pairs]))
+    s_deg = np.degrees(np.linalg.norm(Rotation.from_matrix(S).as_rotvec()))
+    dh = np.degrees(np.linalg.norm(Rotation.from_matrix(S @ S_half.T).as_rotvec()))
+    print(f"  axis rotation S={s_deg:.1f} deg ({len(pairs)} excited pairs; "
+          f"half-fit differs {dh:.1f} deg)")
+
+    flex, lat, axi = cam_angles()
+    mfh, mlh, mah = moc_angles(S_half)
+    held = np.arange(n) >= half
+    print("  held-out (S fit on 1st half, scored on 2nd):")
+    for lab, c, mo in (("flexion", flex, mfh), ("lateral", lat, mlh),
+                       ("axial", axi, mah)):
+        cs = smooth_series(c)
+        m = np.isfinite(cs) & np.isfinite(mo) & held
+        if m.sum() < 10:
+            print(f"    {lab:8s}: too few held-out frames")
+            continue
+        r = float(np.corrcoef(cs[m], mo[m])[0, 1])
+        e = float(np.sqrt(np.mean((cs[m] - mo[m]) ** 2)))
+        print(f"    {lab:8s}: r={r:+.2f} RMSE={e:4.1f} deg")
+
+    mflex, mlat, maxi = moc_angles(S)
+    return flex, lat, axi, mflex, mlat, maxi
 
 
 def series_speed(pos, smooth=15):
@@ -706,7 +876,7 @@ def _draw_scene(ax, fr, limits, view, show_skeleton, show_mocap):
                 ax.scatter(*xyz, c=CAM_JOINT_COLORS[name], s=25, depthshade=False)
     if show_mocap:
         mp_ = fr["mocap_pts"]
-        for a, b in BONES:
+        for a, b in MOCAP_BONES:
             ma, mb = mp_.get(a), mp_.get(b)
             if ma is not None and mb is not None:
                 ax.plot(*np.stack([ma, mb]).T, color="orange", lw=1.2, ls="--")
@@ -876,8 +1046,6 @@ def main():
     R0_c, t0_c, Rm_c, tm_c = load_charuco_basis(CHARUCO_TOML)
     K0, D0 = load_stereo(STEREO_TOML)[:2]
     mocap_df, st_time = read_rigid_body_csv(str(RECORDING_DIR / f"{RECORDING_NAME}.csv"))
-    mocap_time = np.datetime64(st_time) + (
-        mocap_df["seconds"].to_numpy() * 1e6).astype("timedelta64[us]")
     ts0 = load_frame_times(RECORDING_DIR / "cam0_timestamp.msgpack")
     ts1 = load_frame_times(RECORDING_DIR / "cam1_timestamp.msgpack")
     n = min(len(ts0), len(ts1))
@@ -885,6 +1053,19 @@ def main():
     if max_frames:
         n = min(n, max_frames)
     ts0 = ts0[:n]
+
+    sync = load_sync_flags(RECORDING_DIR / "cam0_timestamp.msgpack")[:n]
+    mocap_time, rise = gpio_mocap_time(ts0, mocap_df["seconds"].to_numpy(), sync)
+    in_win = (ts0 >= mocap_time[0]) & (ts0 <= mocap_time[-1])
+    print(f"GPIO sync: mocap t=0 at camera frame {rise}; Motive header clock "
+          f"{(np.datetime64(st_time) - mocap_time[0]) / np.timedelta64(1, 's'):+.2f} s off; "
+          f"mocap covers {int(in_win.sum())}/{n} frames")
+
+    # Movement take contains only the trunk rigid body:
+    # Marker3=origin, Marker1=+X, Marker4=+Z.
+    mo, mx, mz = load_trunk_rb(str(RECORDING_DIR / f"{RECORDING_NAME}.csv"))
+    in_win = teleport_free_window(mo, mocap_time, ts0, in_win)
+    print(f"  usable overlap after teleport split: {int(in_win.sum())}/{n} frames")
 
     # optional geometry cache (TRUNK_GEOM_CACHE=path): lets mocap/sync/mapping tweaks
     # skip the expensive geometry pass. Only used for full runs. Delete/change env to
@@ -903,70 +1084,47 @@ def main():
                 pickle.dump(frames, f)
             print(f"Cached geometry -> {cache}")
 
-    # mocap per frame (cheap, sequential)
+    # Transform the trunk L-frame directly from Motive world into the ChArUco board
+    # frame using the dedicated July-27 T-frame calibration.
+    mob, mxb, mzb = ((m - tm_c) @ Rm_c for m in (mo, mx, mz))
+    midx = np.array([nearest_index(mocap_time, ts0[i]) for i in range(n)])
     for i, fr in enumerate(frames):
-        row = mocap_df.iloc[nearest_index(mocap_time, ts0[i])]
-        mpts = {}
-        for name, pref in MOCAP_MARKERS.items():
-            pw = np.array([row[f"{pref}_x"], row[f"{pref}_y"], row[f"{pref}_z"]], float)
-            mpts[name] = mocap_to_board(pw, Rm_c, tm_c) if np.isfinite(pw).all() else None
+        mpts = dict.fromkeys(("trunk_origin", "trunk_x", "trunk_z"))
+        if in_win[i]:
+            j = midx[i]
+            for name, p in zip(mpts, (mob[j], mxb[j], mzb[j])):
+                mpts[name] = p if np.isfinite(p).all() else None
         fr["mocap_pts"] = mpts
 
-    R_t_list, _R_neu, flex, lat, axi, all_pts = assemble(frames)
+    R_t_list, R_neu, flex, lat, axi, all_pts = assemble(frames)
     for fr, R_t in zip(frames, R_t_list):
         fr["R_t"] = R_t
+
     for fr in frames:
-        for name, xyz in fr["mocap_pts"].items():
+        for xyz in fr["mocap_pts"].values():
             if xyz is not None:
                 all_pts.append(xyz)
 
-    # smooth the camera angles (Savitzky-Golay); mocap stays raw
-    flex_s, lat_s, axi_s = (smooth_series(flex), smooth_series(lat), smooth_series(axi))
+    # mocap trunk frames per camera frame -> angles in the camera's anatomical axes
+    R_moc = [mocap_trunk_frame(mob[j], mxb[j], mzb[j]) if in_win[i] else None
+             for i, j in enumerate(midx)]
+    print("Mocap angles in camera axes...")
+    flex, lat, axi, mflex, mlat, maxi = mocap_angles_in_camera_axes(
+        R_moc, R_t_list, R_neu, in_win, n)
 
-    # mocap trunk rigid-body angles (Marker1 origin, Marker4 xvec, Marker2 zvec)
-    m1, m4, m2 = load_trunk_rb(str(RECORDING_DIR / f"{RECORDING_NAME}.csv"))
-
-    # --- time-sync camera & mocap ---
-    # Wall clocks are only coarsely aligned; cross-correlate camera vs mocap flexion
-    # to recover the true residual lag, then shift the mocap timeline by it. Positive
-    # lag means mocap features occur later (camera leads) -> pull mocap earlier.
-    period = float(np.median(np.diff(ts0) / np.timedelta64(1, "s")))
-    # Sync on clean landmark motion (MediaPipe shoulder-mid vs mocap trunk origin),
-    # not the noisy trunk angles -- both spike together when the subject moves.
-    cam_pos = np.array([
-        (fr["cam_pts"]["L_shoulder"] + fr["cam_pts"]["R_shoulder"]) / 2
-        if fr["cam_pts"]["L_shoulder"] is not None
-        and fr["cam_pts"]["R_shoulder"] is not None else [np.nan, np.nan, np.nan]
-        for fr in frames])
-    moc_pos = np.array([m1[nearest_index(mocap_time, ts0[i])] for i in range(n)])
-    corr, lagL = best_lag(series_speed(cam_pos), series_speed(moc_pos),
-                          max_lag=int(round(MAX_SYNC_LAG_S / period)))
-    lag_s = lagL * period
-    mocap_time = mocap_time - np.timedelta64(int(round(lag_s * 1e6)), "us")
-    mflex, mlat, maxi = mocap_trunk_angles(m1, m4, m2, ts0, mocap_time, n)
-
-    # mocap exists only within its (shifted) recording window; blank it elsewhere
-    in_win = (ts0 >= mocap_time[0]) & (ts0 <= mocap_time[-1])
-    mflex[~in_win] = np.nan
-    mlat[~in_win] = np.nan
-    maxi[~in_win] = np.nan
+    # both systems are already zeroed at the common neutral by rotation-from-zero, so
+    # no extra offset subtraction here. Camera smoothed (Savitzky-Golay), mocap raw.
+    flex_s, lat_s, axi_s = smooth_series(flex), smooth_series(lat), smooth_series(axi)
 
     i0 = int(np.argmax(in_win))                       # first in-window camera frame
     i1 = n - 1 - int(np.argmax(in_win[::-1]))         # last in-window camera frame
     t = ((ts0 - ts0[i0]) / np.timedelta64(1, "s")).astype(np.float64)  # t=0 at overlap
 
-    zref = slice(i0, min(i0 + N_NEUTRAL, n))          # zero every trace here
-    for arr in (flex_s, lat_s, axi_s, mflex, mlat, maxi):
-        off = np.nanmean(arr[zref])
-        if np.isfinite(off):
-            arr -= off
-
     limits = compute_limits(all_pts)
     dt = np.diff(t)
     fps = float(1.0 / np.median(dt[dt > 0])) if (dt > 0).any() else 15.0
     print(f"cam valid {int(np.isfinite(flex_s).sum())}/{n}  "
-          f"xcorr lag {lag_s:+.2f}s (r={corr:.2f})  overlap frames [{i0},{i1}]  "
-          f"fps~{fps:.2f}")
+          f"overlap frames [{i0},{i1}]  fps~{fps:.2f}")
 
     print("Pass 2/2: rendering 2x2 video...")
     run_render(frames, flex_s, lat_s, axi_s, mflex, mlat, maxi, t, limits, fps,

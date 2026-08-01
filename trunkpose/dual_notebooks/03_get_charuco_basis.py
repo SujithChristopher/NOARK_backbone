@@ -13,7 +13,13 @@ from cv2 import aruco
 from scipy.spatial.transform import Rotation
 from tqdm.auto import tqdm
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    NB_DIR = Path(__file__).resolve().parent
+except NameError:  # running cell-by-cell in an interactive/Jupyter kernel
+    NB_DIR = Path.cwd()
+    if NB_DIR.name != "dual_notebooks":
+        NB_DIR = NB_DIR / "trunkpose" / "dual_notebooks"
+sys.path.insert(0, str(NB_DIR))
 from ar_support import calculate_rotmat  # noqa: E402
 from pd_support import get_marker_name, read_rigid_body_csv  # noqa: E402
 
@@ -49,10 +55,10 @@ ID_TO_OBJPTS = {
 # NOTE: PROJECT_ROOT is 2 levels up from this file (trunkpose/dual_notebooks/../..).
 # Other scripts in this folder (02_dual_calibration.py etc.) use parents[3], which
 # now resolves outside the repo after the trunkpose/ nesting change -- don't copy that.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = NB_DIR.parents[1]
 
-RECORDING_NAME = "dual_160_tframe_july1"
-RECORDING_DIR = PROJECT_ROOT / "data" / "trunk_july1_2026" / RECORDING_NAME
+RECORDING_NAME = "july_27_calib"
+RECORDING_DIR = PROJECT_ROOT / "data" / "july27" / RECORDING_NAME
 STEREO_TOML = (
     PROJECT_ROOT
     / "data" / "calibration" / "dual_160"
@@ -62,9 +68,9 @@ OUT_TOML = RECORDING_DIR / "charuco_basis.toml"
 
 # markers glued on top of the charuco board (optitrack rigid body "tframe")
 ORIGIN_MARKER = 4
-XDIR_MARKER = 2
+XDIR_MARKER = 1
 ZDIR_MARKER = 3
-    
+
 # %% Load stereo calibration (fisheye K, D per camera)
 calib = toml.load(STEREO_TOML)
 K0 = np.array(calib["cam0"]["camera_matrix"])

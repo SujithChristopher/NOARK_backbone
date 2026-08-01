@@ -51,7 +51,13 @@ SEG_JUMP_M = 0.10            # mocap displacement across a gap that flags a re-l
 # exceeds ~45 deg from neutral -> gate on physical plausibility instead.
 ROT_MAX_DEG = 45.0
 ODO_MAX_RUN = 30             # max consecutive odometry frames before declaring loss
-OUT_PNG = m6.RECORDING_DIR / "icp_trunk_angles.png"
+ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "all").lower()
+if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):
+    raise ValueError("TRUNK_ANGLE_PLOT_MODE must be all, icp_only, or mocap_only")
+SHOW_ICP_ANGLES = ANGLE_PLOT_MODE in ("all", "icp_only")
+SHOW_PLANE_ANGLES = ANGLE_PLOT_MODE == "all"
+_plot_suffix = "" if ANGLE_PLOT_MODE == "all" else f"_{ANGLE_PLOT_MODE}"
+OUT_PNG = m6.RECORDING_DIR / f"icp_trunk_angles{_plot_suffix}.png"
 
 
 # %% ICP (trimmed, point-to-point Kabsch, warm-started per frame)
@@ -284,8 +290,9 @@ def compare_mocap(inp, Rb_icp, R_neu):
     # CAMERA anatomical axes (R_neu), so marker-frame conventions cancel. The residual
     # frame rotation S (basis rotation error) is fitted on the FIRST half of the
     # segment and validated on the held-out second half.
-    m1, m4, m2 = m6.load_trunk_rb(str(m6.RECORDING_DIR / f"{m6.RECORDING_NAME}.csv"))
-    m1b, m4b, m2b = ((m - tm_c) @ Rm_c for m in (m1, m4, m2))
+    mo, mx, mz = m6.load_trunk_rb(
+        str(m6.RECORDING_DIR / f"{m6.RECORDING_NAME}.csv"))
+    mob, mxb, mzb = ((m - tm_c) @ Rm_c for m in (mo, mx, mz))
 
     # hardware sync: the GPIO sync bit in the camera timestamp file is high while
     # mocap records, so mocap t=0 is the camera frame at the first rising edge.
@@ -303,9 +310,9 @@ def compare_mocap(inp, Rb_icp, R_neu):
     # after a short occlusion (this take: 326mm across 10ms and 267mm across 30ms).
     # Rotations on either side of a teleport carry different constant offsets, so
     # validation uses only the longest teleport-free segment.
-    ok_m = np.isfinite(m1).all(axis=1)
+    ok_m = np.isfinite(mo).all(axis=1)
     vidx = np.where(ok_m)[0]
-    cut = np.where(np.linalg.norm(np.diff(m1[vidx], axis=0), axis=1) > SEG_JUMP_M)[0]
+    cut = np.where(np.linalg.norm(np.diff(mo[vidx], axis=0), axis=1) > SEG_JUMP_M)[0]
     bounds = np.concatenate(([0], cut + 1, [len(vidx)]))
     segs = [(vidx[a], vidx[b - 1]) for a, b in zip(bounds[:-1], bounds[1:])]
     s0, s1 = max(segs, key=lambda ab: mt[ab[1]] - mt[ab[0]])
@@ -318,7 +325,7 @@ def compare_mocap(inp, Rb_icp, R_neu):
     in_win = (ts0 >= mt[s0]) & (ts0 <= mt[s1])
 
     midx = np.array([m6.nearest_index(mt, t) for t in ts0])
-    R_moc = [m6.mocap_trunk_frame(m1b[j], m4b[j], m2b[j]) if in_win[i] else None
+    R_moc = [m6.mocap_trunk_frame(mob[j], mxb[j], mzb[j]) if in_win[i] else None
              for i, j in enumerate(midx)]
 
     # zero both systems over the first frames of the segment where both are valid
@@ -388,7 +395,10 @@ def compare_mocap(inp, Rb_icp, R_neu):
     return dict(flex_iz=flex_iz, lat_iz=lat_iz, axi_iz=axi_iz, mag_i=mag_i,
                 mflex=mflex, mlat=mlat, maxi=maxi, mag_m=mag_m,
                 in_win=in_win, zwin=zwin, Rz_i=Rz_i, Rz_m=Rz_m, S=S,
-                m1b=m1b, m4b=m4b, m2b=m2b, midx=midx, R_moc=R_moc)
+                mob=mob, mxb=mxb, mzb=mzb, midx=midx, R_moc=R_moc,
+                # Compatibility aliases consumed by 08_icp_video.py. Their physical
+                # meaning is now (origin, +X, +Z), not literal marker numbers.
+                m1b=mob, m4b=mxb, m2b=mzb)
 
 
 # %% Main
@@ -442,15 +452,23 @@ def main():
     fig, axes = plt.subplots(3, 1, figsize=(14, 9), sharex=True)
     for k, ax in enumerate(axes):
         ax.plot(t_s, series["mocap"][k], color="orange", lw=1.2, label="mocap")
-        ax.plot(t_s, series["plane"][k], color="tab:blue", lw=1.0, alpha=0.8,
-                label="camera plane+shoulder")
-        ax.plot(t_s, series["icp"][k], color="tab:green", lw=1.2, label="camera ICP")
+        if SHOW_PLANE_ANGLES:
+            ax.plot(t_s, series["plane"][k], color="tab:blue", lw=1.0, alpha=0.8,
+                    label="camera plane+shoulder")
+        if SHOW_ICP_ANGLES:
+            ax.plot(t_s, series["icp"][k], color="tab:green", lw=1.2,
+                    label="camera ICP")
         ax.set_ylabel(f"{names[k]} (deg)")
         ax.grid(alpha=0.3)
         if k == 0:
             ax.legend(loc="upper right", fontsize=9)
     axes[-1].set_xlabel("time (s)")
-    fig.suptitle("Trunk angles: mocap vs plane+shoulder vs ICP rigid registration")
+    title = {
+        "all": "Trunk angles: mocap vs plane+shoulder vs ICP rigid registration",
+        "icp_only": "Trunk angles: mocap vs ICP rigid registration",
+        "mocap_only": "Trunk angles: mocap only",
+    }[ANGLE_PLOT_MODE]
+    fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(OUT_PNG, dpi=110)
     print(f"\nPlot -> {OUT_PNG}")

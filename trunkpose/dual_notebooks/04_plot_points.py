@@ -128,6 +128,25 @@ def load_frame_times(path):
     )
 
 
+def load_sync_flags(path):
+    """GPIO pin-17 bit per frame (column 0 of the timestamp msgpack), HIGH while Motive
+    records. Same helper as 06_trunk_axis.load_sync_flags."""
+    with open(path, "rb") as f:
+        recs = list(msgpack.Unpacker(f, object_hook=mpn.decode))
+    return np.array([int(r[0]) for r in recs])
+
+
+def gpio_mocap_time(ts0, seconds, sync):
+    """Mocap timeline on the CAMERA clock. The first rising edge of the GPIO bit is
+    mocap seconds=0 -- the two systems share a wire, so this is exact. Motive's own
+    'Capture Start Time' header disagrees by seconds (this take: -2.38 s), and xcorr
+    sync was worse still, so neither is used here."""
+    if not (sync == 1).any():
+        raise SystemExit("No GPIO sync pulse in cam0_timestamp.msgpack.")
+    rise = int(np.argmax(sync == 1))
+    return ts0[rise] + (seconds * 1e6).astype("timedelta64[us]"), rise
+
+
 def nearest_index(times, t):
     j = int(np.searchsorted(times, t))
     cands = [k for k in (j - 1, j) if 0 <= k < len(times)]
@@ -229,23 +248,84 @@ def compute_limits(all_pts, pad=AXIS_PAD_M):
     }
 
 
+# %% Mocap<->camera alignment
+# The [mocap] block of charuco_basis.toml does NOT put mocap points in the board frame:
+# 03_get_charuco_basis.py assumes the 4 "tframe" markers sit on the board face, but they
+# are on the stand's base -- their plane normal is Motive +Y (0.014, 0.994, 0.108) while
+# the board normal is nearly horizontal, i.e. the two planes are ~90 deg apart, and the
+# marker-to-pattern offset was never measured. Using the TOML basis leaves the mocap
+# skeleton 671 mm and 160 deg off the camera one.
+#
+# So the display transform is FITTED from the data (Kabsch on paired joints), fitted on
+# the first half of the overlap and scored on the held-out second half. This is a
+# visualisation aid, not a calibration: it must never be written back into
+# charuco_basis.toml (a fitted "basis fix" was already reverted once for being circular).
+def kabsch(A, B):
+    """Rigid (R, t) mapping points A onto points B, no scaling."""
+    ca, cb = A.mean(0), B.mean(0)
+    U, _, Vt = np.linalg.svd((A - ca).T @ (B - cb))
+    d = np.sign(np.linalg.det(Vt.T @ U.T))
+    R = Vt.T @ np.diag([1.0, 1.0, d]) @ U.T
+    return R, cb - R @ ca
+
+
+def fit_mocap_alignment(cam_frames, mocap_frames):
+    """Fit on the first half of frames that have pairs, report on the second half."""
+    idx = [i for i, (c, m) in enumerate(zip(cam_frames, mocap_frames))
+           if any(c[k] is not None and m[k] is not None for k in UPPER_LIMB)]
+    if len(idx) < 20:
+        raise SystemExit("Too few paired camera/mocap frames to fit an alignment.")
+    split = idx[len(idx) // 2]
+
+    def pairs(lo, hi):
+        A, B = [], []
+        for i in range(lo, hi):
+            for k in UPPER_LIMB:
+                c, m = cam_frames[i][k], mocap_frames[i][k]
+                if c is not None and m is not None:
+                    A.append(m)
+                    B.append(c)
+        return np.array(A), np.array(B)
+
+    A_fit, B_fit = pairs(idx[0], split)
+    R, t = kabsch(A_fit, B_fit)
+    train = np.linalg.norm((A_fit @ R.T + t) - B_fit, axis=1)
+    A_val, B_val = pairs(split, idx[-1] + 1)
+    val = np.linalg.norm((A_val @ R.T + t) - B_val, axis=1)
+    ang = np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1)))
+    print(f"  fitted alignment: rotation {ang:.1f} deg, translation "
+          f"{np.linalg.norm(t) * 1000:.0f} mm")
+    print(f"  train (n={len(train)}): mean {train.mean() * 1000:.0f} mm, "
+          f"median {np.median(train) * 1000:.0f} mm")
+    print(f"  HELD-OUT (n={len(val)}): mean {val.mean() * 1000:.0f} mm, "
+          f"median {np.median(val) * 1000:.0f} mm")
+    return R, t
+
+
 # %% Main
 def main():
     print("Loading calibration + reference frame...")
     K0, D0, K1, D1, R_st, T_st = load_stereo(STEREO_TOML)
-    R0_c, t0_c, Rm_c, tm_c = load_charuco_basis(CHARUCO_TOML)
+    # only the cam0 half of the basis is usable -- see the alignment note above
+    R0_c, t0_c, _Rm_unused, _tm_unused = load_charuco_basis(CHARUCO_TOML)
 
     print("Loading mocap...")
     mocap_df, st_time = read_rigid_body_csv(str(RECORDING_DIR / f"{RECORDING_NAME}.csv"))
-    mocap_time = np.datetime64(st_time) + (
-        mocap_df["seconds"].to_numpy() * 1e6
-    ).astype("timedelta64[us]")
 
     print("Loading camera timestamps...")
     ts0 = load_frame_times(RECORDING_DIR / "cam0_timestamp.msgpack")
     ts1 = load_frame_times(RECORDING_DIR / "cam1_timestamp.msgpack")
     n = min(len(ts0), len(ts1))
     t_ms = ((ts0[:n] - ts0[0]) / np.timedelta64(1, "ms")).astype(np.int64)
+
+    sync = load_sync_flags(RECORDING_DIR / "cam0_timestamp.msgpack")[:n]
+    mocap_time, rise = gpio_mocap_time(
+        ts0[:n], mocap_df["seconds"].to_numpy(), sync)
+    wall = np.datetime64(st_time)
+    print(f"  GPIO sync: mocap t=0 at camera frame {rise}; Motive header clock is "
+          f"{(wall - mocap_time[0]) / np.timedelta64(1, 's'):+.2f} s off")
+    in_win = (ts0[:n] >= mocap_time[0]) & (ts0[:n] <= mocap_time[-1])
+    print(f"  mocap covers {int(in_win.sum())}/{n} camera frames")
 
     print(f"Pass 1/2: pose detection + triangulation ({n} paired frames)...")
     lmk0 = make_pose_landmarker()
@@ -260,6 +340,8 @@ def main():
         RECORDING_DIR / "cam0_frame.msgpack", RECORDING_DIR / "cam1_frame.msgpack"
     )
     for i, (f0, f1) in enumerate(tqdm(frame_pairs, total=n, desc="detect")):
+        if i >= n:
+            break
         f0_rgb = cv2.cvtColor(f0, cv2.COLOR_GRAY2RGB) if f0.ndim == 2 else f0
         f1_rgb = cv2.cvtColor(f1, cv2.COLOR_GRAY2RGB) if f1.ndim == 2 else f1
         res0 = lmk0.detect_for_video(
@@ -284,22 +366,32 @@ def main():
             cam_pts[name] = xyz
         cam_frames.append(cam_pts)
 
-        mi = nearest_index(mocap_time, ts0[i])
-        row = mocap_df.iloc[mi]
+        # mocap markers stay in Motive world coords for now -- the alignment that maps
+        # them into the board frame is fitted below, once all pairs are collected.
         mocap_pts = {}
-        for name, prefix in MOCAP_MARKERS.items():
-            p_world = np.array(
-                [row[f"{prefix}_x"], row[f"{prefix}_y"], row[f"{prefix}_z"]], dtype=float
-            )
-            xyz = None
-            if np.isfinite(p_world).all():
-                xyz = mocap_to_board(p_world, Rm_c, tm_c)
-                all_pts.append(xyz)
-            mocap_pts[name] = xyz
+        if in_win[i]:
+            row = mocap_df.iloc[nearest_index(mocap_time, ts0[i])]
+            for name, prefix in MOCAP_MARKERS.items():
+                p_world = np.array(
+                    [row[f"{prefix}_x"], row[f"{prefix}_y"], row[f"{prefix}_z"]],
+                    dtype=float,
+                )
+                mocap_pts[name] = p_world if np.isfinite(p_world).all() else None
+        else:
+            mocap_pts = dict.fromkeys(MOCAP_MARKERS)
         mocap_frames.append(mocap_pts)
 
     lmk0.__exit__(None, None, None)
     lmk1.__exit__(None, None, None)
+
+    print("Fitting mocap -> board alignment (held-out validated)...")
+    R_al, t_al = fit_mocap_alignment(cam_frames, mocap_frames)
+    for mocap_pts in mocap_frames:
+        for name, p_world in mocap_pts.items():
+            if p_world is not None:
+                xyz = R_al @ p_world + t_al
+                mocap_pts[name] = xyz
+                all_pts.append(xyz)
 
     limits = compute_limits(all_pts) if all_pts else FALLBACK_LIMITS
     print(f"Axis limits (board frame, m): {limits}")
@@ -318,6 +410,10 @@ def main():
         frame = render_frame(fig, ax, cam_pts, mocap_pts, limits)
         if frame.shape[1::-1] != (PANEL, PANEL):
             frame = cv2.resize(frame, (PANEL, PANEL))
+        # the overlay is only as meaningful as the alignment -- say so on every frame
+        cv2.putText(frame, "mocap: fitted alignment (not charuco_basis.toml)",
+                    (10, PANEL - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (0, 165, 255), 1, cv2.LINE_AA)
         writer.write(frame)
 
     writer.release()

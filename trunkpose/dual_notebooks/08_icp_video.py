@@ -38,7 +38,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 m6 = importlib.import_module("06_trunk_axis")
 m7 = importlib.import_module("07_icp_trunk")
 
-OUT_VIDEO = m6.RECORDING_DIR / "icp_trunk_video.mp4"
+ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "all").lower()
+if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):
+    raise ValueError("TRUNK_ANGLE_PLOT_MODE must be all, icp_only, or mocap_only")
+SHOW_ICP_ANGLES = ANGLE_PLOT_MODE in ("all", "icp_only")
+SHOW_PLANE_ANGLES = ANGLE_PLOT_MODE == "all"
+_video_suffix = "" if ANGLE_PLOT_MODE == "all" else f"_{ANGLE_PLOT_MODE}"
+OUT_VIDEO = m6.RECORDING_DIR / f"icp_trunk_video{_video_suffix}.mp4"
 QUAD_W, QUAD_H = m6.QUAD_W, m6.QUAD_H
 N_WORKERS = m6.N_WORKERS
 ALIGN_MATCH_M = 0.03         # nn distance counted as "matched" in the live rms readout
@@ -155,14 +161,21 @@ def _panel_angles(fig, axes, i):
     for k, (ax, name) in enumerate(zip(axes, ("flexion", "lateral", "axial"))):
         icp, moc, pla = v["icp"][k], v["mocap"][k], v["plane"][k]
         ax.cla()
-        ax.plot(t, pla, color="tab:blue", lw=0.7, alpha=0.5, label="plane+shoulder")
         ax.plot(t, moc, color="white", lw=0.9, ls="--", alpha=0.8, label="mocap")
-        ax.plot(t, icp, color=m6.ANGLE_COLORS[name], lw=1.4, label="ICP")
+        if SHOW_PLANE_ANGLES:
+            ax.plot(t, pla, color="tab:blue", lw=0.7, alpha=0.5,
+                    label="plane+shoulder")
+        if SHOW_ICP_ANGLES:
+            ax.plot(t, icp, color=m6.ANGLE_COLORS[name], lw=1.4, label="ICP")
         ax.axvline(t[i], color="white", lw=1)
         ax.axhline(0, color="gray", lw=0.5)
-        cs = f"{icp[i]:+.0f}" if np.isfinite(icp[i]) else "--"
         ms = f"{moc[i]:+.0f}" if np.isfinite(moc[i]) else "--"
-        ax.set_ylabel(f"{name}\nicp {cs}  moc {ms}",
+        if SHOW_ICP_ANGLES:
+            cs = f"{icp[i]:+.0f}" if np.isfinite(icp[i]) else "--"
+            value_label = f"icp {cs}  moc {ms}"
+        else:
+            value_label = f"moc {ms}"
+        ax.set_ylabel(f"{name}\n{value_label}",
                       color=m6.ANGLE_COLORS[name], fontsize=8)
         ax.set_facecolor("#111111")
         ax.tick_params(colors="gray", labelsize=6)
@@ -284,11 +297,11 @@ def main():
             arr -= off
 
     # per-frame render payload (drops depth maps / mocap dict -> smaller pickles)
-    m1b, m4b, m2b = cmp_["m1b"], cmp_["m4b"], cmp_["m2b"]
+    mob, mxb, mzb = cmp_["mob"], cmp_["mxb"], cmp_["mzb"]
     vfs = []
     for i, fr in enumerate(frames):
         j = midx[i]
-        moc = (m1b[j], m4b[j], m2b[j])
+        moc = (mob[j], mxb[j], mzb[j])
         vfs.append(dict(cloud=fr["cloud"], sh_px=fr["sh_px"],
                         ls=fr["cam_pts"]["L_shoulder"], rs=fr["cam_pts"]["R_shoulder"],
                         A=icp["A_list"][i] or icp["A_raw"][i], gated=bool(gated[i]),

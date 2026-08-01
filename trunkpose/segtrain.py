@@ -14,6 +14,8 @@ def main():
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=8)
+    parser.add_argument("--fraction", type=float, default=1.0, help="fraction of train set to use (0-1]")
+    parser.add_argument("--seed", type=int, default=9)
     args = parser.parse_args()
 
     model = YOLO(args.model)
@@ -22,6 +24,8 @@ def main():
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
+        fraction=args.fraction,
+        seed=args.seed,
         project=str(ROOT / "runs"),
         name="trunk_seg",
     )
