@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 m6 = importlib.import_module("06_trunk_axis")
 m7 = importlib.import_module("07_icp_trunk")
 
-ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "all").lower()
+ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "icp_only").lower()
 if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):
     raise ValueError("TRUNK_ANGLE_PLOT_MODE must be all, icp_only, or mocap_only")
 SHOW_ICP_ANGLES = ANGLE_PLOT_MODE in ("all", "icp_only")
