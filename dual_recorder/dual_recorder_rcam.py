@@ -161,11 +161,23 @@ def ensure_driver(
 class SyncLine:
     """GPIO sync input from the mocap trigger, read once per frame.
 
+    The 40-pin header is gpiochip4 (the SoC TLMM) and header pin N maps to a
+    TLMM line that is *not* N - the device tree names them, so a line can be
+    given either by number or by its header name ("PIN_11"). The default,
+    PIN_11 = line 29, is the same physical hole the Raspberry Pi used for
+    GPIO17, so existing trigger wiring does not have to move. Header GPIO is
+    3.3V (3.63V tolerant) per the Q6A product brief, same as the Pi.
+
+    Note the TLMM ignored bias requests through the character device in
+    testing: PIN_11 idles low on its own, but a floating input on another pin
+    cannot be pulled down in software - wire an external pull-down if the
+    trigger output is open-drain or tri-state.
+
     Tolerates libgpiod v1 and v2, and falls back to a constant 0 when gpiod is
     missing so a recording without the trigger box still runs.
     """
 
-    def __init__(self, chip: str = "gpiochip4", line: int = 17):
+    def __init__(self, chip: str = "gpiochip4", line: int | str = "PIN_11"):
         self.available = False
         self._read = lambda: 0
         try:
@@ -173,7 +185,9 @@ class SyncLine:
         except ImportError:
             print("gpiod not installed -> sync flag stays 0")
             return
+        requested = line
         try:
+            line = self._resolve(gpiod, chip, line)
             if hasattr(gpiod, "LINE_REQ_DIR_IN"):  # libgpiod v1
                 self._chip = gpiod.Chip(chip)
                 gline = self._chip.get_line(line)
@@ -191,7 +205,8 @@ class SyncLine:
                     1 if self._req.get_value(line) == Value.ACTIVE else 0
                 )
             self.available = True
-            print(f"GPIO sync on {chip} line {line}")
+            named = "" if str(requested) == str(line) else f" ({requested})"
+            print(f"GPIO sync on {chip} line {line}{named}")
         except Exception as exc:  # noqa: BLE001 - any GPIO failure degrades to 0
             print(f"GPIO sync unavailable on {chip} line {line}: {exc}")
             detail = self._describe(gpiod, chip, line)
@@ -201,6 +216,20 @@ class SyncLine:
                 "  -> sync flag stays 0. Point --sync-chip/--sync-pin at the line "
                 "the trigger box is actually wired to."
             )
+
+    @staticmethod
+    def _resolve(gpiod, chip: str, line: int | str) -> int:
+        """Accept a line number or a device-tree line name such as "PIN_11"."""
+        text = str(line)
+        if text.lstrip("-").isdigit():
+            return int(text)
+        if hasattr(gpiod, "LINE_REQ_DIR_IN"):  # libgpiod v1
+            found = gpiod.Chip(chip).find_line(text)
+            if found is None:
+                raise ValueError(f"no line named {text!r} on {chip}")
+            return found.offset()
+        with gpiod.Chip(f"/dev/{chip}") as c:
+            return c.line_offset_from_id(text)
 
     @staticmethod
     def _describe(gpiod, chip: str, line: int) -> str:
@@ -413,7 +442,7 @@ class RecordData:
         labels=None,
         preview_width=480,
         sync_chip="gpiochip4",
-        sync_pin=17,
+        sync_pin="PIN_11",
         auto_modprobe=True,
     ):
         if auto_modprobe:
@@ -631,10 +660,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--sync-pin",
-        type=int,
-        default=17,
-        help="line for the sync input (17 is the old RPi pin; on the Q6A many "
-        "TLMM lines are taken - the program says so if the request fails)",
+        default="PIN_11",
+        help="sync input line: a TLMM line number, or a header name from the "
+        "device tree such as PIN_11 (the default, = line 29, the same header "
+        "hole as the Pi's GPIO17). List them with: gpioinfo gpiochip4",
     )
     parser.add_argument(
         "--no-modprobe",
