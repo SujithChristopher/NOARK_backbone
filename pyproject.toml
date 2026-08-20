@@ -18,17 +18,23 @@ dependencies = [
     "scipy>=1.17.1",
     "toml>=0.10.2",
     "tqdm>=4.67.3",
-    "mediapipe>=0.10.35",
-    "torch>=2.11.0",
-    "torchvision>=0.26.0",
-    "pyrender>=0.1.45",
-    "smplx>=0.1.28",
-    "trimesh>=4.12.2",
-    "maturin>=1.14.1",
-    "fiftyone>=1.19.0",
-    "requests>=2.34.2",
-    "pycocotools>=2.0.11",
-    "ultralytics>=8.4.102",
+    # No manylinux aarch64 wheels on PyPI; only the analysis scripts in
+    # trunkpose/ use it, and those run on the workstation.
+    "mediapipe>=0.10.35; platform_machine == 'x86_64'",
+    # Training / dataset / 3D-rendering stack: x86_64 workstations only.
+    # The aarch64 boards (Radxa Q6A, RPi) only run capture + tracking, and
+    # several of these have no aarch64 wheels.
+    "torch>=2.11.0; platform_machine == 'x86_64'",
+    "torchvision>=0.26.0; platform_machine == 'x86_64'",
+    "pyrender>=0.1.45; platform_machine == 'x86_64'",
+    "smplx>=0.1.28; platform_machine == 'x86_64'",
+    "trimesh>=4.12.2; platform_machine == 'x86_64'",
+    "maturin>=1.14.1; platform_machine == 'x86_64'",
+    "fiftyone>=1.19.0; platform_machine == 'x86_64'",
+    "requests>=2.34.2; platform_machine == 'x86_64'",
+    "pycocotools>=2.0.11; platform_machine == 'x86_64'",
+    "ultralytics>=8.4.102; platform_machine == 'x86_64'",
+    "gpiod>=2.5.0 ; sys_platform == 'linux'",
 ]
 
 
