@@ -1986,6 +1986,7 @@ dependencies = [
     { name = "polars" },
     { name = "pycocotools" },
     { name = "pyrender" },
+    { name = "rapidtag" },
     { name = "requests" },
     { name = "scipy" },
     { name = "smplx" },
@@ -2014,6 +2015,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.40.0" },
     { name = "pycocotools", specifier = ">=2.0.11" },
     { name = "pyrender", specifier = ">=0.1.45" },
+    { name = "rapidtag", specifier = ">=0.1.4" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "smplx", specifier = ">=0.1.28" },
@@ -3018,6 +3020,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/59/a5f38970f9bf07cee96128de79590bb354917914a9be11272cfc7ff26af0/pyzmq-27.1.0-cp314-cp314t-win32.whl", hash = "sha256:1f0b2a577fd770aa6f053211a55d1c47901f4d537389a034c690291485e5fe92", size = 587472, upload-time = "2025-09-08T23:08:58.18Z" },
     { url = "https://files.pythonhosted.org/packages/70/d8/78b1bad170f93fcf5e3536e70e8fadac55030002275c9a29e8f5719185de/pyzmq-27.1.0-cp314-cp314t-win_amd64.whl", hash = "sha256:19c9468ae0437f8074af379e986c5d3d7d7bfe033506af442e8c879732bedbe0", size = 661401, upload-time = "2025-09-08T23:08:59.802Z" },
     { url = "https://files.pythonhosted.org/packages/81/d6/4bfbb40c9a0b42fc53c7cf442f6385db70b40f74a783130c5d0a5aa62228/pyzmq-27.1.0-cp314-cp314t-win_arm64.whl", hash = "sha256:dc5dbf68a7857b59473f7df42650c621d7e8923fb03fa74a526890f4d33cc4d7", size = 575170, upload-time = "2025-09-08T23:09:01.418Z" },
+]
+
+[[package]]
+name = "rapidtag"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/66/4152b1f0b388bcb57c069d61691f8d48ad65c3f776bacec0b40c905afefa/rapidtag-0.1.4.tar.gz", hash = "sha256:4bcbcea10f6f9859678fdd7201291d961692e908673aef0644b3a00bf18a8246", size = 946143, upload-time = "2026-07-14T07:31:59.935Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/05/28dfa8c359d93ef81f2bf5ccc654e314bc503310bd85696cf05a668c7caa/rapidtag-0.1.4-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a33c1fd61b2bdcb8bbc993920b007e68e886473efd7a6cd55bcacd76c16f5a5b", size = 550986, upload-time = "2026-07-14T07:31:50.957Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/0e/264f2848f38f62880e0a9462d0cca721fc8031b761527f7e101a7964bcb8/rapidtag-0.1.4-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:73c353fd80e9de27051cf1858e68e45332467fa868147b06aefe24e51aa7c35e", size = 539836, upload-time = "2026-07-14T07:31:52.354Z" },
+    { url = "https://files.pythonhosted.org/packages/46/ae/8d5e14fb854dca4fc0bbc25aee7b0cab4be9896f5a6a7cc90d97ee3ea39a/rapidtag-0.1.4-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2b8a1be6dfad1cf870003916e5283b2ec723e577fdfacf12e91bb4626cbe3e3b", size = 582841, upload-time = "2026-07-14T07:31:53.527Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/9b/1d157c0d59b6c781aa4f6cfc93a4aef20d084b86acc5f04868cb083af4ec/rapidtag-0.1.4-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f522e9dd1850b009a73d7750eead933bd5b137c0e650186f6095d67eeb261c19", size = 584928, upload-time = "2026-07-14T07:31:54.853Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/0b/c8af90e20e285be64325de5cb4627bb339ef664c8a13e877e98df9ea38a7/rapidtag-0.1.4-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:46888fd20f62da6f5cb84b85f9b1e3a3d99523d57c06a63e613ffe6d56046174", size = 760593, upload-time = "2026-07-14T07:31:56.242Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/ec/07c46641f1e76afcdefcbafca3304d9ffa9a5014395e08d6d9ceddc13c1b/rapidtag-0.1.4-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:34852de3167d9e26446e532a2685665ddc493f3d7fdc7c7231f6ce3dff352b05", size = 796539, upload-time = "2026-07-14T07:31:57.395Z" },
+    { url = "https://files.pythonhosted.org/packages/69/23/64461dfa80671bcd7b0a09242d3470f2e00ba9841200cb14d9c626153be0/rapidtag-0.1.4-cp39-abi3-win_amd64.whl", hash = "sha256:e8fe3ab1c1fcfb8c5781f325663e0d272b01216764ad99006b4063fb5299195e", size = 458637, upload-time = "2026-07-14T07:31:58.61Z" },
 ]
 
 [[package]]

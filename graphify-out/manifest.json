@@ -1,0 +1,704 @@
+{
+  ".claude/settings.local.json": {
+    "mtime": 1785815097.6820583,
+    "seen": 1787569648.2729566,
+    "ast_hash": "af576277769cf3297edc046b738f3e0c",
+    "semantic_hash": "af576277769cf3297edc046b738f3e0c"
+  },
+  ".vscode/settings.json": {
+    "mtime": 1785815097.6830585,
+    "seen": 1787569648.2729566,
+    "ast_hash": "e7a7fc126039f1376cec0ab104d3d06f",
+    "semantic_hash": "e7a7fc126039f1376cec0ab104d3d06f"
+  },
+  "backup/estimator/charco_board.py": {
+    "mtime": 1785815097.6850612,
+    "seen": 1787569648.2729566,
+    "ast_hash": "30f09f2a4802c7021d3af349d2635254",
+    "semantic_hash": "30f09f2a4802c7021d3af349d2635254"
+  },
+  "backup/estimator/charuco_estimator.py": {
+    "mtime": 1785815097.6850612,
+    "seen": 1787569648.2729566,
+    "ast_hash": "998cc2205bfa561288851308ffc44a44",
+    "semantic_hash": "998cc2205bfa561288851308ffc44a44"
+  },
+  "backup/estimator/cv2test.py": {
+    "mtime": 1785815097.6850612,
+    "seen": 1787569648.2729566,
+    "ast_hash": "f0f3f917aa55490bd9175a4e2c2ccac5",
+    "semantic_hash": "f0f3f917aa55490bd9175a4e2c2ccac5"
+  },
+  "backup/estimator/estimate_ar_charuco.py": {
+    "mtime": 1785815097.6860597,
+    "seen": 1787569648.2729566,
+    "ast_hash": "8cee3db01dbe15b3e74d21cea4372295",
+    "semantic_hash": "8cee3db01dbe15b3e74d21cea4372295"
+  },
+  "backup/estimator/realtime_data.py": {
+    "mtime": 1785815097.6860597,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2f75a6a6241b57e5944d166c63913188",
+    "semantic_hash": "2f75a6a6241b57e5944d166c63913188"
+  },
+  "backup/estimator/single_tag_frame.py": {
+    "mtime": 1785815097.6860597,
+    "seen": 1787569648.2729566,
+    "ast_hash": "622d1d29ad83aa7f99d008f99cfccd13",
+    "semantic_hash": "622d1d29ad83aa7f99d008f99cfccd13"
+  },
+  "backup/estimator/table_frame_capture.py": {
+    "mtime": 1785815097.6870594,
+    "seen": 1787569648.2729566,
+    "ast_hash": "996b5797a1259333df9bc30350843b4e",
+    "semantic_hash": "996b5797a1259333df9bc30350843b4e"
+  },
+  "backup/newdata/explore_chessboard_data.py": {
+    "mtime": 1785815097.8555744,
+    "seen": 1787569648.2729566,
+    "ast_hash": "d0e043897be0138f4ae4bb0573bccc5c",
+    "semantic_hash": "d0e043897be0138f4ae4bb0573bccc5c"
+  },
+  "backup/newdata/fisheye_calibration_kmeans.py": {
+    "mtime": 1785815097.8565757,
+    "seen": 1787569648.2729566,
+    "ast_hash": "6c62d9bddb598a8fa1599bebb918d4bf",
+    "semantic_hash": "6c62d9bddb598a8fa1599bebb918d4bf"
+  },
+  "backup/newdata/visualize_calibration.py": {
+    "mtime": 1785815097.8615756,
+    "seen": 1787569648.2729566,
+    "ast_hash": "c6bcc338b862dd1553562954770ac6c1",
+    "semantic_hash": "c6bcc338b862dd1553562954770ac6c1"
+  },
+  "backup/newdata/visualize_clusters.py": {
+    "mtime": 1785815097.8615756,
+    "seen": 1787569648.2729566,
+    "ast_hash": "0f9a585814c401f63c510bafb23def18",
+    "semantic_hash": "0f9a585814c401f63c510bafb23def18"
+  },
+  "calibration_programs/board_creator/gen_pattern.py": {
+    "mtime": 1773482988.0990343,
+    "seen": 1787569648.2729566,
+    "ast_hash": "6df22d449c83eec3071579586c68dc22",
+    "semantic_hash": "6df22d449c83eec3071579586c68dc22"
+  },
+  "calibration_programs/board_creator/svgfig.py": {
+    "mtime": 1773482988.1000319,
+    "seen": 1787569648.2729566,
+    "ast_hash": "8ab87985e16197d9eac74c57240d2dbc",
+    "semantic_hash": "8ab87985e16197d9eac74c57240d2dbc"
+  },
+  "calibration_programs/calibration_manager.py": {
+    "mtime": 1773482988.1000319,
+    "seen": 1787569648.2729566,
+    "ast_hash": "f82adfbbbfbbab9b95d50d2694f77d34",
+    "semantic_hash": "f82adfbbbfbbab9b95d50d2694f77d34"
+  },
+  "calibration_programs/simplified_fisheye_calibration.py": {
+    "mtime": 1773482988.1000319,
+    "seen": 1787569648.2729566,
+    "ast_hash": "04fc2275eaad9d3084ee5c779c713158",
+    "semantic_hash": "04fc2275eaad9d3084ee5c779c713158"
+  },
+  "dual_recorder/dual_recorder.py": {
+    "mtime": 1785815097.863079,
+    "seen": 1787569648.2729566,
+    "ast_hash": "0bf2e8649623c04f5361989adde9388d",
+    "semantic_hash": "0bf2e8649623c04f5361989adde9388d"
+  },
+  "dual_recorder/testing_json.py": {
+    "mtime": 1785815097.863079,
+    "seen": 1787569648.2729566,
+    "ast_hash": "a57f17d6b8daac1aadf0d4a1c403b911",
+    "semantic_hash": "a57f17d6b8daac1aadf0d4a1c403b911"
+  },
+  "dual_recorder/testing_json2.py": {
+    "mtime": 1785815097.863079,
+    "seen": 1787569648.2729566,
+    "ast_hash": "ecbc8b6618b6e69f744e3da9f49170f2",
+    "semantic_hash": "ecbc8b6618b6e69f744e3da9f49170f2"
+  },
+  "dual_recorder/tuning_camera.py": {
+    "mtime": 1785815097.863079,
+    "seen": 1787569648.2729566,
+    "ast_hash": "80b0d593341d5b57068bfbd11d34618b",
+    "semantic_hash": "80b0d593341d5b57068bfbd11d34618b"
+  },
+  "dual_recorder/tuning_file.py": {
+    "mtime": 1785815097.864083,
+    "seen": 1787569648.2729566,
+    "ast_hash": "e392e18079d3122a53ae0589ed190bd3",
+    "semantic_hash": "e392e18079d3122a53ae0589ed190bd3"
+  },
+  "helper_programs/distance_test.py": {
+    "mtime": 1773482988.108495,
+    "seen": 1787569648.2729566,
+    "ast_hash": "6ee0cb04963c54c1cc7250ff3a8242e9",
+    "semantic_hash": "6ee0cb04963c54c1cc7250ff3a8242e9"
+  },
+  "helper_programs/file_integrity.py": {
+    "mtime": 1773482988.108495,
+    "seen": 1787569648.2729566,
+    "ast_hash": "6192a781f5907ce33b2b7a9864180ee5",
+    "semantic_hash": "6192a781f5907ce33b2b7a9864180ee5"
+  },
+  "helper_programs/gpio_test.py": {
+    "mtime": 1773482988.108495,
+    "seen": 1787569648.2729566,
+    "ast_hash": "79dc97411bf9d3e529d92ebe54bfe32f",
+    "semantic_hash": "79dc97411bf9d3e529d92ebe54bfe32f"
+  },
+  "helper_programs/optimize_lighting.py": {
+    "mtime": 1773482988.108495,
+    "seen": 1787569648.2729566,
+    "ast_hash": "bc45aa50f1cfb18121920f9542535d40",
+    "semantic_hash": "bc45aa50f1cfb18121920f9542535d40"
+  },
+  "helper_programs/picamv2.py": {
+    "mtime": 1773482988.1094935,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2ae012e75f7ee5f97e886dc833444915",
+    "semantic_hash": "2ae012e75f7ee5f97e886dc833444915"
+  },
+  "main.py": {
+    "mtime": 1785815097.864083,
+    "seen": 1787569648.2729566,
+    "ast_hash": "7f28069213f98d9c5e5f114a31682fcd",
+    "semantic_hash": "7f28069213f98d9c5e5f114a31682fcd"
+  },
+  "notebooks/__init__.py": {
+    "mtime": 1753439028.8451247,
+    "seen": 1787569648.2729566,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "notebooks/ar_support.py": {
+    "mtime": 1754118353.251935,
+    "seen": 1787569648.2729566,
+    "ast_hash": "138951cc980643578ebe270ed4f66505",
+    "semantic_hash": "138951cc980643578ebe270ed4f66505"
+  },
+  "notebooks/calib_programs_try/capture_calibframe.py": {
+    "mtime": 1773482988.13158,
+    "seen": 1787569648.2729566,
+    "ast_hash": "e5e774142f69fd70a325be805279603f",
+    "semantic_hash": "e5e774142f69fd70a325be805279603f"
+  },
+  "notebooks/calib_programs_try/enhanced_calib.py": {
+    "mtime": 1768887581.995598,
+    "seen": 1787569648.2729566,
+    "ast_hash": "b65c4cc9bc448cfefe0588005a5ac9a5",
+    "semantic_hash": "b65c4cc9bc448cfefe0588005a5ac9a5"
+  },
+  "notebooks/calib_programs_try/enhanced_calib2.py": {
+    "mtime": 1768887581.995598,
+    "seen": 1787569648.2729566,
+    "ast_hash": "52e3163790a175ab4ca3538fa41b63cb",
+    "semantic_hash": "52e3163790a175ab4ca3538fa41b63cb"
+  },
+  "notebooks/calib_programs_try/improved_calibration_results2.json": {
+    "mtime": 1768887581.995598,
+    "seen": 1787569648.2729566,
+    "ast_hash": "27c5d306288c4f0d0d27634c49b0e1b0",
+    "semantic_hash": "27c5d306288c4f0d0d27634c49b0e1b0"
+  },
+  "notebooks/calib_programs_try/improved_fisheye_calibration.py": {
+    "mtime": 1768887582.0041137,
+    "seen": 1787569648.2729566,
+    "ast_hash": "b42545996fc786686c3708f162bfad0b",
+    "semantic_hash": "b42545996fc786686c3708f162bfad0b"
+  },
+  "notebooks/calib_programs_try/improved_fisheye_calibration_with_toml.py": {
+    "mtime": 1768887582.005126,
+    "seen": 1787569648.2729566,
+    "ast_hash": "46b1ab0cea1387b863f11d37f96205a4",
+    "semantic_hash": "46b1ab0cea1387b863f11d37f96205a4"
+  },
+  "notebooks/calib_programs_try/iterative_1.py": {
+    "mtime": 1768887582.005126,
+    "seen": 1787569648.2729566,
+    "ast_hash": "bd90fb254269c9b60521facc1abb439c",
+    "semantic_hash": "bd90fb254269c9b60521facc1abb439c"
+  },
+  "notebooks/calib_programs_try/iterative_2.py": {
+    "mtime": 1768887582.005126,
+    "seen": 1787569648.2729566,
+    "ast_hash": "82220982568291cb49294701dd0a34ea",
+    "semantic_hash": "82220982568291cb49294701dd0a34ea"
+  },
+  "notebooks/calib_programs_try/mp_stream.py": {
+    "mtime": 1768887582.0061135,
+    "seen": 1787569648.2729566,
+    "ast_hash": "8d18d3c3fcd37020178819c319cec624",
+    "semantic_hash": "8d18d3c3fcd37020178819c319cec624"
+  },
+  "notebooks/calibration/dual/dual160.py": {
+    "mtime": 1785815097.8650837,
+    "seen": 1787569648.2729566,
+    "ast_hash": "40a47ca613e4893e1088b0fc3abbcf18",
+    "semantic_hash": "40a47ca613e4893e1088b0fc3abbcf18"
+  },
+  "notebooks/calibration/dual_notebooks/00_filecheck.py": {
+    "mtime": 1785815097.8650837,
+    "seen": 1787569648.2729566,
+    "ast_hash": "c9785adcab5b4851ea0688a4ca2264b1",
+    "semantic_hash": "c9785adcab5b4851ea0688a4ca2264b1"
+  },
+  "notebooks/calibration/dual_notebooks/01_corner_detection.py": {
+    "mtime": 1785815097.866083,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2182e67f79a1653dd0a4d7b95493bf31",
+    "semantic_hash": "2182e67f79a1653dd0a4d7b95493bf31"
+  },
+  "notebooks/calibration/dual_notebooks/02_dual_calibration.py": {
+    "mtime": 1785815097.8790834,
+    "seen": 1787569648.2729566,
+    "ast_hash": "ac5861e3a88598d3066501bb96fb377b",
+    "semantic_hash": "ac5861e3a88598d3066501bb96fb377b"
+  },
+  "notebooks/calibration/dual_notebooks/ar_support.py": {
+    "mtime": 1785815097.8800845,
+    "seen": 1787569648.2729566,
+    "ast_hash": "00b752880a511c8289f4034b3bb38411",
+    "semantic_hash": "00b752880a511c8289f4034b3bb38411"
+  },
+  "notebooks/calibration/dual_notebooks/bench_depth.py": {
+    "mtime": 1785815097.8800845,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9deb3098e502be6da880358fb8712278",
+    "semantic_hash": "9deb3098e502be6da880358fb8712278"
+  },
+  "notebooks/calibration/dual_notebooks/pd_support.py": {
+    "mtime": 1785815097.8800845,
+    "seen": 1787569648.2729566,
+    "ast_hash": "81bd023888eb2b50453722c48619ff14",
+    "semantic_hash": "81bd023888eb2b50453722c48619ff14"
+  },
+  "notebooks/calibration/dual_notebooks/trunk_angle.py": {
+    "mtime": 1785815097.9431295,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9542724ed99efdb337d210c01a360e45",
+    "semantic_hash": "9542724ed99efdb337d210c01a360e45"
+  },
+  "notebooks/calibration/dual_notebooks/upperlimb_3d_analysis.py": {
+    "mtime": 1785815097.9440827,
+    "seen": 1787569648.2729566,
+    "ast_hash": "c869f3960974e46a835a24699d7b8e07",
+    "semantic_hash": "c869f3960974e46a835a24699d7b8e07"
+  },
+  "notebooks/calibration/dual_notebooks/upperlimb_3d_kinematics.py": {
+    "mtime": 1785815097.9440827,
+    "seen": 1787569648.2729566,
+    "ast_hash": "5edd78f78cf2d727d02571abba73c177",
+    "semantic_hash": "5edd78f78cf2d727d02571abba73c177"
+  },
+  "notebooks/calibration/dual_notebooks/upperlimb_smpl_fit.py": {
+    "mtime": 1785815097.9440827,
+    "seen": 1787569648.2729566,
+    "ast_hash": "77379944fa789852eeb4e804503f2b77",
+    "semantic_hash": "77379944fa789852eeb4e804503f2b77"
+  },
+  "notebooks/calibration/dual_notebooks/verification_dual_camera.py": {
+    "mtime": 1785815097.9450836,
+    "seen": 1787569648.2729566,
+    "ast_hash": "efe9d3dce495b0ac6857672196ed1b6e",
+    "semantic_hash": "efe9d3dce495b0ac6857672196ed1b6e"
+  },
+  "notebooks/calibration/dual_notebooks/verification_dual_undistort_compare.py": {
+    "mtime": 1785815097.9450836,
+    "seen": 1787569648.2729566,
+    "ast_hash": "69a1b48937dcad7560c44f0d85589b3d",
+    "semantic_hash": "69a1b48937dcad7560c44f0d85589b3d"
+  },
+  "notebooks/calibration/dual_notebooks/verification_single_camera.py": {
+    "mtime": 1785815097.9490857,
+    "seen": 1787569648.2729566,
+    "ast_hash": "1e50ecffec72ff346e80ff8a2be1cfd6",
+    "semantic_hash": "1e50ecffec72ff346e80ff8a2be1cfd6"
+  },
+  "notebooks/calibration/dual_notebooks/video_convert.py": {
+    "mtime": 1785815097.9490857,
+    "seen": 1787569648.2729566,
+    "ast_hash": "30dde59cb5c7e8ed613416d5aa642454",
+    "semantic_hash": "30dde59cb5c7e8ed613416d5aa642454"
+  },
+  "notebooks/calibration/test_graph.py": {
+    "mtime": 1768887582.0387924,
+    "seen": 1787569648.2729566,
+    "ast_hash": "b29a93e544226f2e6288179bc59cb496",
+    "semantic_hash": "b29a93e544226f2e6288179bc59cb496"
+  },
+  "notebooks/calibration/test_graph2.py": {
+    "mtime": 1768887582.0387924,
+    "seen": 1787569648.2729566,
+    "ast_hash": "aa85e615fb52d8b70cd6646a4f3ad662",
+    "semantic_hash": "aa85e615fb52d8b70cd6646a4f3ad662"
+  },
+  "notebooks/detect_l_frame.py": {
+    "mtime": 1754118353.2939346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "cb52e86acc9c38a32a2aa83a661060fa",
+    "semantic_hash": "cb52e86acc9c38a32a2aa83a661060fa"
+  },
+  "notebooks/pd_support.py": {
+    "mtime": 1785815098.0175972,
+    "seen": 1787569648.2729566,
+    "ast_hash": "a40c275c419f83fb6e55d76b6cf32e78",
+    "semantic_hash": "a40c275c419f83fb6e55d76b6cf32e78"
+  },
+  "notebooks/pd_support2.py": {
+    "mtime": 1768887582.0387924,
+    "seen": 1787569648.2729566,
+    "ast_hash": "99ee8d8923885582070fd6a1930dd54b",
+    "semantic_hash": "99ee8d8923885582070fd6a1930dd54b"
+  },
+  "pyproject.toml": {
+    "mtime": 1787145148.9519062,
+    "seen": 1787569648.2729566,
+    "ast_hash": "778dab200e2c4cfe6e485459fdfd1bf8",
+    "semantic_hash": "778dab200e2c4cfe6e485459fdfd1bf8"
+  },
+  "recorder/af_test.py": {
+    "mtime": 1754118353.2989347,
+    "seen": 1787569648.2729566,
+    "ast_hash": "e4ee183b3972317b44dbd5ce69da931f",
+    "semantic_hash": "e4ee183b3972317b44dbd5ce69da931f"
+  },
+  "recorder/calibration_capture.py": {
+    "mtime": 1754118353.2989347,
+    "seen": 1787569648.2729566,
+    "ast_hash": "6886bd6ea3a7660e5d349896994c8b95",
+    "semantic_hash": "6886bd6ea3a7660e5d349896994c8b95"
+  },
+  "recorder/game.py": {
+    "mtime": 1753439029.2631986,
+    "seen": 1787569648.2729566,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "recorder/gui/__init__.py": {
+    "mtime": 1773482988.267177,
+    "seen": 1787569648.2729566,
+    "ast_hash": "06245f88546d0e72b7f0de972034d9b9",
+    "semantic_hash": "06245f88546d0e72b7f0de972034d9b9"
+  },
+  "recorder/gui/chessboard_recorder_gui.py": {
+    "mtime": 1773482988.267177,
+    "seen": 1787569648.2729566,
+    "ast_hash": "bcfcdf5a884d783a5a5c1c6c716c2596",
+    "semantic_hash": "bcfcdf5a884d783a5a5c1c6c716c2596"
+  },
+  "recorder/gui/demo_mode.py": {
+    "mtime": 1773482988.267177,
+    "seen": 1787569648.2729566,
+    "ast_hash": "7f35a8a555d13522b929910ba30b0b54",
+    "semantic_hash": "7f35a8a555d13522b929910ba30b0b54"
+  },
+  "recorder/gui/run.py": {
+    "mtime": 1773482988.2681775,
+    "seen": 1787569648.2729566,
+    "ast_hash": "d6b1f5bd98a60b2ed2350dc70822ab7c",
+    "semantic_hash": "d6b1f5bd98a60b2ed2350dc70822ab7c"
+  },
+  "recorder/raw_april.py": {
+    "mtime": 1754118353.2989347,
+    "seen": 1787569648.2729566,
+    "ast_hash": "37a36e1f1cd31eb3552909b4c2391b25",
+    "semantic_hash": "37a36e1f1cd31eb3552909b4c2391b25"
+  },
+  "recorder/raw_preview.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "8e86028fe6f740043f66f6e33bf35a01",
+    "semantic_hash": "8e86028fe6f740043f66f6e33bf35a01"
+  },
+  "recorder/raw_preview2.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "4a27a6a2013b26141f93007288b3f4af",
+    "semantic_hash": "4a27a6a2013b26141f93007288b3f4af"
+  },
+  "recorder/record_chessboard.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "f57193ab55cb1288488d6bf53340bae1",
+    "semantic_hash": "f57193ab55cb1288488d6bf53340bae1"
+  },
+  "recorder/recorder.py": {
+    "mtime": 1785815098.0185947,
+    "seen": 1787569648.2729566,
+    "ast_hash": "29fe6e011d4814519d033a25efb14edf",
+    "semantic_hash": "29fe6e011d4814519d033a25efb14edf"
+  },
+  "recorder/recorder_corners.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "0a2e1355366fbabe79fa0527990d27c2",
+    "semantic_hash": "0a2e1355366fbabe79fa0527990d27c2"
+  },
+  "recorder/recorder_corners_calibration.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2fb20ff7e1873573c7a89415bee25e7f",
+    "semantic_hash": "2fb20ff7e1873573c7a89415bee25e7f"
+  },
+  "recorder/recorder_corners_calibration_undistort.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "63d21788a4af4b573112cb8027183f05",
+    "semantic_hash": "63d21788a4af4b573112cb8027183f05"
+  },
+  "recorder/recorder_corners_undistort.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "b0167ce00c6a5b7f19b7c8674af6ff57",
+    "semantic_hash": "b0167ce00c6a5b7f19b7c8674af6ff57"
+  },
+  "recorder/recorder_corners_undistort_trigger.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "8adb8626923baa35d371d9c1a353ef90",
+    "semantic_hash": "8adb8626923baa35d371d9c1a353ef90"
+  },
+  "recorder/recorder_webcam.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2650aacfc8ed5bc3f26ed3c1ef047799",
+    "semantic_hash": "2650aacfc8ed5bc3f26ed3c1ef047799"
+  },
+  "recorder/undistort_preview.py": {
+    "mtime": 1754118353.2999346,
+    "seen": 1787569648.2729566,
+    "ast_hash": "a6898b48b108fef0bb312f4c610dc984",
+    "semantic_hash": "a6898b48b108fef0bb312f4c610dc984"
+  },
+  "trunkpose/build_pose_dataset.py": {
+    "mtime": 1785815108.212283,
+    "seen": 1787569648.2729566,
+    "ast_hash": "7663b010aa5cffd5337e26694cf9529d",
+    "semantic_hash": "7663b010aa5cffd5337e26694cf9529d"
+  },
+  "trunkpose/download_densepose.py": {
+    "mtime": 1785815108.212283,
+    "seen": 1787569648.2729566,
+    "ast_hash": "5ec75ebb8fafb5163605d751f6d22586",
+    "semantic_hash": "5ec75ebb8fafb5163605d751f6d22586"
+  },
+  "trunkpose/dual_notebooks/00_filecheck.py": {
+    "mtime": 1785815098.0195966,
+    "seen": 1787569648.2729566,
+    "ast_hash": "c9785adcab5b4851ea0688a4ca2264b1",
+    "semantic_hash": "c9785adcab5b4851ea0688a4ca2264b1"
+  },
+  "trunkpose/dual_notebooks/01_corner_detection.py": {
+    "mtime": 1785815098.0195966,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2182e67f79a1653dd0a4d7b95493bf31",
+    "semantic_hash": "2182e67f79a1653dd0a4d7b95493bf31"
+  },
+  "trunkpose/dual_notebooks/02_charuco_mocap_align.py": {
+    "mtime": 1785815108.2132812,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9f667aacbf77521156f6a263da978adb",
+    "semantic_hash": "9f667aacbf77521156f6a263da978adb"
+  },
+  "trunkpose/dual_notebooks/02_dual_calibration.py": {
+    "mtime": 1785815098.0335937,
+    "seen": 1787569648.2729566,
+    "ast_hash": "ac5861e3a88598d3066501bb96fb377b",
+    "semantic_hash": "ac5861e3a88598d3066501bb96fb377b"
+  },
+  "trunkpose/dual_notebooks/03_get_charuco_basis.py": {
+    "mtime": 1785815108.2132812,
+    "seen": 1787569648.2729566,
+    "ast_hash": "ed7993e4c235ab401223fd03d1e6df1d",
+    "semantic_hash": "ed7993e4c235ab401223fd03d1e6df1d"
+  },
+  "trunkpose/dual_notebooks/04_plot_points.py": {
+    "mtime": 1785815108.214281,
+    "seen": 1787569648.2729566,
+    "ast_hash": "260252d905af585ef759402ab8eb012d",
+    "semantic_hash": "260252d905af585ef759402ab8eb012d"
+  },
+  "trunkpose/dual_notebooks/05_create_plane.py": {
+    "mtime": 1785815098.0345936,
+    "seen": 1787569648.2729566,
+    "ast_hash": "912de26b98ac1287ef3a86301c543e80",
+    "semantic_hash": "912de26b98ac1287ef3a86301c543e80"
+  },
+  "trunkpose/dual_notebooks/06_trunk_axis.py": {
+    "mtime": 1785815108.214281,
+    "seen": 1787569648.2729566,
+    "ast_hash": "b8aba2d843d6129dbcc78d3f10603e90",
+    "semantic_hash": "b8aba2d843d6129dbcc78d3f10603e90"
+  },
+  "trunkpose/dual_notebooks/07_icp_trunk.py": {
+    "mtime": 1785815108.2152817,
+    "seen": 1787569648.2729566,
+    "ast_hash": "a046de3cb4a190c4984f37bff1dfb38f",
+    "semantic_hash": "a046de3cb4a190c4984f37bff1dfb38f"
+  },
+  "trunkpose/dual_notebooks/08_angle_check.py": {
+    "mtime": 1785815108.2152817,
+    "seen": 1787569648.2729566,
+    "ast_hash": "14a461009cf3d631ef10dc6ced225a2b",
+    "semantic_hash": "14a461009cf3d631ef10dc6ced225a2b"
+  },
+  "trunkpose/dual_notebooks/08_basis_check.py": {
+    "mtime": 1785815098.0355952,
+    "seen": 1787569648.2729566,
+    "ast_hash": "93d62c20d50f7fbb58af91c74dd18f3c",
+    "semantic_hash": "93d62c20d50f7fbb58af91c74dd18f3c"
+  },
+  "trunkpose/dual_notebooks/08_icp_video.py": {
+    "mtime": 1785815108.2152817,
+    "seen": 1787569648.2729566,
+    "ast_hash": "141313b5199b8daeb2b2e434b0b1b2cb",
+    "semantic_hash": "141313b5199b8daeb2b2e434b0b1b2cb"
+  },
+  "trunkpose/dual_notebooks/09_mocap_angle.py": {
+    "mtime": 1785815098.0355952,
+    "seen": 1787569648.2729566,
+    "ast_hash": "8ebc50f50e474083e3058c00b74a74f6",
+    "semantic_hash": "8ebc50f50e474083e3058c00b74a74f6"
+  },
+  "trunkpose/dual_notebooks/10_camera_shoulder_axis_figure.py": {
+    "mtime": 1785815098.0365944,
+    "seen": 1787569648.2729566,
+    "ast_hash": "2d648199218d75c16a5f0bfdb782d3e9",
+    "semantic_hash": "2d648199218d75c16a5f0bfdb782d3e9"
+  },
+  "trunkpose/dual_notebooks/11_camera_segmentation_trunk_axis_figure.py": {
+    "mtime": 1787556323.0777056,
+    "seen": 1787569648.2729566,
+    "ast_hash": "28ec481a6166ce565b7b67e545751b20",
+    "semantic_hash": "28ec481a6166ce565b7b67e545751b20"
+  },
+  "trunkpose/dual_notebooks/ar_support.py": {
+    "mtime": 1785815098.0375943,
+    "seen": 1787569648.2729566,
+    "ast_hash": "00b752880a511c8289f4034b3bb38411",
+    "semantic_hash": "00b752880a511c8289f4034b3bb38411"
+  },
+  "trunkpose/dual_notebooks/bench_depth.py": {
+    "mtime": 1785815098.0375943,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9deb3098e502be6da880358fb8712278",
+    "semantic_hash": "9deb3098e502be6da880358fb8712278"
+  },
+  "trunkpose/dual_notebooks/pd_support.py": {
+    "mtime": 1785815098.0375943,
+    "seen": 1787569648.2729566,
+    "ast_hash": "a40c275c419f83fb6e55d76b6cf32e78",
+    "semantic_hash": "a40c275c419f83fb6e55d76b6cf32e78"
+  },
+  "trunkpose/dual_notebooks/trunk_angle.py": {
+    "mtime": 1785815098.0375943,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9542724ed99efdb337d210c01a360e45",
+    "semantic_hash": "9542724ed99efdb337d210c01a360e45"
+  },
+  "trunkpose/dual_notebooks/upperlimb_3d_analysis.py": {
+    "mtime": 1785815098.0385964,
+    "seen": 1787569648.2729566,
+    "ast_hash": "c869f3960974e46a835a24699d7b8e07",
+    "semantic_hash": "c869f3960974e46a835a24699d7b8e07"
+  },
+  "trunkpose/dual_notebooks/upperlimb_3d_kinematics.py": {
+    "mtime": 1785815098.0385964,
+    "seen": 1787569648.2729566,
+    "ast_hash": "5edd78f78cf2d727d02571abba73c177",
+    "semantic_hash": "5edd78f78cf2d727d02571abba73c177"
+  },
+  "trunkpose/dual_notebooks/upperlimb_smpl_fit.py": {
+    "mtime": 1785815098.0385964,
+    "seen": 1787569648.2729566,
+    "ast_hash": "77379944fa789852eeb4e804503f2b77",
+    "semantic_hash": "77379944fa789852eeb4e804503f2b77"
+  },
+  "trunkpose/dual_notebooks/verification_dual_camera.py": {
+    "mtime": 1785815098.0395947,
+    "seen": 1787569648.2729566,
+    "ast_hash": "efe9d3dce495b0ac6857672196ed1b6e",
+    "semantic_hash": "efe9d3dce495b0ac6857672196ed1b6e"
+  },
+  "trunkpose/dual_notebooks/verification_dual_undistort_compare.py": {
+    "mtime": 1785815098.0395947,
+    "seen": 1787569648.2729566,
+    "ast_hash": "69a1b48937dcad7560c44f0d85589b3d",
+    "semantic_hash": "69a1b48937dcad7560c44f0d85589b3d"
+  },
+  "trunkpose/dual_notebooks/verification_single_camera.py": {
+    "mtime": 1785815098.0435946,
+    "seen": 1787569648.2729566,
+    "ast_hash": "1e50ecffec72ff346e80ff8a2be1cfd6",
+    "semantic_hash": "1e50ecffec72ff346e80ff8a2be1cfd6"
+  },
+  "trunkpose/dual_notebooks/video_convert.py": {
+    "mtime": 1785815098.0435946,
+    "seen": 1787569648.2729566,
+    "ast_hash": "30dde59cb5c7e8ed613416d5aa642454",
+    "semantic_hash": "30dde59cb5c7e8ed613416d5aa642454"
+  },
+  "trunkpose/segdataset.py": {
+    "mtime": 1785815108.216282,
+    "seen": 1787569648.2729566,
+    "ast_hash": "aff0997f09c587c68b6bcb07d3f58eec",
+    "semantic_hash": "aff0997f09c587c68b6bcb07d3f58eec"
+  },
+  "trunkpose/segtrain.py": {
+    "mtime": 1785815108.216282,
+    "seen": 1787569648.2729566,
+    "ast_hash": "31547ef6a35c2c9b20ece524da827740",
+    "semantic_hash": "31547ef6a35c2c9b20ece524da827740"
+  },
+  "trunkpose/train.py": {
+    "mtime": 1785815098.0445943,
+    "seen": 1787569648.2729566,
+    "ast_hash": "5f2adb9dcf0c363c637d73071bc08e00",
+    "semantic_hash": "5f2adb9dcf0c363c637d73071bc08e00"
+  },
+  "AGENTS.md": {
+    "mtime": 1786535181.626879,
+    "seen": 1787569648.2729566,
+    "ast_hash": "fc71147d60acd967a36039559fc4f29d",
+    "semantic_hash": "fc71147d60acd967a36039559fc4f29d"
+  },
+  "backup/UDP_PROTOCOL.md": {
+    "mtime": 1785815097.6840587,
+    "seen": 1787569648.2729566,
+    "ast_hash": "3f2c3b90a99d6512e4a9e941f1cb6c55",
+    "semantic_hash": "3f2c3b90a99d6512e4a9e941f1cb6c55"
+  },
+  "docs/stereo_camera.md": {
+    "mtime": 1785815097.8615756,
+    "seen": 1787569648.2729566,
+    "ast_hash": "b4964000b3abf9d6910937867a2426ae",
+    "semantic_hash": "b4964000b3abf9d6910937867a2426ae"
+  },
+  "trunkpose/dual_notebooks/ICP_THEORY.md": {
+    "mtime": 1785815098.0365944,
+    "seen": 1787569648.2729566,
+    "ast_hash": "1c3878ba951dea2ca546059ddbcd11c3",
+    "semantic_hash": "1c3878ba951dea2ca546059ddbcd11c3"
+  },
+  "trunkpose/dual_notebooks/THINGS_DONE.md": {
+    "mtime": 1785815098.0365944,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9b40916e972fba2a64631f2f64f1f70f",
+    "semantic_hash": "9b40916e972fba2a64631f2f64f1f70f"
+  },
+  "backup/charuco_board_4x6.png": {
+    "mtime": 1785815097.6840587,
+    "seen": 1787569648.2729566,
+    "ast_hash": "9223c988550530d658eb47a2716606f3",
+    "semantic_hash": "9223c988550530d658eb47a2716606f3"
+  },
+  "notebooks/calibration/mocap_aruco_comparison.png": {
+    "mtime": 1785815097.9540846,
+    "seen": 1787569648.2729566,
+    "ast_hash": "5382807a2ed1ec9a45df17b38be79bd3",
+    "semantic_hash": "5382807a2ed1ec9a45df17b38be79bd3"
+  }
+}

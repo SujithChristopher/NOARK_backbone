@@ -1,0 +1,13 @@
+{
+  "nodes": [],
+  "edges": [],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "failed_chunks": 1,
+  "out_of_scope_dropped": 0,
+  "uncovered_files": [
+    "E:\\CMC\\pyprojects\\programs_rpi\\NOARK_backbone\\trunkpose\\dual_notebooks\\ICP_THEORY.md",
+    "E:\\CMC\\pyprojects\\programs_rpi\\NOARK_backbone\\trunkpose\\dual_notebooks\\THINGS_DONE.md"
+  ]
+}
