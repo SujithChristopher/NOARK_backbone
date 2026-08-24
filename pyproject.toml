@@ -35,6 +35,7 @@ dependencies = [
     "pycocotools>=2.0.11; platform_machine == 'x86_64'",
     "ultralytics>=8.4.102; platform_machine == 'x86_64'",
     "gpiod>=2.5.0 ; sys_platform == 'linux'",
+    "rapidtag>=0.1.4",
 ]
 
 
