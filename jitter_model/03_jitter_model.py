@@ -9,7 +9,8 @@
 # Marker geometry comes from `02_rigidbody_calib.py`. Multi-marker estimates use
 # one joint board PnP (never an average of independent `tvec`s), and dual-camera
 # estimates minimize corner reprojection in both fisheye cameras simultaneously.
-# No temporal filtering is used: this notebook measures raw estimator jitter.
+# No temporal filtering is used. Static jitter and dynamic movement smoothness
+# are reported separately so a smooth-but-lagged estimate cannot appear better.
 #
 # Run from the repository root:
 #
@@ -57,8 +58,12 @@ DETECTION_CACHE = NOTEBOOK_DIR / "jitter_detections.pkl"
 
 SUMMARY_CSV = NOTEBOOK_DIR / "jitter_summary.csv"
 DISTANCE_CSV = NOTEBOOK_DIR / "jitter_vs_distance.csv"
+SMOOTHNESS_CSV = NOTEBOOK_DIR / "movement_smoothness.csv"
+DEPTH_METRICS_CSV = NOTEBOOK_DIR / "metrics_vs_depth.csv"
 ALIGNMENT_TOML = NOTEBOOK_DIR / "jitter_alignment.toml"
 OUTPUT_FIGURE = NOTEBOOK_DIR / "jitter_model.png"
+SMOOTHNESS_FIGURE = NOTEBOOK_DIR / "movement_smoothness.png"
+DEPTH_FIGURE = NOTEBOOK_DIR / "metrics_vs_depth.png"
 
 # Fixed nested sets make marker-count comparisons reproducible. Change these
 # tuples to test a different physical subset without changing the estimator.
@@ -68,9 +73,13 @@ MARKER_SETS = {
     3: (4, 12, 20),
 }
 DISTANCE_EDGES_M = np.asarray([0.25, 0.40, 0.55, 0.70, 0.90])
+DEPTH_EDGES_M = np.arange(0.25, 0.901, 0.05)
 STATIC_MOCAP_STEP_M = 0.003
 MAX_PAIR_FRACTION_OF_FRAME = 0.55
 MIN_STATIC_PAIRS = 10
+MIN_DEPTH_PAIRS = 4
+MAX_LAG_S = 0.100
+LAG_STEPS = 81
 
 
 # %% Load camera calibration, rigid-body geometry, and cached detections
@@ -522,6 +531,7 @@ def add_mocap_reference(table):
     residual = result[["x", "y", "z"]].to_numpy() - aligned
     result[["residual_x", "residual_y", "residual_z"]] = residual
     result["distance_m"] = np.linalg.norm(aligned, axis=1)
+    result["depth_m"] = aligned[:, 2]
     return result
 
 
@@ -603,6 +613,188 @@ print(
 )
 
 
+# %% Dynamic movement smoothness on the same held-out common frames
+def aligned_mocap_at_times(query_times):
+    """Return the tag-12 mocap reference in cam0 coordinates."""
+    positions, orientations = interpolate_mocap(query_times)
+    tag_world = positions + orientations.apply(TAG_OFFSET_BODY)
+    return WORLD_TO_CAMERA.apply(tag_world) + WORLD_TO_CAMERA_T
+
+
+def movement_smoothness_metrics(table, estimate_lag=True):
+    """Compare raw position derivatives with identically sampled mocap.
+
+    Movement intervals are the complement of the existing static definition:
+    a valid consecutive pair is dynamic when mocap moves at least 3 mm. Velocity,
+    acceleration, and jerk are finite differences on the original timestamps;
+    no camera or mocap trajectory is smoothed.
+    """
+    frame = table["frame"].to_numpy(dtype=np.int32)
+    time_s = table["time_s"].to_numpy(dtype=np.float64)
+    camera_xyz = table[["x", "y", "z"]].to_numpy(dtype=np.float64)
+    mocap_xyz = table[["mocap_x", "mocap_y", "mocap_z"]].to_numpy(
+        dtype=np.float64
+    )
+
+    dt = np.diff(time_s)
+    mocap_step = np.linalg.norm(np.diff(mocap_xyz, axis=0), axis=1)
+    valid_pair = (
+        (np.diff(frame) == 1)
+        & (dt > 0)
+        & (dt < 1.5 * cam0_period_ns / 1e9)
+    )
+    moving_pair = valid_pair & (mocap_step >= STATIC_MOCAP_STEP_M)
+
+    camera_velocity = np.diff(camera_xyz, axis=0) / dt[:, None]
+    mocap_velocity = np.diff(mocap_xyz, axis=0) / dt[:, None]
+    velocity_error = camera_velocity - mocap_velocity
+
+    velocity_time = 0.5 * (time_s[:-1] + time_s[1:])
+    velocity_dt = np.diff(velocity_time)
+    valid_acceleration = valid_pair[:-1] & valid_pair[1:] & (velocity_dt > 0)
+    moving_acceleration = valid_acceleration & (
+        moving_pair[:-1] | moving_pair[1:]
+    )
+    camera_acceleration = np.diff(camera_velocity, axis=0) / velocity_dt[:, None]
+    mocap_acceleration = np.diff(mocap_velocity, axis=0) / velocity_dt[:, None]
+    acceleration_error = camera_acceleration - mocap_acceleration
+
+    acceleration_time = 0.5 * (velocity_time[:-1] + velocity_time[1:])
+    acceleration_dt = np.diff(acceleration_time)
+    valid_jerk = (
+        valid_acceleration[:-1]
+        & valid_acceleration[1:]
+        & (acceleration_dt > 0)
+    )
+    moving_jerk = valid_jerk & (
+        moving_acceleration[:-1] | moving_acceleration[1:]
+    )
+    camera_jerk = np.diff(camera_acceleration, axis=0) / acceleration_dt[:, None]
+    mocap_jerk = np.diff(mocap_acceleration, axis=0) / acceleration_dt[:, None]
+    jerk_error = camera_jerk - mocap_jerk
+
+    moving_samples = np.zeros(len(table), dtype=bool)
+    moving_samples[:-1] |= moving_pair
+    moving_samples[1:] |= moving_pair
+    position_residual = camera_xyz - mocap_xyz
+
+    if moving_pair.sum() < 3 or moving_samples.sum() < 3:
+        return None
+
+    def vector_rms(values):
+        return float(np.sqrt(np.mean(np.sum(values**2, axis=1))))
+
+    camera_path_m = float(
+        np.sum(np.linalg.norm(np.diff(camera_xyz, axis=0)[moving_pair], axis=1))
+    )
+    mocap_path_m = float(np.sum(mocap_step[moving_pair]))
+
+    # Estimate lag independently of constant positional bias. A positive result
+    # means the camera trajectory follows the mocap trajectory late.
+    if estimate_lag:
+        lag_candidates_s = np.linspace(-MAX_LAG_S, MAX_LAG_S, LAG_STEPS)
+        lag_errors = []
+        camera_moving = camera_xyz[moving_samples]
+        camera_moving_centered = camera_moving - camera_moving.mean(axis=0)
+        moving_times = time_s[moving_samples]
+        for shift_s in lag_candidates_s:
+            shifted_times = moving_times + shift_s
+            if (
+                shifted_times[0] < mocap_times[0]
+                or shifted_times[-1] > mocap_times[-1]
+            ):
+                lag_errors.append(np.inf)
+                continue
+            shifted_mocap = aligned_mocap_at_times(shifted_times)
+            shifted_mocap -= shifted_mocap.mean(axis=0)
+            lag_errors.append(vector_rms(camera_moving_centered - shifted_mocap))
+        best_shift_s = float(lag_candidates_s[int(np.argmin(lag_errors))])
+        estimated_lag_ms = -1000.0 * best_shift_s
+    else:
+        estimated_lag_ms = np.nan
+
+    result = {
+        "dynamic_samples": int(moving_samples.sum()),
+        "dynamic_pairs": int(moving_pair.sum()),
+        "acceleration_samples": int(moving_acceleration.sum()),
+        "jerk_samples": int(moving_jerk.sum()),
+        "dynamic_position_rmse_mm": 1000.0
+        * vector_rms(position_residual[moving_samples]),
+        "velocity_error_rmse_mm_s": 1000.0
+        * vector_rms(velocity_error[moving_pair]),
+        "path_length_ratio": camera_path_m / max(mocap_path_m, np.finfo(float).eps),
+        "estimated_camera_lag_ms": estimated_lag_ms,
+    }
+    if moving_acceleration.any():
+        result["acceleration_error_rmse_m_s2"] = vector_rms(
+            acceleration_error[moving_acceleration]
+        )
+    else:
+        result["acceleration_error_rmse_m_s2"] = np.nan
+    if moving_jerk.any():
+        camera_jerk_rms = vector_rms(camera_jerk[moving_jerk])
+        mocap_jerk_rms = vector_rms(mocap_jerk[moving_jerk])
+        result.update(
+            {
+                "jerk_error_rmse_m_s3": vector_rms(jerk_error[moving_jerk]),
+                "camera_jerk_rms_m_s3": camera_jerk_rms,
+                "mocap_jerk_rms_m_s3": mocap_jerk_rms,
+                "jerk_ratio_camera_over_mocap": camera_jerk_rms
+                / max(mocap_jerk_rms, np.finfo(float).eps),
+            }
+        )
+    else:
+        result.update(
+            {
+                "jerk_error_rmse_m_s3": np.nan,
+                "camera_jerk_rms_m_s3": np.nan,
+                "mocap_jerk_rms_m_s3": np.nan,
+                "jerk_ratio_camera_over_mocap": np.nan,
+            }
+        )
+    return result
+
+
+smoothness_rows = []
+for method, table in common_tables.items():
+    metrics = movement_smoothness_metrics(table)
+    if metrics is None:
+        warnings.warn(f"Too few moving frame pairs for {method}")
+        continue
+    metrics.update(
+        {
+            "method": method,
+            "cameras": method_specs[method]["camera_count"],
+            "markers": len(method_specs[method]["marker_ids"]),
+            "marker_ids": "+".join(map(str, method_specs[method]["marker_ids"])),
+            "scope": "all-method common held-out frames",
+        }
+    )
+    smoothness_rows.append(metrics)
+
+smoothness_summary = (
+    pd.DataFrame(smoothness_rows)
+    .sort_values(["cameras", "markers"])
+    .reset_index(drop=True)
+)
+smoothness_summary.to_csv(SMOOTHNESS_CSV, index=False)
+print("\nDynamic movement smoothness summary:")
+print(
+    smoothness_summary[
+        [
+            "method",
+            "dynamic_pairs",
+            "dynamic_position_rmse_mm",
+            "velocity_error_rmse_mm_s",
+            "acceleration_error_rmse_m_s2",
+            "jerk_error_rmse_m_s3",
+            "path_length_ratio",
+            "estimated_camera_lag_ms",
+        ]
+    ].round(3).to_string(index=False)
+)
+
+
 # %% Jitter versus synchronized mocap distance
 # The overall bars above use the strict all-method common frame set. Distance
 # curves use each method's native held-out detections, because requiring three
@@ -642,6 +834,76 @@ for method, table in evaluation_tables.items():
 
 distance_summary = pd.DataFrame(distance_rows)
 distance_summary.to_csv(DISTANCE_CSV, index=False)
+
+
+# %% Static jitter and dynamic smoothness versus optical-axis depth
+depth_rows = []
+smoothness_columns = (
+    "dynamic_position_rmse_mm",
+    "velocity_error_rmse_mm_s",
+    "acceleration_error_rmse_m_s2",
+    "jerk_error_rmse_m_s3",
+    "path_length_ratio",
+)
+for method, table in evaluation_tables.items():
+    for low, high in zip(DEPTH_EDGES_M[:-1], DEPTH_EDGES_M[1:]):
+        in_bin = table["depth_m"].between(low, high, inclusive="left")
+        subset = table.loc[in_bin].sort_values("frame").reset_index(drop=True)
+        if subset.empty:
+            continue
+
+        residual = subset[["residual_x", "residual_y", "residual_z"]].to_numpy()
+        static_mask = static_pair_mask(subset)
+        residual_steps = np.diff(residual, axis=0)[static_mask]
+        if len(residual_steps) >= MIN_DEPTH_PAIRS:
+            axis_jitter = (
+                1000.0
+                * np.std(residual_steps, axis=0, ddof=1)
+                / np.sqrt(2.0)
+            )
+            static_jitter_3d_mm = float(np.linalg.norm(axis_jitter))
+        else:
+            static_jitter_3d_mm = np.nan
+
+        dynamic = movement_smoothness_metrics(subset, estimate_lag=False)
+        row = {
+            "method": method,
+            "cameras": method_specs[method]["camera_count"],
+            "markers": len(method_specs[method]["marker_ids"]),
+            "marker_ids": "+".join(map(str, method_specs[method]["marker_ids"])),
+            "depth_low_m": low,
+            "depth_high_m": high,
+            "depth_m": float(subset["depth_m"].median()),
+            "pose_samples": len(subset),
+            "static_pairs": int(static_mask.sum()),
+            "static_jitter_3d_mm": static_jitter_3d_mm,
+        }
+        if dynamic is None:
+            row.update({column: np.nan for column in smoothness_columns})
+            row.update(
+                {
+                    "dynamic_samples": 0,
+                    "dynamic_pairs": 0,
+                    "acceleration_samples": 0,
+                    "jerk_samples": 0,
+                }
+            )
+        else:
+            row.update({column: dynamic[column] for column in smoothness_columns})
+            row.update(
+                {
+                    "dynamic_samples": dynamic["dynamic_samples"],
+                    "dynamic_pairs": dynamic["dynamic_pairs"],
+                    "acceleration_samples": dynamic["acceleration_samples"],
+                    "jerk_samples": dynamic["jerk_samples"],
+                }
+            )
+        depth_rows.append(row)
+
+depth_summary = pd.DataFrame(depth_rows).sort_values(
+    ["cameras", "markers", "depth_m"]
+)
+depth_summary.to_csv(DEPTH_METRICS_CSV, index=False)
 
 
 # %% Plot overall jitter, jitter versus distance, and coverage
@@ -685,13 +947,125 @@ fig.suptitle(
     "C1/C2 = camera count, M1/M2/M3 = fixed nested marker count"
 )
 fig.savefig(OUTPUT_FIGURE, dpi=180, bbox_inches="tight")
+
+# Dynamic metrics have different units, so use small multiples rather than a
+# combined score that would hide the meaning of each quantity.
+smooth_fig, smooth_axes = plt.subplots(
+    2, 2, figsize=(13, 9), constrained_layout=True
+)
+smooth_metrics = (
+    (
+        "dynamic_position_rmse_mm",
+        "Position tracking during movement",
+        "RMSE [mm]",
+    ),
+    (
+        "velocity_error_rmse_mm_s",
+        "Velocity tracking",
+        "Velocity error RMSE [mm/s]",
+    ),
+    (
+        "acceleration_error_rmse_m_s2",
+        "Acceleration smoothness",
+        r"Acceleration error RMSE [m/s$^2$]",
+    ),
+    (
+        "jerk_error_rmse_m_s3",
+        "Jerk smoothness",
+        r"Jerk error RMSE [m/s$^3$]",
+    ),
+)
+for axis, (column, title, ylabel) in zip(smooth_axes.ravel(), smooth_metrics):
+    axis.bar(smoothness_summary["method"], smoothness_summary[column], color=colors)
+    axis.set_title(title)
+    axis.set_ylabel(ylabel)
+    axis.grid(axis="y", alpha=0.25)
+smooth_fig.suptitle(
+    "Movement smoothness against mocap — common held-out frames, no temporal smoothing\n"
+    "Lower is better; derivatives use identical timestamps for camera and mocap"
+)
+smooth_fig.savefig(SMOOTHNESS_FIGURE, dpi=180, bbox_inches="tight")
+
+# Match the reference plot's line-chart vocabulary while keeping each physical
+# quantity in its own axis. Camera count is color; marker count is line/shape.
+depth_fig, depth_axes = plt.subplots(2, 3, figsize=(17, 9.5), sharex=True)
+depth_fig.subplots_adjust(
+    left=0.06, right=0.99, bottom=0.08, top=0.80, wspace=0.22, hspace=0.30
+)
+depth_plot_metrics = (
+    ("static_jitter_3d_mm", "Static jitter", "3D jitter [mm]"),
+    (
+        "dynamic_position_rmse_mm",
+        "Position tracking during movement",
+        "RMSE [mm]",
+    ),
+    (
+        "velocity_error_rmse_mm_s",
+        "Velocity smoothness",
+        "Velocity error RMSE [mm/s]",
+    ),
+    (
+        "acceleration_error_rmse_m_s2",
+        "Acceleration smoothness",
+        r"Acceleration error RMSE [m/s$^2$]",
+    ),
+    (
+        "jerk_error_rmse_m_s3",
+        "Jerk smoothness",
+        r"Jerk error RMSE [m/s$^3$]",
+    ),
+    ("path_length_ratio", "Path roughness", "Camera / mocap path length"),
+)
+for axis, (column, title, ylabel) in zip(depth_axes.ravel(), depth_plot_metrics):
+    for method, color in zip(methods, colors):
+        subset = depth_summary.loc[depth_summary["method"] == method]
+        marker_ids = method_specs[method]["marker_ids"]
+        linestyle, marker = marker_style[len(marker_ids)]
+        axis.plot(
+            subset["depth_m"],
+            subset[column],
+            marker=marker,
+            linewidth=1.5,
+            color=color,
+            linestyle=linestyle,
+            label=method,
+        )
+    if column == "path_length_ratio":
+        axis.axhline(1.0, color="0.45", linewidth=1, linestyle="--")
+    axis.set_title(title)
+    axis.set_ylabel(ylabel)
+    axis.grid(True, alpha=0.25)
+for axis in depth_axes[-1]:
+    axis.set_xlabel("Mocap optical-axis depth [m]")
+handles, labels = depth_axes[0, 0].get_legend_handles_labels()
+depth_fig.legend(
+    handles,
+    labels,
+    loc="upper center",
+    bbox_to_anchor=(0.5, 0.875),
+    ncols=6,
+    frameon=False,
+)
+depth_fig.suptitle(
+    "Tracking quality versus depth — static jitter and dynamic smoothness\n"
+    "C1/C2 = camera count; M1/M2/M3 = fixed marker count; gaps lack support",
+    y=0.985,
+)
+depth_fig.savefig(DEPTH_FIGURE, dpi=180, bbox_inches="tight")
+
 print(f"\nSaved {SUMMARY_CSV}")
 print(f"Saved {DISTANCE_CSV}")
+print(f"Saved {SMOOTHNESS_CSV}")
+print(f"Saved {DEPTH_METRICS_CSV}")
 print(f"Saved {ALIGNMENT_TOML}")
 print(f"Saved {OUTPUT_FIGURE}")
+print(f"Saved {SMOOTHNESS_FIGURE}")
+print(f"Saved {DEPTH_FIGURE}")
 plt.show()
 
 
 # %% Optional inspection tables
 summary
 distance_summary
+smoothness_summary
+depth_summary
