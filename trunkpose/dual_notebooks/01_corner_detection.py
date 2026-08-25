@@ -32,11 +32,11 @@ boardPoints = construct3DPoints(patternSize, squareSize)
 
 from pathlib import Path
 
-project_root = Path(__file__).parents[3]
+project_root = Path(__file__).parents[2]
 data_root = "data"
 recording_type = "calibration"
 camera_type = "dual_160"
-calib_folder_name = "calib_cz30_dual_v2"
+calib_folder_name = "radxa_calib_parallel"
 
 calib_data_folder = os.path.join(
     project_root, data_root, recording_type, camera_type, calib_folder_name
@@ -47,6 +47,7 @@ cam0_meta = os.path.join(calib_data_folder, "cam0_timestamp.msgpack")
 cam1_frame_data = os.path.join(calib_data_folder, "cam1_frame.msgpack")
 cam1_meta = os.path.join(calib_data_folder, "cam1_timestamp.msgpack")
 os.path.exists(cam1_meta)
+# print(f"Calibration frame data: {cam1_frame_data}")
 
 
 # %% Metadata
@@ -77,8 +78,10 @@ cam1_upak = get_video_unpacker(cam1_frame_data)
 
 # calibration
 def detectCorners(data):
-    # _frame = cv2.rotate(_frame.copy(), cv2.ROTATE_180)
     frame_id, _frame = data
+
+    _frame = cv2.rotate(_frame.copy(), cv2.ROTATE_180)
+    _frame = cv2.flip(_frame, 1)
     if len(_frame.shape) == 3:
         _frame = cv2.cvtColor(_frame, cv2.COLOR_RGB2GRAY)
     ret, corners = cv2.findChessboardCorners(_frame, patternSize)
@@ -141,3 +144,4 @@ def write_to_file(corners_dict, camera):
 
 write_to_file(cam0_cb_corners, 'cam0_frame')
 write_to_file(cam1_cb_corners, 'cam1_frame')
+# %%

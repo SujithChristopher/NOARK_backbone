@@ -29,11 +29,11 @@ from scipy.spatial.transform import Rotation
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).parents[3]
+PROJECT_ROOT = Path(__file__).parents[2]
 CALIB_DATA = (
     PROJECT_ROOT
     / "data" / "calibration" / "dual_160"
-    / "calib_cz30_dual_v2"
+    / "radxa_calib_parallel"
 )
 corners_cam0_pth = CALIB_DATA / "chessb_corners_cam0_frame.pkl"
 corners_cam1_pth = CALIB_DATA / "chessb_corners_cam1_frame.pkl"
