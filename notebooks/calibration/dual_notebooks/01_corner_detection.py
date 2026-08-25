@@ -51,16 +51,24 @@ os.path.exists(cam1_meta)
 
 # %% Metadata
 def get_metadata(metaf):
-    f = open(metaf, "rb")
-    _ = np.array(list(mp.Unpacker(f, object_hook=mpn.decode)))
-    sync, timestamps = _[:, 0], _[:, 1]
-    sync = sync.astype(int).astype(bool)
-    timestamp_dt = timestamps.astype("datetime64[us]")
-    return sync, timestamp_dt
+    with open(metaf, "rb") as f:
+        metadata = list(mp.Unpacker(f, object_hook=mpn.decode))
+
+    sync = np.asarray([row[0] for row in metadata], dtype=bool)
+    timestamp_dt = np.asarray(
+        [row[1] for row in metadata], dtype="datetime64[us]"
+    )
+    # dual_recorder.py stores Picamera2's SensorTimestamp (nanoseconds) as the
+    # third value. Keep it because it is a better cross-camera pairing key than
+    # the wall-clock timestamp, which is shared by both frames in a capture loop.
+    sensor_timestamp_ns = np.asarray(
+        [int(row[2]) if len(row) > 2 else -1 for row in metadata], dtype=np.int64
+    )
+    return sync, timestamp_dt, sensor_timestamp_ns
 
 
-sync_cam0, timestamp_cam0 = get_metadata(cam0_meta)
-sync_cam1, timestamp_cam1 = get_metadata(cam1_meta)
+sync_cam0, timestamp_cam0, sensor_timestamp_cam0 = get_metadata(cam0_meta)
+sync_cam1, timestamp_cam1, sensor_timestamp_cam1 = get_metadata(cam1_meta)
 
 duration = timestamp_cam0[-1] - timestamp_cam0[0]
 # duration in seconds
@@ -105,31 +113,39 @@ cam1_results = Parallel(n_jobs=20, verbose=0)(
 
 cam0_cb_corners = {
     'corners':[],
+    'frame_id':[],
     'frame_idx':[],
     'timestamp':[],
+    'sensor_timestamp_ns':[],
     'sync':[]
 }
 
 cam1_cb_corners = {
     'corners':[],
+    'frame_id':[],
     'frame_idx':[],
     'timestamp':[],
+    'sensor_timestamp_ns':[],
     'sync':[]
 }
 
 for corners, frame_idx in cam0_results:
     if corners is not None and len(corners) == 96:
         cam0_cb_corners['corners'].append(corners)
+        cam0_cb_corners['frame_id'].append(frame_idx)
         cam0_cb_corners['frame_idx'].append(frame_idx)
         cam0_cb_corners['timestamp'].append(timestamp_cam0[frame_idx])
-        cam0_cb_corners['sync'].append(timestamp_cam0[frame_idx])
+        cam0_cb_corners['sensor_timestamp_ns'].append(sensor_timestamp_cam0[frame_idx])
+        cam0_cb_corners['sync'].append(sync_cam0[frame_idx])
 
 for corners, frame_idx in cam1_results:
     if corners is not None and len(corners) == 96:
         cam1_cb_corners['corners'].append(corners)
+        cam1_cb_corners['frame_id'].append(frame_idx)
         cam1_cb_corners['frame_idx'].append(frame_idx)
         cam1_cb_corners['timestamp'].append(timestamp_cam1[frame_idx])
-        cam1_cb_corners['sync'].append(timestamp_cam1[frame_idx])
+        cam1_cb_corners['sensor_timestamp_ns'].append(sensor_timestamp_cam1[frame_idx])
+        cam1_cb_corners['sync'].append(sync_cam1[frame_idx])
 
 
 # Get the directory of the video file
