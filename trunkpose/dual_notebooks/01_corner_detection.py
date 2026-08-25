@@ -80,8 +80,8 @@ cam1_upak = get_video_unpacker(cam1_frame_data)
 def detectCorners(data):
     frame_id, _frame = data
 
-    _frame = cv2.rotate(_frame.copy(), cv2.ROTATE_180)
-    _frame = cv2.flip(_frame, 1)
+    # _frame = cv2.rotate(_frame.copy(), cv2.ROTATE_180)
+    # _frame = cv2.flip(_frame, 1)
     if len(_frame.shape) == 3:
         _frame = cv2.cvtColor(_frame, cv2.COLOR_RGB2GRAY)
     ret, corners = cv2.findChessboardCorners(_frame, patternSize)
