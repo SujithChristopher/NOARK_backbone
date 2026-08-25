@@ -1,0 +1,63 @@
+[meta]
+format_version = 1
+recording = "data/radxa/jitter_test"
+stereo_calibration = "data/calibration/dual_160/radxa_calib_parallel/stereo_calibration.toml"
+dictionary = "DICT_APRILTAG_36h11"
+tag_size_m = 0.05
+reference_id = 12
+marker_ids = [ 4, 8, 12, 14, 20,]
+calibration_fraction = 0.3
+calibration_end_frame = 330
+bundle_views = 573
+bundle_initial_rmse_px = 8.702291860521024
+bundle_final_rmse_px = 1.7414414729958891
+bundle_success = true
+
+[stereo_refined]
+rotation_cam0_to_cam1 = [ [ 0.9996471964327742, 0.010173315921469467, -0.024535409253898677,], [ -0.006413262923271429, 0.9888581802261425, 0.14872245781494664,], [ 0.025775040693882773, -0.14851263597082764, 0.9885745516824843,],]
+translation_cam0_to_cam1_m = [ 0.08087434468810058, 0.014266104228117261, 0.003596042709611167,]
+views = 284
+median_pair_gap_ms = 16.171232
+initial_rmse_px = 42.428772730846205
+final_rmse_px = 5.555916446447782
+success = false
+
+[markers.4]
+rotation_marker_to_reference = [ [ 0.7127795176208999, -0.010315817822936477, -0.7013123007353865,], [ 0.005272869698225364, 0.9999423913789977, -0.00934937262050423,], [ 0.701368345525561, 0.0029661129269607195, 0.712792849339022,],]
+translation_marker_to_reference_m = [ -0.05073452261085353, -0.0005399915839606042, -0.023033471416913857,]
+samples_total = 386
+samples_used = 227
+translation_spread_mm = 7.662415703927191
+rotation_spread_deg = 9.514249121303965
+
+[markers.8]
+rotation_marker_to_reference = [ [ 0.7146374002521924, 0.0016123072688724333, 0.6994932355827742,], [ -0.0052548032670264744, 0.9999815003786825, 0.0030636486455806813,], [ -0.6994753556798213, -0.00586509724296721, 0.7146326520884123,],]
+translation_marker_to_reference_m = [ 0.050477646783792095, -0.00028329958052076686, -0.02364676594283814,]
+samples_total = 337
+samples_used = 286
+translation_spread_mm = 9.311873372896802
+rotation_spread_deg = 10.105104590321393
+
+[markers.12]
+rotation_marker_to_reference = [ [ 1.0, 0.0, 0.0,], [ 0.0, 1.0, 0.0,], [ 0.0, 0.0, 1.0,],]
+translation_marker_to_reference_m = [ 0.0, 0.0, 0.0,]
+samples_total = 0
+samples_used = 0
+translation_spread_mm = 0.0
+rotation_spread_deg = 0.0
+
+[markers.14]
+rotation_marker_to_reference = [ [ 0.9995735362207319, -0.02686658045474865, 0.01144257583980253,], [ 0.010378663473683046, 0.6931115754037124, 0.7207555947655792,], [ -0.02729521994198164, -0.7203294599667934, 0.6930948276190397,],]
+translation_marker_to_reference_m = [ -0.0014385910598791608, 0.0494031026353267, -0.023005927125967943,]
+samples_total = 258
+samples_used = 196
+translation_spread_mm = 12.421830960562374
+rotation_spread_deg = 10.623764015784706
+
+[markers.20]
+rotation_marker_to_reference = [ [ 0.9999562730231417, 0.00754683614053111, 0.00552243659409655,], [ -0.0023062705401693364, 0.7713103151271233, -0.636455087884992,], [ -0.00906273456873753, 0.636414521395266, 0.7712939931046857,],]
+translation_marker_to_reference_m = [ -2.2502585612333696e-5, -0.05088701918856194, -0.020839838243242797,]
+samples_total = 405
+samples_used = 371
+translation_spread_mm = 14.296318904006586
+rotation_spread_deg = 32.927318345651464
