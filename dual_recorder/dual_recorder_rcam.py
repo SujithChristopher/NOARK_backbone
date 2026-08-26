@@ -5,17 +5,27 @@ picamera2/libcamera, which this board has no pipeline handler for. Here frames
 come from rcam, which drives the CAMSS RDI over V4L2 directly:
 
     cam{0,1}_frame.msgpack      raw HxW uint8 mono frames, msgpack-numpy packed
-    cam{0,1}_timestamp.msgpack  one [sync, wall_clock_iso, monotonic_ns] per frame
+    cam{0,1}_timestamp.msgpack  one row per frame:
+        [sync, wall_clock_iso, monotonic_ns, sensor_ns, sequence]
 
 The notebooks in trunkpose/dual_notebooks read column 0 as the GPIO sync bit and
-column 1 as the frame time, so both stay compatible.
+column 1 as the frame time, so both stay compatible; columns 3 and 4 are new.
 
-Timestamps differ from the picamera2 version: rcam exposes no SensorTimestamp,
-so column 2 is a host arrival time (time.monotonic_ns() right after the frame is
-unpacked), not a sensor exposure time. It carries scheduling jitter of a few
-hundred microseconds. If exposure-accurate stamps are ever needed, the V4L2
-buffer timestamp is already in rcam's Rust reader (rust/lib.rs v4l2_buffer) and
-just needs plumbing out through next_u8().
+Use column 3, not column 2, to pair frames across the two cameras. Column 2 is a
+host arrival time (time.monotonic_ns() once the frame is unpacked) and carries
+1.6-1.9 ms of scheduling jitter. Column 3 is the timestamp CAMSS stamps in its
+frame-done interrupt - same CLOCK_MONOTONIC, ~100 us of jitter. Column 4 is the
+driver's frame counter: a gap in it means the sensor produced a frame that never
+reached us, which a gap in the timestamps alone cannot tell apart from a capture
+thread being descheduled.
+
+Frame sync: the two sensors self-clock off separate 24 MHz oscillators with no
+FSIN wiring between them, so they free-run at an arbitrary phase - measured cold
+at -14.9 ms of a 33.3 ms frame period, near anti-phase. Before recording starts,
+rcam.FrameSync walks one sensor's phase onto the other by briefly stretching its
+vertical blanking, which brings them to ~100 us. The crystals still differ by
+~50 ppm (~3 ms/minute), so the alignment is topped up during the recording from
+the timestamps as they arrive. Pass --no-frame-sync to record free-running.
 
 The out-of-tree ov9282 driver is not autoloaded at boot, so the recorder
 modprobes it itself (via sudo when not already root) before looking for cameras.
@@ -29,8 +39,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime
-import math
 import os
 import queue
 import subprocess
@@ -47,11 +57,11 @@ import numpy as np
 # necessarily importable from this project's environment.
 RCAM_SRC = os.environ.get("RCAM_PATH", "/home/radxa/Documents/rcam/src")
 try:
-    from rcam import Camera, list_cameras
+    from rcam import Camera, FrameSync, list_cameras, phase_from_timestamps
 except ImportError:
     sys.path.insert(0, RCAM_SRC)
     try:
-        from rcam import Camera, list_cameras
+        from rcam import Camera, FrameSync, list_cameras, phase_from_timestamps
     except ImportError as exc:
         raise SystemExit(
             f"cannot import rcam (looked in {RCAM_SRC}); set RCAM_PATH to its src/"
@@ -264,6 +274,7 @@ class CameraWorker(threading.Thread):
     """
 
     QUEUE_DEPTH = 32
+    PHASE_WINDOW = 90  # frames of history the drift resync fits over (~3 s)
 
     def __init__(self, cam, index, out_dir, record, sync, start_evt, stop_evt):
         super().__init__(name=f"cam{index}", daemon=True)
@@ -278,7 +289,15 @@ class CameraWorker(threading.Thread):
         self.latest = None  # newest frame, for the preview window
         self.frames = 0  # frames captured since start
         self.written = 0  # frames written to disk
+        self.dropped = 0  # frames the sensor made that never reached us
         self.error: BaseException | None = None
+        self._last_seq: int | None = None
+        # Recent sensor timestamps, for the mid-recording phase check. A deque
+        # with maxlen is the whole synchronisation: append from this thread,
+        # snapshot from the main thread, no lock needed.
+        self.recent_ns: collections.deque[int] = collections.deque(
+            maxlen=self.PHASE_WINDOW
+        )
         self._queue: queue.Queue = queue.Queue(maxsize=self.QUEUE_DEPTH)
         self._writer: threading.Thread | None = None
 
@@ -290,9 +309,9 @@ class CameraWorker(threading.Thread):
                 item = self._queue.get()
                 if item is None:  # sentinel: capture finished
                     break
-                frame, sync_val, wall, mono = item
+                frame, sync_val, wall, mono, sensor_ns, seq = item
                 fh_frame.write(mp.packb(frame, default=mpn.encode))
-                fh_stamp.write(mp.packb([sync_val, wall, mono]))
+                fh_stamp.write(mp.packb([sync_val, wall, mono, sensor_ns, seq]))
                 self.written += 1
 
     def run(self):
@@ -303,16 +322,24 @@ class CameraWorker(threading.Thread):
             self._writer.start()
         try:
             while not self.stop_evt.is_set():
-                frame = self.cam.capture_array()
+                frame, sensor_ns, seq = self.cam.capture_array_meta()
                 mono = time.monotonic_ns()
                 self.latest = frame
                 self.frames += 1
+                if seq is not None:
+                    if self._last_seq is not None and seq - self._last_seq > 1:
+                        self.dropped += seq - self._last_seq - 1
+                    self._last_seq = seq
+                if sensor_ns is not None:
+                    self.recent_ns.append(sensor_ns)
                 if self.record and self.start_evt.is_set():
                     # Naive local time on purpose: the notebook loaders feed
                     # this straight into np.datetime64, which rejects tz-aware
                     # values, and the picamera2 recorder writes the same format.
                     wall = datetime.datetime.now().isoformat(sep=" ")  # noqa: DTZ005
-                    self._queue.put((frame, self.sync.get_value(), wall, mono))
+                    self._queue.put(
+                        (frame, self.sync.get_value(), wall, mono, sensor_ns, seq)
+                    )
         except BaseException as exc:  # noqa: BLE001 - surfaced by the main loop
             self.error = exc
             self.stop_evt.set()
@@ -355,42 +382,28 @@ def open_camera(label, fps, exposure_us, gain, vflip, hflip):
     return cam.start()
 
 
-def measure_skew(cams, n_frames, frame_period_us):
-    """Estimate the free-running phase offset between the two sensors.
+def make_frame_sync(cams):
+    """Build the FrameSync for a camera pair, or None if they cannot be synced.
 
-    Host-side only: rcam gives no sensor timestamp, so this pairs the arrival
-    times of frames grabbed in parallel and includes thread scheduling jitter.
-
-    The two sensors free-run, so pairing frame i of one with frame i of the
-    other is arbitrary up to whole frame periods - a raw difference of 30 ms at
-    33 ms/frame is really -3 ms with the pairing off by one. So the offsets are
-    reduced modulo the frame period and averaged as angles (circular mean),
-    which gives the phase difference in (-T/2, +T/2] regardless of pairing.
+    The one way it fails is the v4l2-ctl fallback backend, which exposes no
+    buffer timestamps. Recording still works there - the sensors just stay
+    free-running and the sensor_ns column is None, leaving post-processing only
+    the host arrival times, which carry milliseconds of jitter.
     """
-    print(f"Measuring arrival skew over {n_frames} frame pairs...")
-    stamps: list[list[int]] = [[], []]
+    try:
+        return FrameSync(cams[0], cams[1])
+    except RuntimeError as exc:
+        print(f"! frame sync unavailable: {exc}")
+        return None
 
-    def grab(i):
-        cams[i].capture_array()
-        stamps[i].append(time.monotonic_ns())
 
-    for _ in range(n_frames):
-        threads = [threading.Thread(target=grab, args=(i,)) for i in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-    skews = [(b - a) / 1000.0 for a, b in zip(stamps[0], stamps[1])]
-    angles = [2 * math.pi * s / frame_period_us for s in skews]
-    cos_mean = sum(math.cos(a) for a in angles) / len(angles)
-    sin_mean = sum(math.sin(a) for a in angles) / len(angles)
-    scale = frame_period_us / (2 * math.pi)
-    mean = math.atan2(sin_mean, cos_mean) * scale
-    # Circular ("angular") standard deviation; R -> 1 means tightly clustered.
-    r = math.hypot(cos_mean, sin_mean)
-    std = scale * math.sqrt(-2 * math.log(r)) if r > 0 else float("inf")
-    return mean, std
+def align_cameras(sync, ref_label, adj_label, tol_us, verbose=True):
+    """Bring the second sensor's frame phase onto the first's."""
+    print(
+        f"Aligning frame phase ({adj_label} -> {ref_label}, "
+        f"{sync.period_us / 1000:.2f} ms period, {sync.line_time_us:.2f} us/line):"
+    )
+    return sync.align(tol_us=tol_us, verbose=verbose)
 
 
 class KeyReader:
@@ -444,6 +457,10 @@ class RecordData:
         sync_chip="gpiochip4",
         sync_pin="PIN_11",
         auto_modprobe=True,
+        frame_sync=True,
+        phase_tol_us=200.0,
+        resync_every_s=5.0,
+        resync_threshold_us=1000.0,
     ):
         if auto_modprobe:
             ensure_driver()
@@ -514,23 +531,68 @@ class RecordData:
         self.display = display
         self.fps_value = fps_value
         self.preview_width = preview_width
+        self.frame_sync = frame_sync
+        self.phase_tol_us = phase_tol_us
+        self.resync_every_s = resync_every_s
+        self.resync_threshold_us = resync_threshold_us
         self.sync = SyncLine(sync_chip, sync_pin)
+
+    def _phase_now(self, phase_sync, workers):
+        """Current phase from the timestamps the workers have already recorded.
+
+        Pure arithmetic on two deques - it takes no frames, so it is safe to
+        call from the status loop while the workers own the cameras.
+        """
+        if phase_sync is None:
+            return None
+        stamps = [list(w.recent_ns) for w in workers]
+        if min(len(x) for x in stamps) < 10:
+            return None
+        return phase_from_timestamps(stamps[0], stamps[1], phase_sync.period_us)
+
+    def _resync(self, phase_sync, workers, busy):
+        """Top up the alignment against the ~50 ppm drift between the crystals.
+
+        Runs on its own thread: a nudge is two v4l2-ctl calls around a sleep of
+        roughly a frame period, and doing that inline would stall the preview
+        and swallow keypresses.
+        """
+        if phase_sync is None or busy.is_set():
+            return
+        stamps = [list(w.recent_ns) for w in workers]
+        if min(len(x) for x in stamps) < 30:
+            return
+        busy.set()
+
+        def work():
+            try:
+                report = phase_sync.resync_if_needed(
+                    stamps[0], stamps[1], self.resync_threshold_us
+                )
+                if report is not None:
+                    print(f"\n  resync: phase was {report.phase_us:+.0f} us, nudged")
+            except Exception as exc:  # noqa: BLE001 - a failed nudge must not end the take
+                print(f"\n! resync failed: {exc!r}")
+            finally:
+                busy.clear()
+
+        threading.Thread(target=work, name="resync", daemon=True).start()
 
     def capture_webcam(self):
         """Capture from both cameras until 'q'; record between 's' and 'q'."""
-        frame_period_us = 1_000_000 / self.fps_value
-
         for cam in self.cams:
             cam.flush(4)  # drop the queued warm-up frames
-        mean_skew_us, std_skew_us = measure_skew(
-            self.cams, int(self.fps_value * 2), frame_period_us
-        )
-        print(
-            f"Sensor phase offset: {mean_skew_us:+.0f} us +/- {std_skew_us:.0f} us  "
-            f"({abs(mean_skew_us) / frame_period_us * 100:.1f}% of the "
-            f"{frame_period_us:.0f} us frame period)"
-        )
-        print("The sensors free-run; correct in post using the monotonic_ns column.")
+
+        # Built either way: even with alignment disabled it is what measures and
+        # reports the phase, which is how you tell whether syncing helped.
+        phase_sync = make_frame_sync(self.cams)
+        if phase_sync is None:
+            print("Recording free-running, on host arrival times only.")
+        elif self.frame_sync:
+            align_cameras(phase_sync, self.labels[0], self.labels[1], self.phase_tol_us)
+        else:
+            print("Frame sync disabled (--no-frame-sync); sensors free-run.")
+        print("Pair frames in post on the sensor_ns column, not on frame index.")
         print("Press 's' to start recording, 'q' to quit.")
 
         start_evt = threading.Event()
@@ -547,6 +609,8 @@ class RecordData:
         keys = KeyReader(self.display)
         window = " | ".join(self.labels)
         t_status = time.monotonic()
+        t_resync = t_status
+        resync_busy = threading.Event()
         last_counts = [0, 0]
         last_drawn = ()
         try:
@@ -589,17 +653,34 @@ class RecordData:
                     last_counts = [w.frames for w in workers]
                     t_status = now
                     state = "REC" if start_evt.is_set() else "live"
+                    report = self._phase_now(phase_sync, workers)
+                    phase = (
+                        f"  phase={report.phase_us:+6.0f}us"
+                        if report is not None
+                        else ""
+                    )
                     print(
                         f"\r{state}  "
                         + "  ".join(
                             f"{lbl} {f:5.1f}fps" for lbl, f in zip(self.labels, fps)
                         )
+                        + phase
                         + f"  written={[w.written for w in workers]}"
                         + f"  backlog={[w.backlog() for w in workers]}"
+                        + f"  dropped={[w.dropped for w in workers]}"
                         + f"  sync={self.sync.get_value()}   ",
                         end="",
                         flush=True,
                     )
+
+                if (
+                    phase_sync is not None
+                    and self.frame_sync
+                    and self.resync_every_s > 0
+                    and now - t_resync >= self.resync_every_s
+                ):
+                    t_resync = now
+                    self._resync(phase_sync, workers, resync_busy)
         except KeyboardInterrupt:
             print("\nInterrupted.")
         finally:
@@ -613,9 +694,19 @@ class RecordData:
                 cam.stop()
             print()
             for label, w in zip(self.labels, workers):
-                print(f"{label}: captured {w.frames}, written {w.written}")
+                print(
+                    f"{label}: captured {w.frames}, written {w.written}, "
+                    f"sensor frames lost {w.dropped}"
+                )
                 if w.error is not None:
                     print(f"{label} stopped on error: {w.error!r}")
+            report = self._phase_now(phase_sync, workers)
+            if report is not None:
+                print(
+                    f"final phase {report.phase_us:+.0f} us "
+                    f"({abs(report.phase_us) / phase_sync.period_us * 100:.2f}% of a "
+                    f"frame), {phase_sync.nudges} nudges applied"
+                )
             if self.record_camera and start_evt.is_set():
                 print(f"Saved to {self._pth}")
 
@@ -646,7 +737,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--fps", help="target frame rate", type=float, default=30)
     parser.add_argument(
-        "--gain", help="analogue gain, 1.0-16.0", type=float, default=2
+        "--gain", help="analogue gain, 1.0-16.0", type=float, default=3.0
     )
     parser.add_argument(
         "--exposure", help="exposure in us (overrides --hz)", type=float, default=10000
@@ -686,6 +777,33 @@ if __name__ == "__main__":
         "--no-modprobe",
         action="store_true",
         help=f"do not try to load the {DRIVER_MODULE} driver automatically",
+    )
+    parser.add_argument(
+        "--no-frame-sync",
+        action="store_true",
+        help="skip aligning the two sensors' frame phase and let them free-run "
+        "(they start up to half a frame period apart)",
+    )
+    parser.add_argument(
+        "--phase-tol",
+        type=float,
+        default=200.0,
+        help="stop aligning once the two sensors are within this many us "
+        "(default 200; the measurement floor is around 100)",
+    )
+    parser.add_argument(
+        "--resync-every",
+        type=float,
+        default=5.0,
+        help="seconds between mid-recording phase checks (0 disables)",
+    )
+    parser.add_argument(
+        "--resync-threshold",
+        type=float,
+        default=1000.0,
+        help="only re-nudge once the phase has drifted past this many us. Each "
+        "nudge puts one long frame interval into the recording, so this trades "
+        "residual skew against disturbance (default 1000)",
     )
 
     args = parser.parse_args()
@@ -738,5 +856,9 @@ if __name__ == "__main__":
         sync_chip=args.sync_chip,
         sync_pin=args.sync_pin,
         auto_modprobe=not args.no_modprobe,
+        frame_sync=not args.no_frame_sync,
+        phase_tol_us=args.phase_tol,
+        resync_every_s=args.resync_every,
+        resync_threshold_us=args.resync_threshold,
     )
     record_data.run()
