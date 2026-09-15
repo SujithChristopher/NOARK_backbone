@@ -27,9 +27,18 @@ vertical blanking, which brings them to ~100 us. The crystals still differ by
 ~50 ppm (~3 ms/minute), so the alignment is topped up during the recording from
 the timestamps as they arrive. Pass --no-frame-sync to record free-running.
 
-The out-of-tree ov9282 driver is not autoloaded at boot, so the recorder
-modprobes it itself (via sudo when not already root) before looking for cameras.
-Pass --no-modprobe to skip that and manage the driver yourself.
+The ov9282 driver (it covers the OV9281) is in-tree as of kernel 7.0.11, and
+udev autoloads it off the compatible string once the boot DTB declares the
+sensor. The recorder still modprobes it (via sudo when not already root) before
+looking for cameras: a no-op there, but it is what makes older images work,
+where the driver was an out-of-tree build in /lib/modules/.../updates that
+nothing autoloaded. Pass --no-modprobe to skip that and manage it yourself.
+
+What does need deploying on every kernel is the device tree. The stock DTB
+declares no OV9281 and leaves CAMSS off, and systemd-boot's kernel-install
+copies that stock DTB over the merged one on each kernel update. See
+rcam/ov9281/scripts/deploy_efi_dtb.sh, and the kernel-install hook at
+/etc/kernel/install.d/99-zz-ov9281-overlay.install that re-applies it.
 
 Usage:
     uv run python dual_recorder/dual_recorder_rcam.py -f recordings -n test -c True
@@ -68,7 +77,7 @@ except ImportError:
         ) from exc
 
 
-DRIVER_MODULE = "ov9282"  # driver for the OV9281; out-of-tree, no autoload
+DRIVER_MODULE = "ov9282"  # driver for the OV9281; in-tree since kernel 7.0.11
 MEDIA_NODE = "/dev/media0"  # CAMSS media graph rcam walks to find the sensors
 
 
@@ -139,9 +148,11 @@ def ensure_driver(
 ) -> bool:
     """Load the sensor driver if it isn't loaded, so a fresh boot just works.
 
-    ov9282 lives in /lib/modules/.../updates and is not autoloaded, so every run
-    after a reboot would otherwise fail with "no cameras" until someone ran
-    modprobe by hand.
+    Since kernel 7.0.11 ov9282 is in-tree and udev autoloads it from the DTB's
+    compatible string, so this normally finds it already there. It still earns
+    its keep on older images, where ov9282 lived in /lib/modules/.../updates and
+    was not autoloaded, so every run after a reboot failed with "no cameras"
+    until someone ran modprobe by hand.
     """
     if not driver_loaded(module):
         print(f"{module} not loaded")
@@ -158,7 +169,10 @@ def ensure_driver(
             f"! {module} is loaded but the booted device tree declares no ov9281, "
             f"so nothing binds to it and {media} never appears.\n"
             "  The EFI boot DTB is stock - a kernel/image update reverts it. Fix:\n"
-            "  rcam/ov9281/scripts/deploy_efi_dtb.sh   (then reboot)"
+            "  rcam/ov9281/scripts/deploy_efi_dtb.sh   (then reboot)\n"
+            "  A kernel-install hook is meant to re-apply this automatically; if\n"
+            "  you are seeing this, check /etc/kernel/install.d/ still has\n"
+            "  99-zz-ov9281-overlay.install."
         )
     else:
         print(
@@ -169,7 +183,7 @@ def ensure_driver(
 
 
 class SyncLine:
-    """GPIO sync input from the mocap trigger, read once per frame.
+    """GPIO sync input from the mocap trigger: a per-frame level, plus edge times.
 
     The 40-pin header is gpiochip4 (the SoC TLMM) and header pin N maps to a
     TLMM line that is *not* N - the device tree names them, so a line can be
@@ -183,13 +197,50 @@ class SyncLine:
     cannot be pulled down in software - wire an external pull-down if the
     trigger output is open-drain or tri-state.
 
+    Two things are recorded, and only one of them is old. The per-frame ``sync``
+    column is unchanged: a 0/1 level stored with every frame. On its own that
+    cannot say *when* a pulse started - it is sampled once per frame, so a pulse
+    shorter than the 33 ms frame period is usually missed outright, one that is
+    caught is located only to within a frame, and a pulse between recordings is
+    not seen at all.
+
+    So where the kernel can do edge detection, a latch thread also records every
+    transition with the kernel's own timestamp. That timestamp is CLOCK_MONOTONIC
+    (linux/gpio.h: "By default the @timestamp_ns is read from %CLOCK_MONOTONIC"),
+    which is the clock CAMSS stamps sensor_ns with and the one time.monotonic_ns()
+    reads - so pulse edges and frame exposures sit on one timeline at interrupt
+    accuracy instead of polling accuracy, and edges outside a recording are kept
+    too. They are written to sync_events.msgpack by write_events().
+
+    Once the latch is running it owns the line request exclusively and
+    get_value() returns the level the last edge left behind. That keeps two
+    threads off one gpiod request object, and is strictly better than polling:
+    the level is what the edge stream says it is, not what a later read saw.
+
     Tolerates libgpiod v1 and v2, and falls back to a constant 0 when gpiod is
-    missing so a recording without the trigger box still runs.
+    missing so a recording without the trigger box still runs. libgpiod v1 and a
+    kernel that refuses edge detection both degrade to the old polled level.
     """
 
-    def __init__(self, chip: str = "gpiochip4", line: int | str = "PIN_11"):
+    def __init__(
+        self,
+        chip: str = "gpiochip4",
+        line: int | str = "PIN_11",
+        latch_edges: bool = True,
+    ):
         self.available = False
+        self.edges_available = False
+        self.chip = chip
+        self.line: int | None = None
         self._read = lambda: 0
+        self._req = None
+        # Held in memory and written at teardown: a trigger box runs at a few Hz,
+        # so a long session is still thousands of records, not millions.
+        self._events: list[tuple[int, int, int]] = []
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._level = 0
         try:
             import gpiod
         except ImportError:
@@ -198,25 +249,23 @@ class SyncLine:
         requested = line
         try:
             line = self._resolve(gpiod, chip, line)
+            self.line = line
             if hasattr(gpiod, "LINE_REQ_DIR_IN"):  # libgpiod v1
                 self._chip = gpiod.Chip(chip)
                 gline = self._chip.get_line(line)
                 gline.request(consumer="dual_recorder", type=gpiod.LINE_REQ_DIR_IN)
                 self._read = gline.get_value
-            else:  # libgpiod v2
-                from gpiod.line import Direction, Value
-
-                self._req = gpiod.request_lines(
-                    f"/dev/{chip}",
-                    consumer="dual_recorder",
-                    config={line: gpiod.LineSettings(direction=Direction.INPUT)},
-                )
-                self._read = lambda: (
-                    1 if self._req.get_value(line) == Value.ACTIVE else 0
-                )
+            else:
+                self._setup_v2(gpiod, chip, line, latch_edges)
             self.available = True
             named = "" if str(requested) == str(line) else f" ({requested})"
-            print(f"GPIO sync on {chip} line {line}{named}")
+            how = (
+                "level + edge timestamps"
+                if self.edges_available
+                else "level only - no edge timestamps, so pulse starts are "
+                "known only to one frame"
+            )
+            print(f"GPIO sync on {chip} line {line}{named} ({how})")
         except Exception as exc:  # noqa: BLE001 - any GPIO failure degrades to 0
             print(f"GPIO sync unavailable on {chip} line {line}: {exc}")
             detail = self._describe(gpiod, chip, line)
@@ -226,6 +275,89 @@ class SyncLine:
                 "  -> sync flag stays 0. Point --sync-chip/--sync-pin at the line "
                 "the trigger box is actually wired to."
             )
+
+    def _setup_v2(self, gpiod, chip: str, line: int, latch_edges: bool) -> None:
+        from gpiod.line import Direction, Edge, Value
+
+        def request(with_edges: bool):
+            settings = gpiod.LineSettings(direction=Direction.INPUT)
+            if with_edges:
+                settings.edge_detection = Edge.BOTH
+            return gpiod.request_lines(
+                f"/dev/{chip}", consumer="dual_recorder", config={line: settings}
+            )
+
+        if latch_edges:
+            try:
+                self._req = request(True)
+                self.edges_available = True
+            except (OSError, ValueError) as exc:
+                print(f"  ! edge detection refused ({exc}) - falling back to polling")
+        if self._req is None:
+            self._req = request(False)
+
+        self._level = 1 if self._req.get_value(line) == Value.ACTIVE else 0
+        if self.edges_available:
+            self._read = self._latched_level
+            self._thread = threading.Thread(
+                target=self._latch_loop, name="sync-latch", daemon=True
+            )
+            self._thread.start()
+        else:
+            self._read = lambda: (
+                1 if self._req.get_value(line) == Value.ACTIVE else 0
+            )
+
+    def _latch_loop(self) -> None:
+        """Block on the line's event fd and keep every transition the kernel saw."""
+        poll = datetime.timedelta(milliseconds=200)  # only bounds the stop check
+        try:
+            while not self._stop.is_set():
+                if not self._req.wait_edge_events(poll):
+                    continue
+                for ev in self._req.read_edge_events():
+                    value = 1 if ev.event_type == ev.Type.RISING_EDGE else 0
+                    with self._lock:
+                        self._events.append((ev.timestamp_ns, value, ev.line_seqno))
+                        self._level = value
+        except Exception as exc:  # noqa: BLE001 - a dead latch must not end the take
+            print(f"\n! sync edge latch stopped: {exc!r}")
+
+    def _latched_level(self) -> int:
+        with self._lock:
+            return self._level
+
+    def events(self) -> list[tuple[int, int, int]]:
+        """Snapshot of the edges so far, as (timestamp_ns, value, line_seqno)."""
+        with self._lock:
+            return list(self._events)
+
+    @property
+    def event_count(self) -> int:
+        with self._lock:
+            return len(self._events)
+
+    def write_events(self, out_dir: str, filename: str = "sync_events.msgpack"):
+        """Write the latched edges, one msgpack record each.
+
+        Record layout is [timestamp_ns, value, line_seqno]; value is 1 for a
+        rising edge and 0 for a falling one. timestamp_ns shares CLOCK_MONOTONIC
+        with the frames' sensor_ns and mono columns, so a pulse is placed against
+        a frame by comparing the two directly - no clock fitting needed.
+        """
+        events = self.events()
+        if not out_dir or not events:
+            return None
+        path = os.path.join(out_dir, filename)
+        with open(path, "wb") as fh:
+            for record in events:
+                fh.write(mp.packb(list(record)))
+        return path
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
 
     @staticmethod
     def _resolve(gpiod, chip: str, line: int | str) -> int:
@@ -352,6 +484,42 @@ class CameraWorker(threading.Thread):
         return self._queue.qsize()
 
 
+def resolve_exposure(exposure_us, flicker_hz, fps_value):
+    """Settle on an exposure, and explain it - the flicker rule drives everything.
+
+    Exposure must be a whole number of the mains half-period (10000us at 50Hz,
+    8333us at 60Hz) or every frame integrates a different slice of the light's
+    sine. That shows up two ways: the frames pulse against each other, and the
+    level a run settles at depends on where the sensor's free-running phase
+    happened to land when it started - so the same scene records brighter or
+    darker each time. Measured on this board under 50Hz light: 5000us gave 44%
+    peak-to-peak frame brightness, 10000us gave 0.3%.
+    """
+    if exposure_us is None:
+        exposure_us = 1_000_000 // (flicker_hz * 2)
+        print(f"Flicker compensation: {flicker_hz}Hz -> ExposureTime={exposure_us}us")
+    else:
+        half_period = 1_000_000 / (flicker_hz * 2)
+        periods = round(exposure_us / half_period)
+        print(f"ExposureTime={exposure_us:.0f}us (explicit)")
+        if periods < 1 or abs(exposure_us - periods * half_period) > 0.02 * half_period:
+            nearest = max(1, periods) * half_period
+            print(
+                f"! {exposure_us:.0f}us is not a multiple of the {half_period:.0f}us "
+                f"light period at {flicker_hz}Hz - expect the image to pulse in "
+                f"brightness. Flicker-free values near it: {nearest:.0f}us or "
+                f"{nearest + half_period:.0f}us (use --gain to set brightness "
+                f"instead of exposure)."
+            )
+    frame_period_us = 1_000_000 / fps_value
+    if exposure_us > frame_period_us:
+        print(
+            f"! exposure {exposure_us}us exceeds the {frame_period_us:.0f}us "
+            f"frame period at {fps_value} fps - the sensor will slow down"
+        )
+    return exposure_us
+
+
 def open_camera(label, fps, exposure_us, gain, vflip, hflip):
     """Configure one OV9281 and report the exposure the sensor actually took."""
     cam = Camera(label)
@@ -407,13 +575,19 @@ def align_cameras(sync, ref_label, adj_label, tol_us, verbose=True):
 
 
 class KeyReader:
-    """'s'/'q' from the preview window, or from a raw terminal when headless."""
+    """'s'/'q' from the preview window or the terminal, whichever has focus.
+
+    Both are polled every iteration. cv2.waitKey only reports a key while the
+    Qt window holds focus, but the status line lives in the terminal, so that
+    is where people type - watching just one of the two drops the other
+    silently, which looks exactly like a dead 's' key.
+    """
 
     def __init__(self, display: bool):
         self.display = display
         self._fd = None
         self._old = None
-        if not display and sys.stdin.isatty():
+        if sys.stdin.isatty():
             import termios
             import tty
 
@@ -424,12 +598,16 @@ class KeyReader:
     def get(self) -> str | None:
         if self.display:
             key = cv2.waitKey(1) & 0xFF
-            return chr(key) if key != 255 else None
+            if key != 255:
+                return chr(key)
         if self._fd is None:
             return None
         import select
 
-        if select.select([sys.stdin], [], [], 0.01)[0]:
+        # waitKey(1) has already paced the loop when the preview is up, so the
+        # terminal poll must not add a second wait on top of it.
+        timeout = 0 if self.display else 0.01
+        if select.select([sys.stdin], [], [], timeout)[0]:
             return sys.stdin.read(1)
         return None
 
@@ -448,7 +626,7 @@ class RecordData:
         fps_value=30,
         display=True,
         flicker_hz=50,
-        gain=4.0,
+        gain=1.0,
         exposure_us=None,
         vflip=False,
         hflip=False,
@@ -487,38 +665,7 @@ class RecordData:
             if label not in detected:
                 sys.exit(f"camera {label!r} not in {detected}")
 
-        # Exposure must be an integer multiple of the AC half-period to avoid
-        # banding under fluorescent/tube lights: 10000us for 50Hz, 8333us for 60Hz.
-        if exposure_us is None:
-            exposure_us = 1_000_000 // (flicker_hz * 2)
-            print(
-                f"Flicker compensation: {flicker_hz}Hz -> ExposureTime={exposure_us}us"
-            )
-        else:
-            # An explicit exposure still has to be a whole number of light
-            # periods or the frames pulse in brightness: measured on this board,
-            # 5000us gave 9.5% frame-to-frame modulation against 0.1% at 10000us.
-            half_period = 1_000_000 / (flicker_hz * 2)
-            periods = round(exposure_us / half_period)
-            print(f"ExposureTime={exposure_us:.0f}us (explicit)")
-            if (
-                periods < 1
-                or abs(exposure_us - periods * half_period) > 0.02 * half_period
-            ):
-                nearest = max(1, periods) * half_period
-                print(
-                    f"! {exposure_us:.0f}us is not a multiple of the {half_period:.0f}us "
-                    f"light period at {flicker_hz}Hz - expect the image to pulse in "
-                    f"brightness. Flicker-free values near it: {nearest:.0f}us or "
-                    f"{nearest + half_period:.0f}us (use --gain to set brightness "
-                    f"instead of exposure)."
-                )
-        frame_period_us = 1_000_000 / fps_value
-        if exposure_us > frame_period_us:
-            print(
-                f"! exposure {exposure_us}us exceeds the {frame_period_us:.0f}us "
-                f"frame period at {fps_value} fps - the sensor will slow down"
-            )
+        exposure_us = resolve_exposure(exposure_us, flicker_hz, fps_value)
 
         print("Opening cameras:")
         self.cams = [
@@ -593,7 +740,10 @@ class RecordData:
         else:
             print("Frame sync disabled (--no-frame-sync); sensors free-run.")
         print("Pair frames in post on the sensor_ns column, not on frame index.")
-        print("Press 's' to start recording, 'q' to quit.")
+        print(
+            "Press 's' to start recording, 'q' to quit "
+            "(in this terminal or the preview window)."
+        )
 
         start_evt = threading.Event()
         stop_evt = threading.Event()
@@ -707,7 +857,16 @@ class RecordData:
                     f"({abs(report.phase_us) / phase_sync.period_us * 100:.2f}% of a "
                     f"frame), {phase_sync.nudges} nudges applied"
                 )
+            self.sync.close()
             if self.record_camera and start_evt.is_set():
+                path = self.sync.write_events(self._pth)
+                if self.sync.edges_available:
+                    print(
+                        f"sync: {self.sync.event_count} edges latched"
+                        + (f" -> {path}" if path else " (none to write)")
+                    )
+                else:
+                    print("sync: no edge timestamps (edge detection unavailable)")
                 print(f"Saved to {self._pth}")
 
     def run(self):
@@ -737,10 +896,16 @@ if __name__ == "__main__":
     )
     parser.add_argument("--fps", help="target frame rate", type=float, default=30)
     parser.add_argument(
-        "--gain", help="analogue gain, 1.0-16.0", type=float, default=3.0
+        "--gain", help="analogue gain, 1.0-16.0", type=float, default=2.0
     )
     parser.add_argument(
-        "--exposure", help="exposure in us (overrides --hz)", type=float, default=10000
+        "--exposure",
+        help="exposure in us (overrides --hz; default: one --hz half-period, "
+        "10000us at 50Hz / 8333us at 60Hz). Set brightness with --gain instead "
+        "- an exposure that is not a whole number of light half-periods makes "
+        "each run land on a random point of the mains waveform.",
+        type=float,
+        default=None,
     )
     parser.add_argument(
         "--vflip", action="store_true", help="flip both cameras vertically"
