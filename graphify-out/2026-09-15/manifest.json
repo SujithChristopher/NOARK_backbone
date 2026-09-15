@@ -850,53 +850,5 @@
     "seen": 1789463095.280289,
     "ast_hash": "88ac11646a0c8b90b49820a094b23ed0",
     "semantic_hash": "88ac11646a0c8b90b49820a094b23ed0"
-  },
-  "agent_response/crystal.md": {
-    "mtime": 1787743593.7783358,
-    "seen": 1789463115.7797823,
-    "ast_hash": "b391f70f17deb06c24aca9ce6faf3021",
-    "semantic_hash": "b391f70f17deb06c24aca9ce6faf3021"
-  },
-  "backup/example_dataset/recordings/Screenshot (238).png": {
-    "mtime": 1785815097.7090588,
-    "seen": 1789463115.7797823,
-    "ast_hash": "4330f658589b09438d02a74fe031283c",
-    "semantic_hash": "4330f658589b09438d02a74fe031283c"
-  },
-  "backup/example_dataset/recordings/Screenshot (239).png": {
-    "mtime": 1785815097.711058,
-    "seen": 1789463115.7797823,
-    "ast_hash": "35649e76fc7fee60a1940cea2dc49f14",
-    "semantic_hash": "35649e76fc7fee60a1940cea2dc49f14"
-  },
-  "backup/newdata/calibration_visualization.png": {
-    "mtime": 1785815097.8475716,
-    "seen": 1789463115.7797823,
-    "ast_hash": "87ede99875ec4f3f36b6664f88236d45",
-    "semantic_hash": "87ede99875ec4f3f36b6664f88236d45"
-  },
-  "backup/newdata/cluster_statistics.png": {
-    "mtime": 1785815097.8515756,
-    "seen": 1789463115.7797823,
-    "ast_hash": "d5f4c1611912de4082786ba6c9dc2067",
-    "semantic_hash": "d5f4c1611912de4082786ba6c9dc2067"
-  },
-  "backup/newdata/distortion_field.png": {
-    "mtime": 1785815097.8555744,
-    "seen": 1789463115.7797823,
-    "ast_hash": "7b266e72225ca79cc26562f7c9ac201c",
-    "semantic_hash": "7b266e72225ca79cc26562f7c9ac201c"
-  },
-  "backup/newdata/kmeans_clusters_2d.png": {
-    "mtime": 1785815097.8595753,
-    "seen": 1789463115.7797823,
-    "ast_hash": "c36bd527c65702f527989aa7042bcae1",
-    "semantic_hash": "c36bd527c65702f527989aa7042bcae1"
-  },
-  "backup/newdata/spatial_distribution.png": {
-    "mtime": 1785815097.8605745,
-    "seen": 1789463115.7797823,
-    "ast_hash": "9a4c4b634f1aac8c13d2e2e4da3e2d88",
-    "semantic_hash": "9a4c4b634f1aac8c13d2e2e4da3e2d88"
   }
 }
