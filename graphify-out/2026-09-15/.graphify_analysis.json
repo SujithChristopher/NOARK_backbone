@@ -1962,258 +1962,232 @@
       "trunkpose_dual_notebooks_verification_single_camera_rationale_329"
     ],
     "103": [
-      "agent_response_crystal",
-      "backup_example_dataset_recordings_screenshot_238",
-      "backup_example_dataset_recordings_screenshot_239"
-    ],
-    "104": [
       "backup_newdata_explore_chessboard_data",
       "backup_newdata_explore_chessboard_data_decode_numpy",
       "backup_newdata_explore_chessboard_data_rationale_5"
     ],
-    "105": [
+    "104": [
       "calibration_programs_board_creator_svgfig_rationale_407",
       "calibration_programs_board_creator_svgfig_svg_repr",
       "calibration_programs_board_creator_svgfig_svg_xml"
     ],
-    "106": [
+    "105": [
       "docs_stereo_camera_doc",
       "notebooks_calibration_mocap_aruco_comparison_img",
       "trunkpose_dual_notebooks_icp_theory_doc"
     ],
-    "107": [
+    "106": [
       "notebooks_calibration_output_index10_calibration_process",
       "notebooks_calibration_output_index10_data_structure",
       "notebooks_calibration_output_index10_output_visualization"
     ],
-    "108": [
+    "107": [
       "notebooks_calibration_output_index10_interp_func",
       "notebooks_calibration_output_index10_time_df",
       "scipy_interpolate_interp1d"
     ],
-    "109": [
+    "108": [
       "notebooks_calibration_output_index10_mocap_df",
       "notebooks_calibration_output_index10_rb_pos",
       "notebooks_calibration_output_index10_rb_quat"
     ],
-    "110": [
+    "109": [
       "notebooks_calibration_output_index10_rb_matrix",
       "notebooks_calibration_output_index10_transformed_rb_pos",
       "scipy_spatial_transform_rotation"
     ],
-    "111": [
+    "110": [
       "recorder_raw_april",
       "recorder_raw_april_convert_to_8bit",
       "recorder_raw_april_py_njit"
     ],
-    "112": [
+    "111": [
       "recorder_raw_preview2",
       "recorder_raw_preview2_convert_to_8bit",
       "recorder_raw_preview2_py_njit"
     ],
-    "113": [
+    "112": [
       "trunkpose_segtrain",
       "trunkpose_segtrain_main",
       "trunkpose_segtrain_rationale_1"
     ],
-    "114": [
+    "113": [
       "trunkpose_train",
       "trunkpose_train_main",
       "trunkpose_train_rationale_1"
     ],
-    "115": [
+    "114": [
       "calibration_programs_board_creator_svgfig_rationale_222",
       "calibration_programs_board_creator_svgfig_svg_eq"
     ],
-    "116": [
+    "115": [
       "calibration_programs_board_creator_svgfig_rationale_233",
       "calibration_programs_board_creator_svgfig_svg_ne"
     ],
-    "117": [
+    "116": [
       "calibration_programs_board_creator_svgfig_rationale_237",
       "calibration_programs_board_creator_svgfig_svg_append"
     ],
-    "118": [
+    "117": [
       "calibration_programs_board_creator_svgfig_rationale_247",
       "calibration_programs_board_creator_svgfig_svg_extend"
     ],
-    "119": [
+    "118": [
       "calibration_programs_board_creator_svgfig_rationale_303",
       "calibration_programs_board_creator_svgfig_svg_breadth_first"
     ],
-    "120": [
+    "119": [
       "helper_programs_distance_test",
       "helper_programs_distance_test_estimate_pose_single_markers"
     ],
-    "121": [
+    "120": [
       "main",
       "main_main"
     ],
-    "122": [
+    "121": [
       "notebooks_calib_programs_try_mp_stream",
       "notebooks_calib_programs_try_mp_stream_draw_landmarks_on_image"
     ],
-    "123": [
+    "122": [
       "notebooks_calibration_output_index10_calibration_plot",
       "notebooks_calibration_output_index10_html"
     ],
-    "124": [
+    "123": [
       "notebooks_calibration_output_index10_mocap_integration",
       "notebooks_calibration_output_index10_read_rigid_body_csv"
     ],
-    "125": [
+    "124": [
       "recorder_gui_init",
       "recorder_gui_init_rationale_1"
     ],
-    "126": [
+    "125": [
       "trunkpose_dual_notebooks_08_basis_check",
       "trunkpose_dual_notebooks_08_basis_check_main"
     ],
-    "127": [
+    "126": [
       "agents_md"
     ],
-    "128": [
+    "127": [
       "backup_charuco_board_6x4"
     ],
-    "129": [
+    "128": [
       "backup_estimator_charco_board"
     ],
-    "130": [
+    "129": [
       "backup_estimator_cv2test"
     ],
-    "131": [
-      "backup_newdata_calibration_visualization"
-    ],
-    "132": [
-      "backup_newdata_cluster_statistics"
-    ],
-    "133": [
-      "backup_newdata_distortion_field"
-    ],
-    "134": [
-      "backup_newdata_kmeans_clusters_2d"
-    ],
-    "135": [
-      "backup_newdata_spatial_distribution"
-    ],
-    "136": [
+    "130": [
       "backup_udp_protocol"
     ],
-    "137": [
+    "131": [
       "charuco_board_img"
     ],
-    "138": [
+    "132": [
       "claude_md"
     ],
-    "139": [
-      "clock_skew"
-    ],
-    "140": [
+    "133": [
       "concept_gpio_sync"
     ],
-    "141": [
+    "134": [
       "concept_icp_rigid_registration"
     ],
-    "142": [
+    "135": [
       "dual_recorder_outputs_camera_delay_raw"
     ],
-    "143": [
+    "136": [
       "dual_recorder_outputs_camera_delay_skew"
     ],
-    "144": [
+    "137": [
       "dual_recorder_outputs_offset_method"
     ],
-    "145": [
+    "138": [
       "dual_recorder_testing_json"
     ],
-    "146": [
+    "139": [
       "dual_recorder_testing_json2"
     ],
-    "147": [
+    "140": [
       "dual_recorder_tuning_camera"
     ],
-    "148": [
+    "141": [
       "dual_recorder_tuning_file"
     ],
-    "149": [
+    "142": [
       "flicker_compensation"
     ],
-    "150": [
-      "frame_sync_mechanism"
-    ],
-    "151": [
+    "143": [
       "helper_programs_file_integrity"
     ],
-    "152": [
+    "144": [
       "helper_programs_gpio_test"
     ],
-    "153": [
+    "145": [
       "helper_programs_picamv2"
     ],
-    "154": [
+    "146": [
       "jitter_model_apriltag12_vs_mocap_xyz"
     ],
-    "155": [
+    "147": [
       "jitter_model_jitter_metrics"
     ],
-    "156": [
+    "148": [
       "jitter_model_jitter_model_img"
     ],
-    "157": [
+    "149": [
       "jitter_model_metrics_vs_depth"
     ],
-    "158": [
+    "150": [
       "jitter_model_movement_smoothness_img"
     ],
-    "159": [
+    "151": [
       "jitter_model_rigidbody_calibration"
     ],
-    "160": [
+    "152": [
       "keyboard_txt"
     ],
-    "161": [
+    "153": [
       "notebooks_calibration_dual_dual160"
     ],
-    "162": [
+    "154": [
       "notebooks_calibration_output_index10_add_datetime_col"
     ],
-    "163": [
+    "155": [
       "notebooks_calibration_output_index10_aruco"
     ],
-    "164": [
+    "156": [
       "notebooks_calibration_output_index10_clean_transformed_data"
     ],
-    "165": [
+    "157": [
       "notebooks_init"
     ],
-    "166": [
+    "158": [
       "notebooks_pd_support2"
     ],
-    "167": [
+    "159": [
       "ov9281_sensor"
     ],
-    "168": [
+    "160": [
       "pkg_noark_backbone"
     ],
-    "169": [
+    "161": [
       "readme"
     ],
-    "170": [
+    "162": [
       "recorder_game"
     ],
-    "171": [
+    "163": [
       "recorder_raw_preview"
     ],
-    "172": [
+    "164": [
       "recorder_record_chessboard"
     ],
-    "173": [
+    "165": [
       "recorder_undistort_preview"
     ],
-    "174": [
+    "166": [
       "support_init"
     ],
-    "175": [
+    "167": [
       "trunkpose_dual_notebooks_09_mocap_angle"
     ]
   },
@@ -2332,7 +2306,7 @@
     "111": 0.6666666666666666,
     "112": 0.6666666666666666,
     "113": 0.6666666666666666,
-    "114": 0.6666666666666666,
+    "114": 1.0,
     "115": 1.0,
     "116": 1.0,
     "117": 1.0,
@@ -2385,15 +2359,7 @@
     "164": 1.0,
     "165": 1.0,
     "166": 1.0,
-    "167": 1.0,
-    "168": 1.0,
-    "169": 1.0,
-    "170": 1.0,
-    "171": 1.0,
-    "172": 1.0,
-    "173": 1.0,
-    "174": 1.0,
-    "175": 1.0
+    "167": 1.0
   },
   "gods": [
     {
@@ -2460,28 +2426,6 @@
       "why": "inferred connection - not explicitly stated in source; crosses file types (doc \u2194 image); connects across different repos/directories"
     },
     {
-      "source": "Motive RigidBody Marker View",
-      "target": "Crystal Agent Response",
-      "source_files": [
-        "backup/example_dataset/recordings/Screenshot (238).png",
-        "agent_response/crystal.md"
-      ],
-      "confidence": "INFERRED",
-      "relation": "references",
-      "why": "inferred connection - not explicitly stated in source; crosses file types (doc \u2194 image); connects across different repos/directories"
-    },
-    {
-      "source": "Motive Live Tracking View",
-      "target": "Crystal Agent Response",
-      "source_files": [
-        "backup/example_dataset/recordings/Screenshot (239).png",
-        "agent_response/crystal.md"
-      ],
-      "confidence": "INFERRED",
-      "relation": "references",
-      "why": "inferred connection - not explicitly stated in source; crosses file types (doc \u2194 image); connects across different repos/directories"
-    },
-    {
       "source": "save_toml()",
       "target": "Path",
       "source_files": [
@@ -2502,10 +2446,32 @@
       "confidence": "INFERRED",
       "relation": "uses",
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "main()",
+      "target": "TemporalDepthSmoother",
+      "source_files": [
+        "trunkpose/dual_notebooks/upperlimb_3d_kinematics.py",
+        "notebooks/calibration/dual_notebooks/upperlimb_3d_analysis.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "Two-pass calibration: first pass selects frames below rms_percentile, second\u2026",
+      "target": "_calibrate_filtered()",
+      "source_files": [
+        "notebooks/calibration/dual_notebooks/02_dual_calibration.py",
+        "trunkpose/dual_notebooks/02_dual_calibration.py"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "rationale_for",
+      "why": "connects across different repos/directories; peripheral node `Two-pass calibration: first pass selects frames below rms_percentile, second\u2026` unexpectedly reaches hub `_calibrate_filtered()`"
     }
   ],
   "tokens": {
-    "input": 23087,
-    "output": 2239
+    "input": 252655,
+    "output": 6484
   }
 }
