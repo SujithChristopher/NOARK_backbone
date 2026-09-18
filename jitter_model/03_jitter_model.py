@@ -33,6 +33,8 @@ from scipy.spatial.transform import Rotation, Slerp
 import toml
 from tqdm.auto import tqdm
 
+from support import pd_support
+
 
 # %% Paths and experiment settings
 try:
@@ -43,37 +45,50 @@ except NameError:  # running cell-by-cell
         NOTEBOOK_DIR = NOTEBOOK_DIR / "jitter_model"
 
 PROJECT_ROOT = NOTEBOOK_DIR.parent
-RECORDING_DIR = PROJECT_ROOT / "data" / "radxa" / "jitter_test"
-MOCAP_CSV = RECORDING_DIR / "jitter_test.csv"
+RECORDING_DIR = (
+    PROJECT_ROOT / "data" / "dome" / "sep15_26" / "dome_random_movement_sep15_26"
+)
+MOCAP_CSV = RECORDING_DIR / f"{RECORDING_DIR.name}.csv"
 STEREO_TOML = (
     PROJECT_ROOT
     / "data"
     / "calibration"
     / "dual_160"
-    / "radxa_calib_parallel"
+    / "calib_radxa_dual_sep15"
     / "stereo_calibration.toml"
 )
-RIGIDBODY_TOML = NOTEBOOK_DIR / "rigidbody_calibration.toml"
-DETECTION_CACHE = NOTEBOOK_DIR / "jitter_detections.pkl"
+# Notebook 02 writes its per-take outputs beside the recording, so read them
+# from there and keep every artefact of this take in one directory.
+OUTPUT_DIR = RECORDING_DIR
+RIGIDBODY_TOML = OUTPUT_DIR / "rigidbody_calibration.toml"
+DETECTION_CACHE = OUTPUT_DIR / "jitter_detections.pkl"
 
-SUMMARY_CSV = NOTEBOOK_DIR / "jitter_summary.csv"
-DISTANCE_CSV = NOTEBOOK_DIR / "jitter_vs_distance.csv"
-SMOOTHNESS_CSV = NOTEBOOK_DIR / "movement_smoothness.csv"
-DEPTH_METRICS_CSV = NOTEBOOK_DIR / "metrics_vs_depth.csv"
-ALIGNMENT_TOML = NOTEBOOK_DIR / "jitter_alignment.toml"
-OUTPUT_FIGURE = NOTEBOOK_DIR / "jitter_model.png"
-SMOOTHNESS_FIGURE = NOTEBOOK_DIR / "movement_smoothness.png"
-DEPTH_FIGURE = NOTEBOOK_DIR / "metrics_vs_depth.png"
+SUMMARY_CSV = OUTPUT_DIR / "jitter_summary.csv"
+DISTANCE_CSV = OUTPUT_DIR / "jitter_vs_distance.csv"
+SMOOTHNESS_CSV = OUTPUT_DIR / "movement_smoothness.csv"
+DEPTH_METRICS_CSV = OUTPUT_DIR / "metrics_vs_depth.csv"
+ALIGNMENT_TOML = OUTPUT_DIR / "jitter_alignment.toml"
+OUTPUT_FIGURE = OUTPUT_DIR / "jitter_model.png"
+SMOOTHNESS_FIGURE = OUTPUT_DIR / "movement_smoothness.png"
+DEPTH_FIGURE = OUTPUT_DIR / "metrics_vs_depth.png"
 
 # Fixed nested sets make marker-count comparisons reproducible. Change these
 # tuples to test a different physical subset without changing the estimator.
+# Tag 1 is this take's reference; 4 and 3 are the next best co-visible tags.
 MARKER_SETS = {
-    1: (12,),
-    2: (12, 20),
-    3: (4, 12, 20),
+    1: (1,),
+    2: (1, 4),
+    3: (1, 3, 4),
 }
-DISTANCE_EDGES_M = np.asarray([0.25, 0.40, 0.55, 0.70, 0.90])
-DEPTH_EDGES_M = np.arange(0.25, 0.901, 0.05)
+
+# Motive body frame built from the labelled markers rather than the solved
+# rigid-body quaternion: x = m1 - m2, z = m3 - m1 (orthogonalized), origin = m1.
+MOCAP_BODY_X_FROM = ("m1", "m2")
+MOCAP_BODY_Z_FROM = ("m3", "m1")
+MOCAP_BODY_ORIGIN = "m1"
+# Bin edges cover this take's observed working range (printed below).
+DISTANCE_EDGES_M = np.asarray([0.15, 0.25, 0.35, 0.45, 0.55, 0.70])
+DEPTH_EDGES_M = np.arange(0.10, 0.601, 0.05)
 STATIC_MOCAP_STEP_M = 0.003
 MAX_PAIR_FRACTION_OF_FRAME = 0.55
 MIN_STATIC_PAIRS = 10
@@ -258,8 +273,8 @@ def mono_board_pose(frame_detections, marker_ids, camera_name="cam0"):
         rmse_px, rvec, tvec = min(candidates, key=lambda item: item[0])
     else:
         # The two-tag subset is nearly planar and ITERATIVE can otherwise land
-        # on its mirrored local solution. Seed it with tag 12's pose from this
-        # same image; this is geometric initialization, not temporal filtering.
+        # on its mirrored local solution. Seed it with the reference tag's pose
+        # from this same image: geometric initialization, not temporal filtering.
         reference_initial = mono_board_pose(
             frame_detections, (REFERENCE_ID,), camera_name
         )
@@ -407,32 +422,49 @@ for method, table in method_tables.items():
 
 
 # %% Motive loader and continuous interpolation
-def read_rigid_body_csv(path):
-    raw_header = pd.read_csv(path, nrows=0, dtype=str).columns.tolist()
-    start_index = raw_header.index("Capture Start Time")
-    capture_start = datetime.strptime(
-        raw_header[start_index + 1], "%Y-%m-%d %I.%M.%S.%f %p"
+def read_mocap_body(path):
+    """Load a Motive take and rebuild its body frame from labelled markers.
+
+    Parsing and the marker-edge basis both come from ``support.pd_support`` so
+    every script in the repository reads Motive exports the same way. The
+    rotation is orthonormalized from two measured marker edges rather than
+    taken from Motive's solved quaternion, and the body origin is
+    ``MOCAP_BODY_ORIGIN``. The constant offset from that origin to the
+    reference tag centre is fitted below, so only the axis convention matters.
+    """
+    table, capture_start = pd_support.read_rigid_body_csv(path)
+    positions, rotations = pd_support.rigid_body_marker_frames(
+        table,
+        x_from=MOCAP_BODY_X_FROM,
+        z_from=MOCAP_BODY_Z_FROM,
+        origin=MOCAP_BODY_ORIGIN,
     )
-    table = pd.read_csv(path, skiprows=6)
-    columns = {
-        "Time (Seconds)": "seconds",
-        "X": "qx",
-        "Y": "qy",
-        "Z": "qz",
-        "W": "qw",
-        "X.1": "px",
-        "Y.1": "py",
-        "Z.1": "pz",
-    }
-    missing = [column for column in columns if column not in table]
-    if missing:
-        raise ValueError(f"Unexpected Motive CSV layout; missing {missing}")
-    result = table[list(columns)].rename(columns=columns).apply(pd.to_numeric, errors="coerce")
-    result = result.dropna().drop_duplicates("seconds").sort_values("seconds")
-    return result, capture_start
+    seconds = table["seconds"].to_numpy(dtype=np.float64)
+    finite = (
+        np.isfinite(seconds)
+        & np.isfinite(positions).all(axis=1)
+        & np.isfinite(rotations).all(axis=(1, 2))
+    )
+    dropped = int((~finite).sum())
+    if dropped:
+        print(f"Dropped {dropped} mocap frames with missing markers")
+    quaternions = Rotation.from_matrix(rotations[finite]).as_quat()
+    result = pd.DataFrame(
+        {
+            "seconds": seconds[finite],
+            "qx": quaternions[:, 0],
+            "qy": quaternions[:, 1],
+            "qz": quaternions[:, 2],
+            "qw": quaternions[:, 3],
+            "px": positions[finite, 0],
+            "py": positions[finite, 1],
+            "pz": positions[finite, 2],
+        }
+    )
+    return result.drop_duplicates("seconds").sort_values("seconds"), capture_start
 
 
-mocap, mocap_capture_start = read_rigid_body_csv(MOCAP_CSV)
+mocap, mocap_capture_start = read_mocap_body(MOCAP_CSV)
 mocap_times = mocap["seconds"].to_numpy(dtype=np.float64)
 mocap_positions = mocap[["px", "py", "pz"]].to_numpy(dtype=np.float64)
 mocap_quaternions = mocap[["qx", "qy", "qz", "qw"]].to_numpy(
@@ -514,7 +546,13 @@ alignment_payload = {
     "alignment": {
         "rotation_mocap_world_to_cam0": WORLD_TO_CAMERA.as_matrix().tolist(),
         "translation_mocap_world_to_cam0_m": WORLD_TO_CAMERA_T.tolist(),
-        "tag12_offset_in_mocap_body_m": TAG_OFFSET_BODY.tolist(),
+        "reference_tag_offset_in_mocap_body_m": TAG_OFFSET_BODY.tolist(),
+        "reference_tag_id": REFERENCE_ID,
+        "mocap_body_definition": (
+            f"x={MOCAP_BODY_X_FROM[0]}-{MOCAP_BODY_X_FROM[1]}, "
+            f"z={MOCAP_BODY_Z_FROM[0]}-{MOCAP_BODY_Z_FROM[1]} (orthogonalized), "
+            f"origin={MOCAP_BODY_ORIGIN}"
+        ),
     },
 }
 with ALIGNMENT_TOML.open("w", encoding="utf-8") as stream:
@@ -540,6 +578,20 @@ for method in evaluation_tables:
     evaluation_tables[method] = evaluation_tables[method].loc[
         evaluation_tables[method]["frame"] >= CALIBRATION_END_FRAME
     ].reset_index(drop=True)
+
+
+# The distance and depth bin edges below must cover this take; print the
+# observed range so an empty curve is never mistaken for a missing method.
+pooled_depth = np.concatenate(
+    [table["depth_m"].to_numpy() for table in evaluation_tables.values()]
+)
+pooled_distance = np.concatenate(
+    [table["distance_m"].to_numpy() for table in evaluation_tables.values()]
+)
+print(
+    f"Held-out mocap depth {pooled_depth.min():.3f}-{pooled_depth.max():.3f} m, "
+    f"distance {pooled_distance.min():.3f}-{pooled_distance.max():.3f} m"
+)
 
 
 # %% Fair comparison on frames available to every method
@@ -615,7 +667,7 @@ print(
 
 # %% Dynamic movement smoothness on the same held-out common frames
 def aligned_mocap_at_times(query_times):
-    """Return the tag-12 mocap reference in cam0 coordinates."""
+    """Return the reference-tag mocap position in cam0 coordinates."""
     positions, orientations = interpolate_mocap(query_times)
     tag_world = positions + orientations.apply(TAG_OFFSET_BODY)
     return WORLD_TO_CAMERA.apply(tag_world) + WORLD_TO_CAMERA_T
