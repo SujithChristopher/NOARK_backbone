@@ -49,14 +49,14 @@ except NameError:  # running cell-by-cell in an interactive kernel
 
 PROJECT_ROOT = NOTEBOOK_DIR.parent
 RECORDING_DIR = (
-    PROJECT_ROOT / "data" / "dome" / "sep15_26" / "dome_random_movement_sep15_26"
+    PROJECT_ROOT / "data" / "dome" / "sep18_26" / "dome_rb_def"
 )
 CALIBRATION_TOML = (
     PROJECT_ROOT
     / "data"
     / "calibration"
     / "dual_160"
-    / "calib_radxa_dual_sep15"
+    / "calib_radxa_sep18_26"
     / "stereo_calibration.toml"
 )
 

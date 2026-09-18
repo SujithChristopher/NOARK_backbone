@@ -36,7 +36,7 @@ project_root = Path(__file__).parents[2]
 data_root = "data"
 recording_type = "calibration"
 camera_type = "dual_160"
-calib_folder_name = "calib_radxa_dual_sep15"
+calib_folder_name = "calib_radxa_sep18_26"
 
 calib_data_folder = os.path.join(
     project_root, data_root, recording_type, camera_type, calib_folder_name

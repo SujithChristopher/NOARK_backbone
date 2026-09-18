@@ -33,7 +33,7 @@ PROJECT_ROOT = Path(__file__).parents[2]
 CALIB_DATA = (
     PROJECT_ROOT
     / "data" / "calibration" / "dual_160"
-    / "calib_radxa_dual_sep15"
+    / "calib_radxa_sep18_26"
 )
 corners_cam0_pth = CALIB_DATA / "chessb_corners_cam0_frame.pkl"
 corners_cam1_pth = CALIB_DATA / "chessb_corners_cam1_frame.pkl"
