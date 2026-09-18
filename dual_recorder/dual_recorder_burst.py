@@ -19,6 +19,8 @@ in analysis and the file layout stays the same as the continuous recorder's:
                             sensor_ns, seq, burst] - burst is the added field
     sync_events.msgpack     every mocap trigger edge, [timestamp_ns, value,
                             line_seqno], on CLOCK_MONOTONIC like sensor_ns
+    phase_log.msgpack       one row per phase measurement, [monotonic_ns,
+                            phase_us, jitter_us, drift_ppm, n, nudged]
     bursts.json             per-burst manifest (counts, wall times, phase,
                             mono_start_ns/mono_end_ns bounds, sync edge count)
 
@@ -31,6 +33,15 @@ sensor_ns, so pulses and frames compare directly.
 Pairing across the two cameras is still done on sensor_ns, exactly as before -
 never on frame index, and now never on burst index either, because a burst holds
 the same *count* on both cameras but not necessarily the same instants.
+
+The manifest keeps one phase figure per burst, which is what you want when
+judging a pose; phase_log.msgpack keeps the once-a-second series behind it,
+which is what you want when judging the session. That series matters more here
+than in the continuous recorder: this script aligns the sensors once at startup
+and never tops the alignment up, so across a long session the ~50 ppm crystal
+difference walks the phase out at ~3 ms/minute. Rows carry no burst index - a
+row belongs to whichever burst's mono_start_ns/mono_end_ns bracket its
+monotonic_ns - and `nudged` is always 0, since nothing nudges mid-session.
 
 Usage:
     uv run python dual_recorder/dual_recorder_burst.py -f static -n trial1 -c True
@@ -61,6 +72,7 @@ from dual_recorder_rcam import (  # noqa: E402 - needs the sys.path line above
     DRIVER_MODULE,
     MEDIA_NODE,
     KeyReader,
+    PhaseLog,
     SyncLine,
     align_cameras,
     driver_loaded,
@@ -240,6 +252,7 @@ class BurstRecorder:
         self.frame_sync = frame_sync
         self.phase_tol_us = phase_tol_us
         self.bursts: list[dict] = []
+        self.phase_log = PhaseLog()
 
     def _phase_now(self, phase_sync, workers):
         if phase_sync is None:
@@ -365,6 +378,7 @@ class BurstRecorder:
                         time.sleep(0.005)
                     got = [w.written - b for w, b in zip(workers, before)]
                     report = self._phase_now(phase_sync, workers)
+                    self.phase_log.add(report)
                     active["seconds"] = round(time.monotonic() - active.pop("_t0"), 3)
                     active["mono_end_ns"] = time.monotonic_ns()
                     inside = [
@@ -409,6 +423,7 @@ class BurstRecorder:
                     t_status = now
                     state = f"BURST {burst_no}" if active is not None else "idle "
                     report = self._phase_now(phase_sync, workers)
+                    self.phase_log.add(report)
                     phase = (
                         f"  phase={report.phase_us:+6.0f}us"
                         if report is not None
@@ -446,6 +461,7 @@ class BurstRecorder:
                 )
                 if w.error is not None:
                     print(f"{label} stopped on error: {w.error!r}")
+            self.phase_log.add(self._phase_now(phase_sync, workers))
             self.sync.close()
             if self.record_camera and self.bursts:
                 events_path = self.sync.write_events(self._pth)
@@ -456,6 +472,11 @@ class BurstRecorder:
                     )
                 else:
                     print("sync: no edge timestamps (edge detection unavailable)")
+                phase_path = self.phase_log.write(self._pth)
+                if phase_path is not None:
+                    print(f"phase: {self.phase_log.count} measurements -> {phase_path}")
+                else:
+                    print("phase: nothing measured (no frame sync on this backend)")
                 manifest = os.path.join(self._pth, "bursts.json")
                 with open(manifest, "w") as fh:
                     json.dump(
