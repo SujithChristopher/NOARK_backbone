@@ -7,6 +7,8 @@ come from rcam, which drives the CAMSS RDI over V4L2 directly:
     cam{0,1}_frame.msgpack      raw HxW uint8 mono frames, msgpack-numpy packed
     cam{0,1}_timestamp.msgpack  one row per frame:
         [sync, wall_clock_iso, monotonic_ns, sensor_ns, sequence]
+    phase_log.msgpack           one row per phase measurement:
+        [monotonic_ns, phase_us, jitter_us, drift_ppm, n, nudged]
 
 The notebooks in trunkpose/dual_notebooks read column 0 as the GPIO sync bit and
 column 1 as the frame time, so both stay compatible; columns 3 and 4 are new.
@@ -26,6 +28,10 @@ rcam.FrameSync walks one sensor's phase onto the other by briefly stretching its
 vertical blanking, which brings them to ~100 us. The crystals still differ by
 ~50 ppm (~3 ms/minute), so the alignment is topped up during the recording from
 the timestamps as they arrive. Pass --no-frame-sync to record free-running.
+
+Every phase measurement - one a second, plus one for each correction applied -
+goes to phase_log.msgpack, so how well the two cameras tracked each other is a
+property of the recording rather than of whoever was watching the terminal.
 
 The ov9282 driver (it covers the OV9281) is in-tree as of kernel 7.0.11, and
 udev autoloads it off the compatible string once the boot DTB declares the
@@ -396,6 +402,81 @@ class SyncLine:
         return int(self._read())
 
 
+class PhaseLog:
+    """The inter-camera phase measurements, kept instead of only printed.
+
+    The status loop already recomputes the phase once a second from the sensor
+    timestamps; it printed the offset, threw away the jitter and drift that came
+    with it, and the whole lot scrolled out of the terminal. The phase itself is
+    recoverable offline from the sensor_ns columns, but the corrections are not:
+    a nudge appears in the frame timestamps only as one stretched interval with
+    no sequence gap, which is not distinguishable after the fact from the sensor
+    hiccuping. So the measurements are kept, the ones that drove a correction
+    are tagged, and both are written at teardown.
+
+    Record layout, on the same clock and in the same units as the rest:
+        [monotonic_ns, phase_us, jitter_us, drift_ppm, n, nudged]
+
+    monotonic_ns is CLOCK_MONOTONIC, shared with the frames' sensor_ns and the
+    sync edges, so a phase row sits against a frame by direct comparison.
+    phase_us is the adjusted camera's offset from the reference, negative when
+    it exposes earlier, wrapped to +/- half a frame period. jitter_us and
+    drift_ppm are that measurement's own spread and slope, n the frame pairs
+    behind it, and nudged is 1 on the rows where a correction was applied.
+
+    A tick a second plus a nudge every 20-odd seconds is a few thousand rows for
+    a long session, so like the sync edges they are held in memory until the end.
+    """
+
+    def __init__(self):
+        self._records: list[tuple[int, float, float, float, int, int]] = []
+        self._lock = threading.Lock()
+
+    def add(self, report, nudged: bool = False) -> None:
+        """Keep one measurement; ignores None so callers need not check first.
+
+        Called from the status loop and from the resync thread, hence the lock.
+        """
+        if report is None:
+            return
+        with self._lock:
+            self._records.append(
+                (
+                    time.monotonic_ns(),
+                    float(report.phase_us),
+                    float(report.jitter_us),
+                    float(report.drift_ppm),
+                    int(report.n),
+                    int(nudged),
+                )
+            )
+
+    def records(self) -> list[tuple[int, float, float, float, int, int]]:
+        with self._lock:
+            return list(self._records)
+
+    @property
+    def count(self) -> int:
+        with self._lock:
+            return len(self._records)
+
+    @property
+    def nudge_count(self) -> int:
+        with self._lock:
+            return sum(r[5] for r in self._records)
+
+    def write(self, out_dir: str, filename: str = "phase_log.msgpack"):
+        """Write the measurements, one msgpack record each, as documented above."""
+        records = self.records()
+        if not out_dir or not records:
+            return None
+        path = os.path.join(out_dir, filename)
+        with open(path, "wb") as fh:
+            for record in records:
+                fh.write(mp.packb(list(record)))
+        return path
+
+
 class CameraWorker(threading.Thread):
     """Captures from one camera as fast as the sensor delivers frames.
 
@@ -683,6 +764,7 @@ class RecordData:
         self.resync_every_s = resync_every_s
         self.resync_threshold_us = resync_threshold_us
         self.sync = SyncLine(sync_chip, sync_pin)
+        self.phase_log = PhaseLog()
 
     def _phase_now(self, phase_sync, workers):
         """Current phase from the timestamps the workers have already recorded.
@@ -717,6 +799,7 @@ class RecordData:
                     stamps[0], stamps[1], self.resync_threshold_us
                 )
                 if report is not None:
+                    self.phase_log.add(report, nudged=True)
                     print(f"\n  resync: phase was {report.phase_us:+.0f} us, nudged")
             except Exception as exc:  # noqa: BLE001 - a failed nudge must not end the take
                 print(f"\n! resync failed: {exc!r}")
@@ -804,6 +887,7 @@ class RecordData:
                     t_status = now
                     state = "REC" if start_evt.is_set() else "live"
                     report = self._phase_now(phase_sync, workers)
+                    self.phase_log.add(report)
                     phase = (
                         f"  phase={report.phase_us:+6.0f}us"
                         if report is not None
@@ -851,6 +935,7 @@ class RecordData:
                 if w.error is not None:
                     print(f"{label} stopped on error: {w.error!r}")
             report = self._phase_now(phase_sync, workers)
+            self.phase_log.add(report)
             if report is not None:
                 print(
                     f"final phase {report.phase_us:+.0f} us "
@@ -867,6 +952,14 @@ class RecordData:
                     )
                 else:
                     print("sync: no edge timestamps (edge detection unavailable)")
+                phase_path = self.phase_log.write(self._pth)
+                if phase_path is not None:
+                    print(
+                        f"phase: {self.phase_log.count} measurements, "
+                        f"{self.phase_log.nudge_count} corrections -> {phase_path}"
+                    )
+                else:
+                    print("phase: nothing measured (no frame sync on this backend)")
                 print(f"Saved to {self._pth}")
 
     def run(self):
