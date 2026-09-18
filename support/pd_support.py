@@ -8,6 +8,8 @@ import pandas as pd
 from more_itertools import locate
 from scipy.interpolate import interp1d
 
+from support import ar_support
+
 
 def read_df_csv(filename, offset=2):
     """
@@ -365,3 +367,40 @@ def get_rb_marker_name(val):
     }
 
     return _val
+
+
+def marker_xyz(df, marker, solved=False):
+    """Return the (N, 3) track of one marker from :func:`read_rigid_body_csv`.
+
+    marker: either ``"m1"`` or just ``1``.
+    solved: read the ``rb_marker_*`` columns (Motive's solved model markers)
+            instead of the labelled raw markers.
+    """
+    name = marker if isinstance(marker, str) else f"m{marker}"
+    prefix = f"rb_marker_{name}" if solved else name
+    return df[[f"{prefix}_x", f"{prefix}_y", f"{prefix}_z"]].to_numpy(dtype=np.float64)
+
+
+def rigid_body_marker_frames(
+    df, x_from=("m1", "m2"), z_from=("m3", "m1"), origin="m1", solved=False
+):
+    """Per-frame body origin and rotation built from three labelled markers.
+
+    x_from/z_from: ``(head, tail)`` marker pairs, so ``("m1", "m2")`` means the
+                   body x axis points along ``m1 - m2``. The z edge only fixes
+                   the roll about x; it is orthogonalized, never assumed square.
+    origin:        marker used as the body origin.
+    solved:        use Motive's solved ``rb_marker_*`` columns. Off by default:
+                   the solver can re-lock at a ghost pose after an occlusion,
+                   while the labelled markers are direct measurements.
+
+    Returns ``(positions (N, 3), rotations (N, 3, 3))`` with columns
+    ``[x, y, z]``; frames with a missing marker come back as NaN.
+    """
+    x_head, x_tail = x_from
+    z_head, z_tail = z_from
+    x_vectors = marker_xyz(df, x_head, solved) - marker_xyz(df, x_tail, solved)
+    z_vectors = marker_xyz(df, z_head, solved) - marker_xyz(df, z_tail, solved)
+    return marker_xyz(df, origin, solved), ar_support.rotmat_from_x_z(
+        x_vectors, z_vectors
+    )

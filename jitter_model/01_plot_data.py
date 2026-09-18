@@ -1,5 +1,5 @@
 # %% [markdown]
-# # AprilTag 12 vs mocap rigid-body trajectory
+# # AprilTag vs mocap rigid-body trajectory
 #
 # This notebook detects a 50 mm AprilTag in the cam0 recording, synchronizes the
 # camera and Motive timelines using the GPIO pulse, jointly estimates the
@@ -14,7 +14,6 @@
 # %% Imports
 from datetime import datetime
 from pathlib import Path
-import sys
 import warnings
 
 import cv2
@@ -29,6 +28,8 @@ from scipy.spatial.transform import Rotation, Slerp
 import toml
 from tqdm.auto import tqdm
 
+from support import pd_support
+
 
 # %% Paths and settings
 try:
@@ -39,22 +40,31 @@ except NameError:  # running cells in an interactive kernel
         NOTEBOOK_DIR = NOTEBOOK_DIR / "jitter_model"
 
 PROJECT_ROOT = NOTEBOOK_DIR.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
-RECORDING_DIR = PROJECT_ROOT / "data" / "radxa" / "jitter_test"
-MOCAP_CSV = RECORDING_DIR / "jitter_test.csv"
+RECORDING_DIR = (
+    PROJECT_ROOT / "data" / "dome" / "sep15_26" / "dome_random_movement_sep15_26"
+)
+MOCAP_CSV = RECORDING_DIR / f"{RECORDING_DIR.name}.csv"
 CALIBRATION_TOML = (
     PROJECT_ROOT
     / "data"
     / "calibration"
     / "dual_160"
-    / "radxa_calib_parallel"
+    / "calib_radxa_dual_sep15"
     / "stereo_calibration.toml"
 )
+# Outputs live beside the recording so each take keeps its own artefacts.
+OUTPUT_DIR = RECORDING_DIR
 
 CAMERA_NAME = "cam0"
-TAG_ID = 12
+TAG_ID = 1
 TAG_SIZE_M = 0.05
+
+# Motive body frame built from the labelled markers rather than the solved
+# rigid-body quaternion: x = m1 - m2, z = m3 - m1 (orthogonalized), origin = m1.
+MOCAP_BODY_X_FROM = ("m1", "m2")
+MOCAP_BODY_Z_FROM = ("m3", "m1")
+MOCAP_BODY_ORIGIN = "m1"
 
 # Use None for the complete recording. A small integer is useful while editing.
 MAX_FRAMES = None
@@ -66,7 +76,7 @@ MAX_FRAMES = None
 ALIGNMENT_FIT_FRACTION = 0.5
 
 # Set to None for notebook-only display.
-SAVE_FIGURE = NOTEBOOK_DIR / "apriltag12_vs_mocap_xyz.png"
+SAVE_FIGURE = OUTPUT_DIR / f"apriltag{TAG_ID}_vs_mocap_xyz.png"
 
 # False plots the aligned positions directly. True median-centers each system so
 # small jitter is easier to see independent of any remaining alignment bias.
@@ -75,36 +85,38 @@ PLOT_AS_DISPLACEMENT = False
 
 # %% Motive CSV loader
 def read_rigid_body_csv(path):
-    """Read a Motive rigid-body CSV using this repository's export layout."""
-    raw_header = pd.read_csv(path, nrows=0, dtype=str).columns.tolist()
-    try:
-        start_index = raw_header.index("Capture Start Time")
-    except ValueError as exc:
-        raise ValueError(f"No 'Capture Start Time' field in {path}") from exc
-    capture_start = datetime.strptime(
-        raw_header[start_index + 1], "%Y-%m-%d %I.%M.%S.%f %p"
+    """Read a Motive take and rebuild its body frame from labelled markers.
+
+    Parsing and the marker-edge basis come from ``support.pd_support`` so every
+    script in the repository reads Motive exports the same way. The orientation
+    is orthonormalized from two measured marker edges instead of Motive's solved
+    quaternion, whose rigid body can re-lock at a ghost pose after an occlusion;
+    ``rb_pos_*`` is therefore the ``MOCAP_BODY_ORIGIN`` marker. The constant
+    offset from that origin to the tag centre is fitted further below.
+    """
+    table, capture_start = pd_support.read_rigid_body_csv(path)
+    positions, rotations = pd_support.rigid_body_marker_frames(
+        table,
+        x_from=MOCAP_BODY_X_FROM,
+        z_from=MOCAP_BODY_Z_FROM,
+        origin=MOCAP_BODY_ORIGIN,
     )
-
-    # Six metadata/header lines precede the final column-name row in this Motive
-    # 1.23 export, so that seventh line remains pandas' header.
-    table = pd.read_csv(path, skiprows=6)
-    rigid_body_columns = {
-        "Frame": "frame",
-        "Time (Seconds)": "seconds",
-        "X": "rb_ang_x",
-        "Y": "rb_ang_y",
-        "Z": "rb_ang_z",
-        "W": "rb_ang_w",
-        "X.1": "rb_pos_x",
-        "Y.1": "rb_pos_y",
-        "Z.1": "rb_pos_z",
-    }
-    missing = [name for name in rigid_body_columns if name not in table.columns]
-    if missing:
-        raise ValueError(f"Unexpected Motive CSV layout; missing columns: {missing}")
-
-    rigid_body = table[list(rigid_body_columns)].rename(columns=rigid_body_columns)
-    rigid_body = rigid_body.apply(pd.to_numeric, errors="coerce")
+    finite = np.isfinite(positions).all(axis=1) & np.isfinite(rotations).all(axis=(1, 2))
+    quaternions = np.full((len(table), 4), np.nan, dtype=np.float64)
+    quaternions[finite] = Rotation.from_matrix(rotations[finite]).as_quat()
+    rigid_body = pd.DataFrame(
+        {
+            "frame": table["frame"].to_numpy(),
+            "seconds": table["seconds"].to_numpy(dtype=np.float64),
+            "rb_ang_x": quaternions[:, 0],
+            "rb_ang_y": quaternions[:, 1],
+            "rb_ang_z": quaternions[:, 2],
+            "rb_ang_w": quaternions[:, 3],
+            "rb_pos_x": positions[:, 0],
+            "rb_pos_y": positions[:, 1],
+            "rb_pos_z": positions[:, 2],
+        }
+    )
     return rigid_body, capture_start
 
 
@@ -517,7 +529,6 @@ if SAVE_FIGURE is not None:
     save_path = Path(SAVE_FIGURE)
     if not save_path.is_absolute():
         save_path = PROJECT_ROOT / save_path
-    save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_path, dpi=180, bbox_inches="tight")
     print(f"Saved plot -> {save_path}")
 

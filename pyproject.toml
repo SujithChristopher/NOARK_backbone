@@ -52,3 +52,14 @@ torchvision = [
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
+
+
+# Makes the shared `support` package importable from any script in the repo
+# (uv installs the project itself in editable mode). Everything else stays a
+# plain script run from the working tree.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["support"]

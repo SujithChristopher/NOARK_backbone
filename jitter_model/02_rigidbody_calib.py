@@ -7,6 +7,9 @@
 #
 # Outputs:
 #
+# All outputs are written into the recording directory (`OUTPUT_DIR`), not the
+# script directory:
+#
 # - `rigidbody_calibration.toml`: marker-to-tag12 rigid transforms
 # - `jitter_detections.pkl`: reusable sub-pixel corner detections for both cameras
 # - `rigidbody_calibration.png`: geometry and held-out validation plots
@@ -45,26 +48,35 @@ except NameError:  # running cell-by-cell in an interactive kernel
         NOTEBOOK_DIR = NOTEBOOK_DIR / "jitter_model"
 
 PROJECT_ROOT = NOTEBOOK_DIR.parent
-RECORDING_DIR = PROJECT_ROOT / "data" / "radxa" / "jitter_test"
+RECORDING_DIR = (
+    PROJECT_ROOT / "data" / "dome" / "sep15_26" / "dome_random_movement_sep15_26"
+)
 CALIBRATION_TOML = (
     PROJECT_ROOT
     / "data"
     / "calibration"
     / "dual_160"
-    / "radxa_calib_parallel"
+    / "calib_radxa_dual_sep15"
     / "stereo_calibration.toml"
 )
 
-DETECTION_CACHE = NOTEBOOK_DIR / "jitter_detections.pkl"
-RIGIDBODY_TOML = NOTEBOOK_DIR / "rigidbody_calibration.toml"
-OUTPUT_FIGURE = NOTEBOOK_DIR / "rigidbody_calibration.png"
+# Outputs live next to the recording so each take keeps its own calibration.
+OUTPUT_DIR = RECORDING_DIR
+DETECTION_CACHE = OUTPUT_DIR / "jitter_detections.pkl"
+RIGIDBODY_TOML = OUTPUT_DIR / "rigidbody_calibration.toml"
+OUTPUT_FIGURE = OUTPUT_DIR / "rigidbody_calibration.png"
 
 CAMERA_NAMES = ("cam0", "cam1")
-MARKER_IDS = (4, 8, 12, 14, 20)
-REFERENCE_ID = 12
+# Detected and cached for every take; the rigid body is solved from the subset
+# that is actually co-visible with the reference tag in this recording.
+# Every tag the dome can show; markers that lack enough co-visible views with
+# the reference are dropped from MARKER_IDS after the pairing step below.
+DETECT_MARKER_IDS = tuple(range(1, 22))
+MARKER_IDS = DETECT_MARKER_IDS
+REFERENCE_ID = 1
 TAG_SIZE_M = 0.05
 
-CALIBRATION_FRACTION = 0.30
+CALIBRATION_FRACTION = 0.50
 MAX_POSE_REPROJECTION_RMSE_PX = 1.5
 MIN_SAMPLES_PER_MARKER = 20
 REBUILD_DETECTION_CACHE = False
@@ -155,7 +167,7 @@ def detect_camera(camera_name, max_frames=None):
             if ids is not None:
                 for marker_id, marker_corners in zip(ids.ravel(), corners):
                     marker_id = int(marker_id)
-                    if marker_id not in MARKER_IDS:
+                    if marker_id not in DETECT_MARKER_IDS:
                         continue
                     refined = np.asarray(marker_corners, dtype=np.float32).reshape(
                         -1, 1, 2
@@ -180,7 +192,7 @@ def detect_camera(camera_name, max_frames=None):
 def cache_is_compatible(cache):
     return (
         cache.get("version") == 1
-        and tuple(cache.get("marker_ids", ())) == MARKER_IDS
+        and tuple(cache.get("marker_ids", ())) == DETECT_MARKER_IDS
         and cache.get("tag_size_m") == TAG_SIZE_M
         and cache.get("recording_dir") == str(RECORDING_DIR.resolve())
         and all(camera_name in cache.get("cameras", {}) for camera_name in CAMERA_NAMES)
@@ -391,6 +403,24 @@ def robust_average_transform(candidates):
         "translation_spread_mm": float(np.median(translation_error_mm)),
     }
 
+
+# Tags that are barely ever co-visible with the reference cannot be solved from
+# this take; drop them instead of failing the whole calibration.
+sparse_marker_ids = sorted(
+    marker_id
+    for marker_id, candidates in relative_candidates.items()
+    if len(candidates) < MIN_SAMPLES_PER_MARKER
+)
+if sparse_marker_ids:
+    for marker_id in sparse_marker_ids:
+        print(
+            f"Skipping tag {marker_id}: only {len(relative_candidates[marker_id])} "
+            f"relative poses (need {MIN_SAMPLES_PER_MARKER})"
+        )
+        del relative_candidates[marker_id]
+    MARKER_IDS = tuple(
+        marker_id for marker_id in MARKER_IDS if marker_id not in sparse_marker_ids
+    )
 
 marker_transforms = {
     REFERENCE_ID: {

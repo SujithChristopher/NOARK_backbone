@@ -1869,7 +1869,7 @@ wheels = [
 [[package]]
 name = "noark-backbone"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fiftyone", marker = "platform_machine == 'x86_64'" },
     { name = "gpiod", marker = "sys_platform == 'linux'" },
