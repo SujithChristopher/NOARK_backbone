@@ -190,3 +190,9 @@ dual_recorder/outputs/flicker_50hz_timestamps.npz
 dual_recorder/outputs/flicker_50hz.mp4
 dual_recorder/outputs/flicker_compensated_timestamps.npz
 dual_recorder/outputs/flicker_compensated.mp4
+
+# graphify: generated graph, dated snapshots and machine-local caches
+# (.graphify_root / .graphify_python hold absolute paths to one workstation).
+# Only the human-readable query notes under memory/ are tracked.
+graphify-out/*
+!graphify-out/memory/
