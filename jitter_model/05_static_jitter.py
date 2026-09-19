@@ -1319,11 +1319,11 @@ SPATIAL_ROTATION = in_plane_rotation(SPATIAL_ROTATION_DEG)
 
 
 def to_plot_plane(frame):
-    """Burst x/z positions turned into the squared-up view coordinates."""
-    return frame[["pos_x_m", "pos_z_m"]].to_numpy() @ SPATIAL_ROTATION
+    """Burst x/z positions as squared-up view coordinates, in millimetres."""
+    return 1000.0 * (frame[["pos_x_m", "pos_z_m"]].to_numpy() @ SPATIAL_ROTATION)
 
 
-plot_positions = burst_positions @ SPATIAL_ROTATION
+plot_positions = 1000.0 * (burst_positions @ SPATIAL_ROTATION)
 print(
     f"Spatial views rotated {SPATIAL_ROTATION_DEG:+.1f} deg in plane; "
     f"reference burst sits at "
@@ -1349,14 +1349,22 @@ spatial_values = burst_table["jitter_3d_mm"]
 spatial_values = spatial_values[np.isfinite(spatial_values) & (spatial_values > 0)]
 spatial_norm = LogNorm(vmin=spatial_values.min(), vmax=spatial_values.max())
 
+# Panels are aspect-equal, so size them from the sampled area itself: a
+# figure shaped differently from the data leaves dead bands beside every map.
+panel_width = 4.1
+panel_height = panel_width * np.ptp(grid_z) / np.ptp(grid_x)
 fig, axes = plt.subplots(
     len(CAMERA_COUNTS),
     len(TAG_COUNTS),
-    figsize=(4.1 * len(TAG_COUNTS), 4.3 * len(CAMERA_COUNTS)),
+    figsize=(
+        panel_width * len(TAG_COUNTS),
+        panel_height * len(CAMERA_COUNTS) + 0.9,
+    ),
     sharex=True,
     sharey=True,
     constrained_layout=True,
 )
+fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.01, hspace=0.02)
 axes = np.atleast_2d(axes)
 mesh = None
 for row, camera_count in enumerate(CAMERA_COUNTS):
@@ -1407,12 +1415,14 @@ for row, camera_count in enumerate(CAMERA_COUNTS):
             linewidth=1.0,
             zorder=4,
         )
+        axis.set_xlim(grid_x[0], grid_x[-1])
+        axis.set_ylim(grid_z[0], grid_z[-1])
         axis.set_aspect("equal", adjustable="box")
         axis.grid(True, alpha=0.2)
 for axis in axes[-1]:
-    axis.set_xlabel("Table across [m]")
+    axis.set_xlabel("Table across [mm]")
 for axis in axes[:, 0]:
-    axis.set_ylabel("Table away from reference [m]")
+    axis.set_ylabel("Table away from reference [mm]")
 if mesh is not None:
     colorbar = fig.colorbar(mesh, ax=axes, label="3D jitter [mm]", shrink=0.85)
     plain_log_ticks(colorbar.ax.yaxis)
@@ -1474,8 +1484,8 @@ axes[0].scatter(
     zorder=3,
 )
 fig.colorbar(scatter, ax=axes[0], label="Distance [m]")
-axes[0].set_xlabel("Table across [m]")
-axes[0].set_ylabel("Table away from reference [m]")
+axes[0].set_xlabel("Table across [mm]")
+axes[0].set_ylabel("Table away from reference [mm]")
 axes[0].set_title(
     f"Burst positions ({len(burst_indices)} recorded, "
     f"{len(unsolved)} unsolved by every condition)"
