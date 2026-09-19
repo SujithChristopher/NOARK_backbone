@@ -53,6 +53,7 @@ import numpy as np
 import pandas as pd
 import toml
 from cv2 import aruco
+from matplotlib import ticker
 from matplotlib.colors import LogNorm
 from scipy.interpolate import griddata
 from scipy.optimize import least_squares
@@ -76,25 +77,11 @@ RECORDING_DIR = (
 MOCAP_CSV = RECORDING_DIR / f"{RECORDING_DIR.name}.csv"
 BURSTS_JSON = RECORDING_DIR / "bursts.json"
 
-STEREO_TOML = (
-    PROJECT_ROOT
-    / "data"
-    / "calibration"
-    / "dual_160"
-    / "calib_radxa_sep18_26"
-    / "stereo_calibration.toml"
-)
-# The tag geometry is a property of the dome, not of this take, so it is read
-# from the dedicated rigid-body definition recording rather than from beside
-# these frames.
-RIGIDBODY_TOML = (
-    PROJECT_ROOT
-    / "data"
-    / "dome"
-    / "sep18_26"
-    / "dome_rb_def"
-    / "rigidbody_calibration.toml"
-)
+# The marker frame and the calibrations belong to the session, not to this
+# script, so they come from session.toml beside the recordings. The tag geometry
+# in particular is a property of the dome and is solved on its own recording,
+# not on this take.
+SESSION_TOML = RECORDING_DIR.parent / "session.toml"
 
 OUTPUT_DIR = RECORDING_DIR / "static_jitter"
 DETECTION_CACHE = RECORDING_DIR / "jitter_detections.pkl"
@@ -121,12 +108,6 @@ MAX_TAGS = 4
 # eligible for that burst's subset.
 TAG_PRESENCE_FRACTION = 0.9
 
-# Motive body frame from the labelled markers: x = m4 - m3, z = m4 - m1,
-# origin = m4. The labelled markers are direct measurements, unlike Motive's
-# solved rigid body, which can re-lock at a ghost pose after an occlusion.
-MOCAP_BODY_X_FROM = ("m4", "m3")
-MOCAP_BODY_Z_FROM = ("m4", "m1")
-MOCAP_BODY_ORIGIN = "m4"
 
 # A burst is only usable if the dome really was still and enough frames solved.
 MIN_FRAMES_PER_BURST = 10
@@ -141,8 +122,16 @@ DISTANCE_EDGES_M = np.asarray([0.20, 0.30, 0.40, 0.50, 0.60, 0.75, 0.95])
 MIN_BURSTS_PER_BIN = 3
 # Spatial map grid resolution, in samples across the working area.
 SPATIAL_GRID = 220
-# Error colormap: blue for low, yellow through the middle, red for high.
-ERROR_COLORMAP = "RdYlBu_r"
+# Error colormap: blue for low, through yellow, to red for high. turbo rather
+# than a blue-yellow-red diverging map because those pass through near-white in
+# the middle, which is exactly where most of this take's values sit; turbo stays
+# saturated the whole way, and unlike jet it does not band in the cyan-green.
+ERROR_COLORMAP = "turbo"
+# In-plane rotation for the spatial views, in degrees. None derives it from
+# the sweep itself so the pattern sits square to the page with the reference
+# burst at the bottom, matching the table it was recorded on. Display only:
+# it never touches the jitter numbers or the per-axis decomposition.
+SPATIAL_ROTATION_DEG = None
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 print(f"Recording : {RECORDING_DIR}")
@@ -150,6 +139,27 @@ print(f"Outputs   : {OUTPUT_DIR}")
 
 
 # %% Calibration, tag model, and detector
+if not SESSION_TOML.exists():
+    raise FileNotFoundError(f"Missing {SESSION_TOML}")
+session = toml.load(SESSION_TOML)
+
+
+def session_path(key):
+    """Resolve one of session.toml's calibration paths, which are relative to it."""
+    return (SESSION_TOML.parent / session["calibration"][key]).resolve()
+
+
+STEREO_TOML = session_path("stereo")
+RIGIDBODY_TOML = session_path("rigid_body")
+MOCAP_BODY_X_FROM = tuple(session["mocap"]["x_from"])
+MOCAP_BODY_Z_FROM = tuple(session["mocap"]["z_from"])
+MOCAP_BODY_ORIGIN = session["mocap"]["origin"]
+print(
+    f"Session   : {SESSION_TOML.parent.name}, mocap body "
+    f"x={MOCAP_BODY_X_FROM[0]}-{MOCAP_BODY_X_FROM[1]}, "
+    f"z={MOCAP_BODY_Z_FROM[0]}-{MOCAP_BODY_Z_FROM[1]}, origin={MOCAP_BODY_ORIGIN}"
+)
+
 for required_path in (STEREO_TOML, RIGIDBODY_TOML, MOCAP_CSV, BURSTS_JSON):
     if not required_path.exists():
         raise FileNotFoundError(f"Missing {required_path}")
@@ -1072,11 +1082,24 @@ print(
 
 
 # %% Jitter versus distance
+# Bin on one distance per burst, shared by every condition, rather than on each
+# condition's own estimate. The estimates differ by a couple of millimetres, so
+# a burst sitting on a bin edge can otherwise fall one side of it for one
+# condition and the other side for the rest, leaving the lines built on
+# different bursts -- the same unpaired comparison that the geometric mean was
+# introduced to avoid.
+burst_bin_distance = common_table.groupby("burst")["distance_m"].mean()
+common_table = common_table.assign(
+    bin_distance_m=common_table["burst"].map(burst_bin_distance)
+)
+
 distance_rows = []
 for name, group in common_table.groupby("condition"):
     spec = CONDITIONS[name]
     for low, high in itertools.pairwise(DISTANCE_EDGES_M):
-        in_bin = group.loc[(group["distance_m"] >= low) & (group["distance_m"] < high)]
+        in_bin = group.loc[
+            (group["bin_distance_m"] >= low) & (group["bin_distance_m"] < high)
+        ]
         if len(in_bin) < MIN_BURSTS_PER_BIN:
             continue
         row = {
@@ -1088,7 +1111,7 @@ for name, group in common_table.groupby("condition"):
             "distance_center_m": 0.5 * (low + high),
             "bursts": len(in_bin),
             "jitter_3d_mm": geometric_mean(in_bin["jitter_3d_mm"]),
-            "mocap_jitter_3d_mm": float(in_bin["mocap_jitter_3d_mm"].median()),
+            "mocap_jitter_3d_mm": geometric_mean(in_bin["mocap_jitter_3d_mm"]),
         }
         for columns in AXIS_COLUMNS:
             for column in columns:
@@ -1109,6 +1132,21 @@ CONDITION_COLOURS = {
 }
 CONDITION_STYLE = {1: "--", 2: "-"}
 CONDITION_MARKER = {1: "o", 2: "s"}
+
+
+def plain_log_ticks(target):
+    """Label a log axis in millimetres rather than powers of ten.
+
+    A log scale is the right one here, since jitter covers two orders of
+    magnitude, but its default 10^-1 labels are unreadable as a length. Decade
+    ticks plus 2/3/5 within each decade keep the axis dense enough to read a
+    value off without crowding it.
+    """
+    target.set_major_locator(ticker.LogLocator(base=10.0, subs=(1.0,)))
+    target.set_minor_locator(ticker.LogLocator(base=10.0, subs=(0.2, 0.3, 0.5)))
+    formatter = ticker.FuncFormatter(lambda value, _: f"{value:g}")
+    target.set_major_formatter(formatter)
+    target.set_minor_formatter(formatter)
 
 
 def condition_label(name):
@@ -1152,6 +1190,7 @@ def draw_distance_series(axis, column):
             label=f"mocap floor {MOCAP_FLOOR_MM:.2f} mm",
         )
     axis.set_yscale("log")
+    plain_log_ticks(axis.yaxis)
     axis.set_xlabel("Camera-to-dome distance [m]")
     axis.grid(True, alpha=0.25, which="both")
 
@@ -1253,6 +1292,45 @@ for figure_path, columns, basis_name, basis_note in (
 # 2 mm would be dominated by the large end. griddata leaves everything outside
 # the convex hull of the samples as NaN, so nothing is drawn where nothing was
 # measured.
+# The reference basis is the dome's own orientation in burst 1, which has no
+# reason to line up with the axes the dome was actually moved along, so the
+# sweep lands on the page tilted. Rotating within the plane squares it up
+# without changing any distance: the origin is the rotation centre, so the
+# reference burst stays put and only the cloud around it turns.
+burst_positions = burst_table.groupby("burst")[["pos_x_m", "pos_z_m"]].mean().to_numpy()
+
+
+def in_plane_rotation(degrees):
+    angle = np.radians(degrees)
+    return np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
+
+
+if SPATIAL_ROTATION_DEG is None:
+    centred = burst_positions - burst_positions.mean(axis=0)
+    principal = np.linalg.svd(centred, full_matrices=False)[2][0]
+    SPATIAL_ROTATION_DEG = -np.degrees(np.arctan2(principal[1], principal[0]))
+    # The sign of a principal axis is arbitrary, so the fit is as happy to put
+    # the reference burst at the top as at the bottom. Flip it when it comes out
+    # upside down, which is what fixes it to the near edge of the table.
+    trial = burst_positions @ in_plane_rotation(SPATIAL_ROTATION_DEG)
+    if (0 - trial[:, 1].min()) > 0.5 * np.ptp(trial[:, 1]):
+        SPATIAL_ROTATION_DEG -= 180.0
+SPATIAL_ROTATION = in_plane_rotation(SPATIAL_ROTATION_DEG)
+
+
+def to_plot_plane(frame):
+    """Burst x/z positions turned into the squared-up view coordinates."""
+    return frame[["pos_x_m", "pos_z_m"]].to_numpy() @ SPATIAL_ROTATION
+
+
+plot_positions = burst_positions @ SPATIAL_ROTATION
+print(
+    f"Spatial views rotated {SPATIAL_ROTATION_DEG:+.1f} deg in plane; "
+    f"reference burst sits at "
+    f"{(0 - plot_positions[:, 0].min()) / np.ptp(plot_positions[:, 0]):.2f} across, "
+    f"{(0 - plot_positions[:, 1].min()) / np.ptp(plot_positions[:, 1]):.2f} up"
+)
+
 spatial_y_span = burst_table["pos_y_m"].max() - burst_table["pos_y_m"].min()
 print(
     f"Spatial maps: x-z plane, dome spans {1000 * spatial_y_span:.0f} mm in y "
@@ -1260,10 +1338,10 @@ print(
 )
 
 grid_x = np.linspace(
-    burst_table["pos_x_m"].min(), burst_table["pos_x_m"].max(), SPATIAL_GRID
+    plot_positions[:, 0].min(), plot_positions[:, 0].max(), SPATIAL_GRID
 )
 grid_z = np.linspace(
-    burst_table["pos_z_m"].min(), burst_table["pos_z_m"].max(), SPATIAL_GRID
+    plot_positions[:, 1].min(), plot_positions[:, 1].max(), SPATIAL_GRID
 )
 mesh_x, mesh_z = np.meshgrid(grid_x, grid_z)
 
@@ -1291,7 +1369,7 @@ for row, camera_count in enumerate(CAMERA_COUNTS):
         ]
         axis.set_title(f"{condition_label(name)}  ({len(subset)} bursts)", fontsize=10)
         if len(subset) >= 4:
-            points = subset[["pos_x_m", "pos_z_m"]].to_numpy()
+            points = to_plot_plane(subset)
             surface = griddata(
                 points,
                 np.log10(subset["jitter_3d_mm"].to_numpy()),
@@ -1309,9 +1387,10 @@ for row, camera_count in enumerate(CAMERA_COUNTS):
         # Dark rings and a white-filled star: the colormap now runs dark blue
         # through pale yellow to dark red, so white markers disappear in its
         # middle and red ones disappear at its top.
+        sample_points = to_plot_plane(subset)
         axis.scatter(
-            subset["pos_x_m"],
-            subset["pos_z_m"],
+            sample_points[:, 0],
+            sample_points[:, 1],
             s=16,
             facecolor="none",
             edgecolor="0.15",
@@ -1331,11 +1410,12 @@ for row, camera_count in enumerate(CAMERA_COUNTS):
         axis.set_aspect("equal", adjustable="box")
         axis.grid(True, alpha=0.2)
 for axis in axes[-1]:
-    axis.set_xlabel("Reference-basis x [m]")
+    axis.set_xlabel("Table across [m]")
 for axis in axes[:, 0]:
-    axis.set_ylabel("Reference-basis z [m]")
+    axis.set_ylabel("Table away from reference [m]")
 if mesh is not None:
-    fig.colorbar(mesh, ax=axes, label="3D jitter [mm]", shrink=0.85)
+    colorbar = fig.colorbar(mesh, ax=axes, label="3D jitter [mm]", shrink=0.85)
+    plain_log_ticks(colorbar.ax.yaxis)
 fig.suptitle(
     f"Static jitter across the working area — {RECORDING_DIR.name}\n"
     "linear interpolation in log space between the sampled bursts (rings); "
@@ -1361,18 +1441,21 @@ solved_positions = (
 solved = solved_positions.dropna()
 unsolved = solved_positions.index.difference(solved.index)
 
+# Same squared-up view as the spatial maps, so the two read as one layout.
+solved_plot = to_plot_plane(solved)
 scatter = axes[0].scatter(
-    solved["pos_x_m"],
-    solved["pos_z_m"],
+    solved_plot[:, 0],
+    solved_plot[:, 1],
     c=solved["distance_m"],
     cmap="plasma",
     s=45,
     label=f"solved ({len(solved)})",
 )
 common_positions = solved.loc[solved.index.isin(common_bursts)]
+common_plot = to_plot_plane(common_positions)
 axes[0].scatter(
-    common_positions["pos_x_m"],
-    common_positions["pos_z_m"],
+    common_plot[:, 0],
+    common_plot[:, 1],
     facecolor="none",
     edgecolor="black",
     linewidth=1.1,
@@ -1380,11 +1463,19 @@ axes[0].scatter(
     label=f"common to all 8 ({len(common_positions)})",
 )
 axes[0].scatter(
-    [0], [0], marker="*", s=220, color="tab:red", label="reference burst", zorder=3
+    [0],
+    [0],
+    marker="*",
+    s=220,
+    facecolor="white",
+    edgecolor="black",
+    linewidth=1.0,
+    label="reference burst",
+    zorder=3,
 )
 fig.colorbar(scatter, ax=axes[0], label="Distance [m]")
-axes[0].set_xlabel("Reference-basis x [m]")
-axes[0].set_ylabel("Reference-basis z [m]")
+axes[0].set_xlabel("Table across [m]")
+axes[0].set_ylabel("Table away from reference [m]")
 axes[0].set_title(
     f"Burst positions ({len(burst_indices)} recorded, "
     f"{len(unsolved)} unsolved by every condition)"
@@ -1405,6 +1496,7 @@ for name in ordered_conditions():
         label=condition_label(name),
     )
 axes[1].set_yscale("log")
+plain_log_ticks(axes[1].yaxis)
 axes[1].set_xlabel("Burst index")
 axes[1].set_ylabel("3D jitter [mm]")
 axes[1].set_title("Jitter per burst")
