@@ -21,6 +21,20 @@ def test_fixed_point_positions_rotates_the_offset():
     assert np.allclose(positions[0], [0.0, 0.1, 0.0], atol=1e-9)
 
 
+def test_fixed_point_positions_combines_rotation_and_translation():
+    # Discriminate between correct `R @ p + t` and wrong `R @ (p + t)`.
+    # Translation must not commute with rotation axis for orderings to differ.
+    rvec = np.array([0.0, 0.0, np.pi / 2])  # Quarter turn about z
+    tvec = np.array([0.5, 0.0, 0.0])  # Translation along x (not z)
+    fixed_point = np.array([0.1, 0.0, 0.0])
+    rotation = cv2.Rodrigues(rvec.reshape(3, 1))[0]
+    expected = rotation @ fixed_point + tvec
+    positions = jitter_stats.fixed_point_positions(
+        rvec.reshape(1, 3), tvec.reshape(1, 3), fixed_point
+    )
+    assert np.allclose(positions[0], expected, atol=1e-9)
+
+
 def test_position_jitter_is_the_norm_of_the_per_axis_std():
     rng = np.random.default_rng(1)
     positions = rng.normal(0.0, 0.001, (500, 3))
