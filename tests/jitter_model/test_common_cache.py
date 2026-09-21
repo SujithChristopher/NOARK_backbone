@@ -69,12 +69,26 @@ def test_pair_cameras_matches_the_nearest_frame():
     assert pairs.tolist() == [0, 1, 2, 3, 4]
 
 
-def test_pair_cameras_rejects_gaps_beyond_the_tolerance():
+def test_pair_cameras_matches_the_nearest_frame_even_when_it_is_earlier():
+    # cam1 is offset by 0.9 of a frame period from cam0. With period=33ms and
+    # tolerance=0.55*33ms=18.15ms, each cam0 frame pairs with its nearest cam1
+    # frame within tolerance, even when that frame is EARLIER in time.
+    # cam0[0]=0ms has no match (nearest cam1[0]=29.7ms is 29.7ms away > 18.15ms).
+    # cam0[1]=33ms pairs with cam1[0]=29.7ms (3.3ms earlier, within tolerance).
+    # cam0[2]=66ms pairs with cam1[1]=62.7ms (3.3ms earlier, within tolerance).
     period = 33_000_000
     cam0 = np.arange(3, dtype=np.int64) * period
     cam1 = cam0 + int(0.9 * period)
     pairs = common.pair_cameras(cam0, cam1, 0.55)
-    # cam0[0]=0 is too far from cam1[0]=29.7ms (gap > 18.15ms)
-    # but cam0[1]=33ms pairs with cam1[0]=29.7ms (gap 3.3ms < 18.15ms)
-    # and cam0[2]=66ms pairs with cam1[1]=62.7ms (gap 3.3ms < 18.15ms)
     assert pairs.tolist() == [-1, 0, 1]
+
+
+def test_pair_cameras_rejects_when_nothing_is_close_enough():
+    # When cam1 is offset by many frame periods, no cam0 frame has a candidate
+    # within tolerance. With period=33ms and tolerance=0.55*33ms=18.15ms,
+    # an offset of 100*period leaves every gap >> 18.15ms.
+    period = 33_000_000
+    cam0 = np.arange(3, dtype=np.int64) * period
+    cam1 = cam0 + 100 * period  # Offset by 3300ms, far beyond tolerance
+    pairs = common.pair_cameras(cam0, cam1, 0.55)
+    assert (pairs == -1).all()
