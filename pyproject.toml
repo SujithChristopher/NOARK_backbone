@@ -69,3 +69,7 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["support"]
+
+[tool.pytest.ini_options]
+markers = ["slow: reruns a full analysis script; minutes, not seconds"]
+addopts = "-m 'not slow'"
