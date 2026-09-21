@@ -11,7 +11,11 @@ import numpy as np
 
 
 def subset_geometry(rig, marker_ids, fixed_point):
-    """Exact board-frame geometry of a subset, independent of any camera pose."""
+    """Exact board-frame geometry of a subset, independent of any camera pose.
+
+    For single-tag subsets: lengths are genuinely zero (baseline, radius, thickness),
+    but angles are NaN because they are undefined for a single tag.
+    """
     marker_ids = tuple(marker_ids)
     centers = rig.centers()
     normals = rig.normals()
@@ -27,9 +31,12 @@ def subset_geometry(rig, marker_ids, fixed_point):
             np.degrees(np.arccos(np.clip(normals[a] @ normals[b], -1.0, 1.0)))
             for a, b in itertools.combinations(marker_ids, 2)
         ]
+        max_angle = float(np.max(angles))
+        mean_angle = float(np.mean(angles))
     else:
         baselines = [0.0]
-        angles = [0.0]
+        max_angle = float("nan")
+        mean_angle = float("nan")
 
     centroid = positions.mean(axis=0)
     # The smallest singular value of the mean-centred corner cloud is the
@@ -44,8 +51,8 @@ def subset_geometry(rig, marker_ids, fixed_point):
         "rms_radius_mm": 1000.0
         * float(np.sqrt(np.mean(np.sum((positions - centroid) ** 2, axis=1)))),
         "min_singular_mm": 1000.0 * float(singular[-1]),
-        "max_normal_angle_deg": float(np.max(angles)),
-        "mean_normal_angle_deg": float(np.mean(angles)),
+        "max_normal_angle_deg": max_angle,
+        "mean_normal_angle_deg": mean_angle,
         "lever_mm": 1000.0 * float(np.linalg.norm(centroid - np.asarray(fixed_point))),
     }
 

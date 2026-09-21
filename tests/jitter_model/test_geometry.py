@@ -14,6 +14,18 @@ def test_single_tag_has_no_baseline_and_no_thickness():
     assert result["max_baseline_mm"] == 0.0
     assert result["min_singular_mm"] < 1e-9
     assert result["n_corners"] == 4
+    assert np.isnan(result["max_normal_angle_deg"])
+    assert np.isnan(result["mean_normal_angle_deg"])
+
+
+def test_two_parallel_tags_have_zero_angle():
+    spec = {
+        1: {"R": np.eye(3), "t": np.zeros(3)},
+        2: {"R": np.eye(3), "t": np.array([0.10, 0.0, 0.0])},
+    }
+    result = geometry.subset_geometry(_rig(spec), (1, 2), np.zeros(3))
+    assert np.isclose(result["max_normal_angle_deg"], 0.0)
+    assert np.isclose(result["mean_normal_angle_deg"], 0.0)
 
 
 def test_baseline_is_the_largest_pairwise_centre_distance():
