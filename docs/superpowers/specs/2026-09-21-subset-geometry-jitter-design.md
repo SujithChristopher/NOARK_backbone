@@ -55,7 +55,7 @@ measurement noise — adequate for regression.
 ## Decisions taken
 
 | Decision | Choice |
-|---|---|
+| --- | --- |
 | Purpose | Predictive design model, not just a ranking |
 | Evaluation point | One fixed dome point for every subset; lever arm is part of the answer and is carried as an explicit predictor |
 | Response | Position **and** rotation jitter |
