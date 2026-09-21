@@ -34,7 +34,9 @@ def test_position_jitter_is_the_norm_of_the_per_axis_std():
 
 def test_position_jitter_is_zero_for_a_still_estimate():
     result = jitter_stats.position_jitter_mm(np.tile([0.1, 0.2, 0.3], (10, 1)))
-    assert result["pos_jitter_mm"] == 0.0
+    # Perfectly still positions produce float noise (~1e-14 mm) from mean/deviation
+    # round-trip; 1e-9 mm (1 nanometre) is far below physical significance.
+    assert result["pos_jitter_mm"] < 1e-9
 
 
 def test_chordal_mean_of_identical_rotations_is_that_rotation():
@@ -45,7 +47,9 @@ def test_chordal_mean_of_identical_rotations_is_that_rotation():
 
 def test_rotation_jitter_is_zero_for_a_still_estimate():
     rvecs = np.tile([0.1, -0.2, 0.3], (8, 1))
-    assert jitter_stats.rotation_jitter_mdeg(rvecs)["rot_jitter_mdeg"] == 0.0
+    # Rodrigues round-trip on still estimate produces float noise; different
+    # inputs round differently. 1e-6 mdeg is microradians—below any real jitter.
+    assert jitter_stats.rotation_jitter_mdeg(rvecs)["rot_jitter_mdeg"] < 1e-6
 
 
 def test_rotation_jitter_recovers_a_known_spread():
