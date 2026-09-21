@@ -68,7 +68,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["support"]
+packages = ["support", "jitter_model"]
 
 [tool.pytest.ini_options]
 markers = ["slow: reruns a full analysis script; minutes, not seconds"]
