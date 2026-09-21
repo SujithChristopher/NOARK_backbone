@@ -405,6 +405,7 @@ def load_detection_cache(
         recording_dir=recording_dir,
         camera_names=camera_names,
     ):
+        warnings.warn("Detection cache is stale; rebuilding it")
         return None
     return cache
 

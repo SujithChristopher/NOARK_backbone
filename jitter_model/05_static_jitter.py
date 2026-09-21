@@ -171,7 +171,7 @@ camera_models = common.build_camera_models(stereo, CAMERA_NAMES)
 
 # Prefer the stereo extrinsic that notebook 02 self-calibrated from the rigid
 # board; the calibration TOML supplies the intrinsics and a fallback extrinsic.
-R_STEREO, T_STEREO, RVEC_STEREO = common.stereo_extrinsic(stereo, rigidbody)
+R_STEREO, T_STEREO, _ = common.stereo_extrinsic(stereo, rigidbody)
 if "stereo_refined" in rigidbody:
     print("Using self-calibrated stereo extrinsic from rigidbody_calibration.toml")
 
@@ -275,7 +275,7 @@ if not REBUILD_DETECTION_CACHE:
 
 if detection_cache is None:
     detection_cache = {
-        "version": 1,
+        "version": common.CACHE_VERSION,
         "recording_dir": str(RECORDING_DIR.resolve()),
         "calibration_toml": str(STEREO_TOML.resolve()),
         "dictionary": "DICT_APRILTAG_36h11",

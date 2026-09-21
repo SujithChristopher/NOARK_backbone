@@ -1,6 +1,8 @@
 import pickle
+import warnings
 
 import numpy as np
+import pytest
 
 from jitter_model import common
 
@@ -59,6 +61,34 @@ def test_load_detection_cache_returns_none_when_missing(tmp_path):
         )
         is None
     )
+
+
+def test_load_detection_cache_warns_when_stale(tmp_path):
+    """An existing but incompatible cache warns so a silent invalidation is visible."""
+    path = _cache(tmp_path)
+    with pytest.warns(UserWarning, match="stale"):
+        cache = common.load_detection_cache(
+            path,
+            marker_ids=(1, 2),
+            tag_size_m=0.06,  # deliberately mismatched, as in the stale test above
+            recording_dir=tmp_path,
+            camera_names=("cam0", "cam1"),
+        )
+    assert cache is None
+
+
+def test_load_detection_cache_does_not_warn_when_missing(tmp_path):
+    """A first run with no cache file yet is normal and must stay silent."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cache = common.load_detection_cache(
+            tmp_path / "absent.pkl",
+            marker_ids=(1,),
+            tag_size_m=0.05,
+            recording_dir=tmp_path,
+            camera_names=("cam0",),
+        )
+    assert cache is None
 
 
 def test_pair_cameras_matches_the_nearest_frame():
