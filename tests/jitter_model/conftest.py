@@ -26,6 +26,24 @@ def synthetic_camera():
     }
 
 
+@pytest.fixture
+def distorted_camera():
+    """Same intrinsics as `synthetic_camera`, but with real fisheye distortion.
+
+    `synthetic_camera`'s zero D makes undistortion the identity, so nothing
+    built on it alone can tell raw image points from undistorted ones apart.
+    This fixture exists for tests that need that distinction to be real.
+    """
+    return {
+        "K": np.array(
+            [[400.0, 0.0, 320.0], [0.0, 400.0, 240.0], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        ),
+        "D": np.array([[-0.02], [0.004], [-0.001], [0.0002]], dtype=np.float64),
+        "resolution": (640, 480),
+    }
+
+
 def _facet(azimuth_deg, tilt_deg):
     """One tag rotated onto a sphere facet, returned as board-frame R and t."""
     azimuth = np.radians(azimuth_deg)

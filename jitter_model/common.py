@@ -184,9 +184,7 @@ class PoseSolver:
             return None
         model = self.cameras[camera_name]
         image_points_raw = frame_detections[marker_id]
-        image_points = cv2.fisheye.undistortPoints(
-            image_points_raw.reshape(-1, 1, 2), model.K, model.D, P=model.K
-        ).reshape(-1, 2)
+        image_points = self._undistort(image_points_raw, model)
         solutions = cv2.solvePnPGeneric(
             self._local_corners,
             image_points,
@@ -256,9 +254,7 @@ class PoseSolver:
             return None
         object_points, image_points_raw = correspondences
         model = self.cameras[camera_name]
-        image_points = cv2.fisheye.undistortPoints(
-            image_points_raw.reshape(-1, 1, 2), model.K, model.D, P=model.K
-        ).reshape(-1, 2)
+        image_points = self._undistort(image_points_raw, model)
 
         # A small tag subset is nearly planar and ITERATIVE can otherwise land on
         # its mirrored local solution. Seed it with the best single-tag pose from

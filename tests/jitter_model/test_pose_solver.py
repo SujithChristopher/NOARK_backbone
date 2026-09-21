@@ -100,6 +100,42 @@ def test_stereo_board_pose_recovers_the_pose(solver, project_corners):
     assert np.allclose(pose["rvec"], TRUE_RVEC, atol=1e-4)
 
 
+def test_single_tag_pose_scores_rmse_against_raw_points_not_undistorted_ones(
+    synthetic_rig_spec, distorted_camera, project_corners
+):
+    """Pins the raw-vs-undistorted split inside `single_tag_pose`.
+
+    `single_tag_pose` must solve PnP on undistorted points but score
+    `rmse_px` against the RAW (distorted) points it was actually handed.
+    `synthetic_camera`'s zero D makes undistortion the identity everywhere
+    else in this file, so raw and undistorted points are indistinguishable
+    there and a swap of the two at the `raw_reprojection_rmse` call site
+    would still pass every other test. With `distorted_camera`'s real
+    distortion the two point sets differ, so if that call site were ever
+    swapped to pass the undistorted points instead of the raw ones,
+    `raw_reprojection_rmse` would reproject through the full distortion
+    model and compare against points that are already in the undistorted
+    space -- a large, wrong RMSE instead of the near-zero one asserted here.
+    """
+    rig = common.build_tag_rig(_rigidbody_dict(synthetic_rig_spec))
+    camera = common.CameraModel(
+        name="cam0",
+        K=distorted_camera["K"],
+        D=distorted_camera["D"],
+        resolution=distorted_camera["resolution"],
+    )
+    solver = common.PoseSolver(rig, {"cam0": camera})
+    detections = {
+        1: project_corners(
+            rig.corners_reference[1], TRUE_RVEC, TRUE_TVEC, camera=distorted_camera
+        )
+    }
+    pose = solver.single_tag_pose(detections, 1, "cam0")
+    assert np.allclose(pose["tvec"], TRUE_TVEC, atol=1e-3)
+    assert np.allclose(pose["rvec"], TRUE_RVEC, atol=1e-3)
+    assert pose["rmse_px"] < 1e-3
+
+
 def test_more_tags_reduce_jitter_under_corner_noise(solver, project_corners):
     rng = np.random.default_rng(0)
 
