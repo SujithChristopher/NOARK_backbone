@@ -1,3 +1,4 @@
+import math
 import pickle
 
 import cv2
@@ -9,6 +10,57 @@ from tests.jitter_model.test_common_loading import _rigidbody_dict
 
 TRUE_RVEC = np.array([0.03, -0.05, 0.01])
 TRUE_TVEC = np.array([0.0, 0.0, 0.55])
+
+
+def _mean_apparent_size(frame_detections, marker_ids):
+    """The same "apparent tag size in pixels" formula `geometry.pose_geometry`
+    uses internally, replicated here as an independent ground truth so the
+    regression test below doesn't need to reach into geometry's internals.
+    """
+    sizes = []
+    for marker_id in marker_ids:
+        corners = np.asarray(frame_detections[marker_id], dtype=np.float64)
+        sides = np.linalg.norm(corners - np.roll(corners, -1, axis=0), axis=1)
+        sizes.append(float(np.mean(sides)))
+    return float(np.mean(sizes))
+
+
+def _assert_rows_match(rows_a, rows_b):
+    """Every field of every row must agree, matched by `marker_ids`.
+
+    Both `solve_burst` and the pool-worker path are deterministic on
+    identical inputs, so nothing short of full equality can catch a bug that
+    scrambles values without changing which subsets appear. NaN needs its
+    own check since `nan != nan`: single-tag rows carry NaN normal angles by
+    design (`geometry.subset_geometry`), and that NaN in the same field of
+    both rows should count as a match, not a mismatch.
+    """
+    assert len(rows_a) == len(rows_b)
+    by_ids_a = {row["marker_ids"]: row for row in rows_a}
+    by_ids_b = {row["marker_ids"]: row for row in rows_b}
+    assert set(by_ids_a) == set(by_ids_b)
+    for marker_ids, row_a in by_ids_a.items():
+        row_b = by_ids_b[marker_ids]
+        assert set(row_a) == set(row_b), marker_ids
+        for key, value_a in row_a.items():
+            value_b = row_b[key]
+            if isinstance(value_a, float):
+                if math.isnan(value_a) or math.isnan(value_b):
+                    assert math.isnan(value_a) and math.isnan(value_b), (
+                        marker_ids,
+                        key,
+                        value_a,
+                        value_b,
+                    )
+                else:
+                    assert math.isclose(value_a, value_b, rel_tol=1e-9, abs_tol=1e-9), (
+                        marker_ids,
+                        key,
+                        value_a,
+                        value_b,
+                    )
+            else:
+                assert value_a == value_b, (marker_ids, key, value_a, value_b)
 
 
 @pytest.fixture
@@ -140,6 +192,84 @@ def test_more_tags_give_less_jitter_in_a_burst(solver, burst_frames):
     assert by_ids["1+2+3"] < by_ids["1"]
 
 
+def test_solve_burst_uses_the_solved_frame_at_the_median_index(solver, project_corners):
+    """Regression test for a prior bug: `pose_geometry` was given
+    `frames0[median_index]` (an index into the RAW, unfiltered frame list),
+    while `median_index` itself is computed from `argsort(reprojections)`,
+    which only has one entry per SOLVED frame. The moment any frame fails to
+    solve for a subset, those two index spaces diverge silently.
+
+    This burst makes a handful of early frames fail to solve for tag 1 (by
+    deleting its detections), and gives EVERY frame a distance that grows
+    with its raw index, so apparent tag size is a unique, monotonic function
+    of raw frame index. That way, if the wrong raw index is ever selected
+    (whichever one it is), it gives a measurably different apparent size
+    from the correct one -- discrimination doesn't depend on getting lucky
+    that the picked wrong index happens to be one of the deleted frames.
+    """
+    rng = np.random.default_rng(11)
+    marker_ids = (1,)
+    skip_indices = {2, 5, 8}  # early, so the solved/raw index spaces diverge
+    # well before the median position, and low presence_fraction still
+    # keeps tag 1 eligible (17/20 = 0.85 frames still show it).
+    frames0 = []
+    for index in range(20):
+        tvec = TRUE_TVEC * (1.0 + 0.15 * index)
+        frame = {
+            marker_id: project_corners(
+                solver.rig.corners_reference[marker_id], TRUE_RVEC, tvec
+            )
+            + rng.normal(0.0, 0.2, (4, 2))
+            for marker_id in (1, 2, 3)
+        }
+        if index in skip_indices:
+            del frame[1]  # tag 1 is absent -> mono_board_pose returns None
+        frames0.append(frame)
+
+    rows = _subset_worker.solve_burst(
+        1,
+        frames0,
+        None,
+        solver,
+        camera_config="cam0",
+        max_tags=1,
+        presence_fraction=0.8,
+        min_frames=10,
+        fixed_point=np.zeros(3),
+    )
+    row = next(r for r in rows if r["marker_ids"] == "1")
+
+    # Ground truth: replicate solve_burst's own filtering, in the same order,
+    # to find which frame the median index actually refers to.
+    solved_frames0 = []
+    reprojections = []
+    for frame0 in frames0:
+        pose = solver.mono_board_pose(frame0, marker_ids, "cam0")
+        if pose is None:
+            continue
+        reprojections.append(pose["rmse_px"])
+        solved_frames0.append(frame0)
+    median_index = int(np.argsort(reprojections)[len(reprojections) // 2])
+
+    # Sanity check that this burst actually exercises the bug: the raw and
+    # solved index spaces must have diverged by the median position, or this
+    # test would pass even with the old, broken indexing.
+    assert solved_frames0[median_index] is not frames0[median_index]
+
+    expected_size = _mean_apparent_size(solved_frames0[median_index], marker_ids)
+    assert row["mean_apparent_size_px"] == pytest.approx(expected_size)
+
+    # And the frame the buggy code would have picked instead gives a
+    # distinctly different answer, so a regression would not pass by luck.
+    try:
+        wrong_size = _mean_apparent_size(frames0[median_index], marker_ids)
+    except KeyError:
+        wrong_size = None
+    assert wrong_size is None or not math.isclose(
+        wrong_size, expected_size, rel_tol=0.05
+    )
+
+
 def test_worker_globals_path_matches_solve_burst_directly(
     solver,
     burst_frames,
@@ -244,10 +374,7 @@ def test_worker_globals_path_matches_solve_burst_directly(
             min_frames=10,
             fixed_point=np.zeros(3),
         )
-        assert len(pool_rows) == len(direct_rows)
-        assert {r["marker_ids"] for r in pool_rows} == {
-            r["marker_ids"] for r in direct_rows
-        }
+        _assert_rows_match(pool_rows, direct_rows)
 
         stereo_rows = _subset_worker.worker_burst((2, "stereo", list(range(n_frames))))
         assert len(stereo_rows) > 0

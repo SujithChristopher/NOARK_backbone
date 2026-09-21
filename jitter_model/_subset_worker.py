@@ -67,6 +67,7 @@ def solve_burst(
         rvecs = []
         tvecs = []
         reprojections = []
+        solved_frames0 = []
         for index, frame0 in enumerate(frames0):
             if camera_config == "stereo":
                 frame1 = frames1[index]
@@ -80,6 +81,7 @@ def solve_burst(
             rvecs.append(pose["rvec"])
             tvecs.append(pose["tvec"])
             reprojections.append(pose["rmse_px"])
+            solved_frames0.append(frame0)
 
         if len(rvecs) < min_frames:
             continue
@@ -88,13 +90,18 @@ def solve_burst(
         tvecs = np.asarray(tvecs)
         positions = jitter_stats.fixed_point_positions(rvecs, tvecs, fixed_point)
 
+        # `median_index` indexes the SOLVED lists (rvecs/tvecs/reprojections),
+        # which drop any frame that failed to solve for this subset. The
+        # corner detections passed to pose_geometry must come from that same
+        # filtered index space, not from `frames0`, or the median pose and
+        # the "apparent size" corners silently come from different frames.
         median_index = int(np.argsort(reprojections)[len(reprojections) // 2])
         pose_terms = geometry.pose_geometry(
             solver.rig,
             marker_ids,
             rvecs[median_index],
             tvecs[median_index],
-            frames0[median_index],
+            solved_frames0[median_index],
         )
 
         row = {
