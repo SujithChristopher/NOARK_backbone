@@ -53,6 +53,7 @@ from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation, Slerp
 from tqdm.auto import tqdm
 
+from jitter_model import common
 from support import pd_support
 
 # %% Paths and settings
@@ -176,57 +177,19 @@ for required_path in (STEREO_TOML, RIGIDBODY_TOML, MOCAP_CSV):
 stereo = toml.load(STEREO_TOML)
 rigidbody = toml.load(RIGIDBODY_TOML)
 
-camera_models = {}
-for camera_name in CAMERA_NAMES:
-    camera_data = stereo[camera_name]
-    camera_models[camera_name] = {
-        "K": np.asarray(camera_data["camera_matrix"], dtype=np.float64),
-        "D": np.asarray(camera_data["dist_coeffs"], dtype=np.float64).reshape(-1, 1),
-        "resolution": tuple(camera_data["resolution"]),
-    }
+camera_models = common.build_camera_models(stereo, CAMERA_NAMES)
 
+R_STEREO, T_STEREO, RVEC_STEREO = common.stereo_extrinsic(stereo, rigidbody)
 if "stereo_refined" in rigidbody:
-    R_STEREO = np.asarray(
-        rigidbody["stereo_refined"]["rotation_cam0_to_cam1"], dtype=np.float64
-    )
-    T_STEREO = np.asarray(
-        rigidbody["stereo_refined"]["translation_cam0_to_cam1_m"], dtype=np.float64
-    )
     print("Using self-calibrated stereo extrinsic from rigidbody_calibration.toml")
-else:
-    warnings.warn("No refined stereo extrinsic; falling back to calibration TOML")
-    R_STEREO = np.asarray(stereo["stereo"]["R"], dtype=np.float64)
-    T_STEREO = np.asarray(stereo["stereo"]["T"], dtype=np.float64) / 1000.0
-RVEC_STEREO = cv2.Rodrigues(R_STEREO)[0]
 
-TAG_SIZE_M = float(rigidbody["meta"]["tag_size_m"])
-REFERENCE_ID = int(rigidbody["meta"]["reference_id"])
-DETECT_MARKER_IDS = tuple(int(x) for x in rigidbody["meta"]["marker_ids"])
-
-half_size = TAG_SIZE_M / 2.0
-TAG_CORNERS_LOCAL = np.asarray(
-    [
-        [-half_size, +half_size, 0.0],
-        [+half_size, +half_size, 0.0],
-        [+half_size, -half_size, 0.0],
-        [-half_size, -half_size, 0.0],
-    ],
-    dtype=np.float64,
-)
-
-marker_corners_reference = {}
-marker_to_reference = {}
-for marker_id_text, marker_data in rigidbody["markers"].items():
-    marker_rotation = np.asarray(
-        marker_data["rotation_marker_to_reference"], dtype=np.float64
-    )
-    marker_translation = np.asarray(
-        marker_data["translation_marker_to_reference_m"], dtype=np.float64
-    )
-    marker_corners_reference[int(marker_id_text)] = (
-        TAG_CORNERS_LOCAL @ marker_rotation.T + marker_translation
-    )
-    marker_to_reference[int(marker_id_text)] = (marker_rotation, marker_translation)
+rig = common.build_tag_rig(rigidbody)
+TAG_SIZE_M = rig.tag_size_m
+REFERENCE_ID = rig.reference_id
+DETECT_MARKER_IDS = rig.marker_ids
+TAG_CORNERS_LOCAL = common.tag_corners_local(TAG_SIZE_M)
+marker_corners_reference = rig.corners_reference
+marker_to_reference = rig.marker_to_reference
 
 dictionary = aruco.getPredefinedDictionary(aruco.DICT_APRILTAG_36h11)
 detector_parameters = aruco.DetectorParameters()
@@ -255,7 +218,7 @@ def detect_camera(camera_name, max_frames=None):
     )
     frame_count = len(metadata["sync"])
     limit = frame_count if max_frames is None else min(frame_count, max_frames)
-    expected_resolution = camera_models[camera_name]["resolution"]
+    expected_resolution = camera_models[camera_name].resolution
     detections = []
 
     with frame_path.open("rb") as stream:
@@ -294,23 +257,15 @@ def detect_camera(camera_name, max_frames=None):
     return {"metadata": metadata, "detections": detections}
 
 
-def cache_is_compatible(cache):
-    return (
-        cache.get("version") == 1
-        and tuple(cache.get("marker_ids", ())) == DETECT_MARKER_IDS
-        and cache.get("tag_size_m") == TAG_SIZE_M
-        and cache.get("recording_dir") == str(RECORDING_DIR.resolve())
-        and all(name in cache.get("cameras", {}) for name in CAMERA_NAMES)
-    )
-
-
 detection_cache = None
-if DETECTION_CACHE.exists() and not REBUILD_DETECTION_CACHE:
-    with DETECTION_CACHE.open("rb") as stream:
-        detection_cache = pickle.load(stream)
-    if not cache_is_compatible(detection_cache):
-        warnings.warn("Detection cache is stale; rebuilding it")
-        detection_cache = None
+if not REBUILD_DETECTION_CACHE:
+    detection_cache = common.load_detection_cache(
+        DETECTION_CACHE,
+        marker_ids=DETECT_MARKER_IDS,
+        tag_size_m=TAG_SIZE_M,
+        recording_dir=RECORDING_DIR,
+        camera_names=CAMERA_NAMES,
+    )
 
 if detection_cache is None:
     detection_cache = {
@@ -336,30 +291,9 @@ cam1 = detection_cache["cameras"]["cam1"]
 cam0_monotonic_ns = cam0["metadata"]["monotonic_ns"]
 cam1_monotonic_ns = cam1["metadata"]["monotonic_ns"]
 cam0_period_ns = float(np.median(np.diff(cam0_monotonic_ns)))
-max_pair_gap_ns = MAX_PAIR_FRACTION_OF_FRAME * cam0_period_ns
 
-
-def nearest_cam1_index(timestamp_ns):
-    insertion = int(np.searchsorted(cam1_monotonic_ns, timestamp_ns))
-    candidates = [
-        i for i in (insertion - 1, insertion) if 0 <= i < len(cam1_monotonic_ns)
-    ]
-    if not candidates:
-        return None
-    nearest = min(
-        candidates, key=lambda i: abs(int(cam1_monotonic_ns[i]) - int(timestamp_ns))
-    )
-    if abs(int(cam1_monotonic_ns[nearest]) - int(timestamp_ns)) > max_pair_gap_ns:
-        return None
-    return nearest
-
-
-cam1_pair = np.asarray(
-    [
-        -1 if (match := nearest_cam1_index(stamp)) is None else match
-        for stamp in cam0_monotonic_ns
-    ],
-    dtype=np.int32,
+cam1_pair = common.pair_cameras(
+    cam0_monotonic_ns, cam1_monotonic_ns, MAX_PAIR_FRACTION_OF_FRAME
 )
 print(
     f"Camera pairing: {int((cam1_pair >= 0).sum())}/{len(cam0_monotonic_ns)} frames, "
@@ -493,206 +427,13 @@ print(
 # %% Joint tag-board pose estimators
 # Shared with 05_static_jitter.py: one joint PnP over every visible corner,
 # and for two cameras one pose minimizing reprojection in both at once.
-def stack_correspondences(frame_detections, marker_ids):
-    """Every requested tag's corners as one board, or None if any is missing.
-
-    Requiring the whole set keeps a condition's geometry fixed: a 4-tag number
-    is always four tags, never whichever two happened to be visible.
-    """
-    if not all(marker_id in frame_detections for marker_id in marker_ids):
-        return None
-    return (
-        np.concatenate([marker_corners_reference[m] for m in marker_ids]),
-        np.concatenate([frame_detections[m] for m in marker_ids]),
-    )
-
-
-def raw_reprojection_rmse(object_points, image_points, rvec, tvec, camera_name):
-    model = camera_models[camera_name]
-    projected, _ = cv2.fisheye.projectPoints(
-        object_points.reshape(-1, 1, 3), rvec, tvec, model["K"], model["D"]
-    )
-    residual = projected.reshape(-1, 2) - image_points
-    return float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
-
-
-def single_tag_pose(frame_detections, marker_id, camera_name):
-    """Board pose from one tag, solved on that tag's own square then composed.
-
-    IPPE_SQUARE wants a planar square centred on the origin, which only the
-    reference tag's corners satisfy in board coordinates. So the solve runs in
-    the tag's own frame and the result is carried onto the board through the
-    rigid-body transform, letting any tag stand in as the single-tag estimator.
-    """
-    if marker_id not in frame_detections:
-        return None
-    model = camera_models[camera_name]
-    image_points_raw = frame_detections[marker_id]
-    image_points = cv2.fisheye.undistortPoints(
-        image_points_raw.reshape(-1, 1, 2), model["K"], model["D"], P=model["K"]
-    ).reshape(-1, 2)
-    solutions = cv2.solvePnPGeneric(
-        TAG_CORNERS_LOCAL,
-        image_points,
-        model["K"],
-        None,
-        flags=cv2.SOLVEPNP_IPPE_SQUARE,
-    )
-    if not solutions[0]:
-        return None
-
-    rotation_marker, translation_marker = marker_to_reference[marker_id]
-    best = None
-    for rvec_tag, tvec_tag in zip(solutions[1], solutions[2]):
-        if float(tvec_tag.reshape(3)[2]) <= 0:
-            continue
-        # p_cam = R_tag p_local + t_tag and p_ref = R_m2r p_local + t_m2r, so
-        # the board pose is R_tag R_m2r' with the origin shifted accordingly.
-        rotation_board = cv2.Rodrigues(rvec_tag)[0] @ rotation_marker.T
-        translation_board = tvec_tag.reshape(3) - rotation_board @ translation_marker
-        rvec = cv2.Rodrigues(rotation_board)[0]
-        tvec = translation_board.reshape(3, 1)
-        error = raw_reprojection_rmse(
-            marker_corners_reference[marker_id],
-            image_points_raw,
-            rvec,
-            tvec,
-            camera_name,
-        )
-        if best is None or error < best[0]:
-            best = (error, rvec, tvec)
-    if best is None:
-        return None
-    return {
-        "rvec": np.asarray(best[1]).reshape(3),
-        "tvec": np.asarray(best[2]).reshape(3),
-        "rmse_px": best[0],
-    }
-
-
-def seed_pose(frame_detections, marker_ids, camera_name):
-    """The best single-tag board pose among ``marker_ids``, to start PnP from."""
-    candidates = [
-        pose
-        for pose in (
-            single_tag_pose(frame_detections, m, camera_name) for m in marker_ids
-        )
-        if pose is not None
-    ]
-    if not candidates:
-        return None
-    return min(candidates, key=lambda pose: pose["rmse_px"])
-
-
-def mono_board_pose(frame_detections, marker_ids, camera_name="cam0"):
-    """One joint PnP over every visible corner of the requested tags.
-
-    A joint solve, never an average of per-tag `tvec`s: averaging independent
-    poses throws away the constraint that the tags are one rigid body, which is
-    most of what the extra tags are worth.
-    """
-    if len(marker_ids) == 1:
-        return single_tag_pose(frame_detections, marker_ids[0], camera_name)
-
-    correspondences = stack_correspondences(frame_detections, marker_ids)
-    if correspondences is None:
-        return None
-    object_points, image_points_raw = correspondences
-    model = camera_models[camera_name]
-    image_points = cv2.fisheye.undistortPoints(
-        image_points_raw.reshape(-1, 1, 2), model["K"], model["D"], P=model["K"]
-    ).reshape(-1, 2)
-
-    # A small tag subset is nearly planar and ITERATIVE can otherwise land on
-    # its mirrored local solution. Seed it with the best single-tag pose from
-    # this same image: geometric initialization, not temporal filtering.
-    initial = seed_pose(frame_detections, marker_ids, camera_name)
-    if initial is None:
-        return None
-    success, rvec, tvec = cv2.solvePnP(
-        object_points,
-        image_points,
-        model["K"],
-        None,
-        initial["rvec"].reshape(3, 1).copy(),
-        initial["tvec"].reshape(3, 1).copy(),
-        True,
-        flags=cv2.SOLVEPNP_ITERATIVE,
-    )
-    if not success or float(tvec.reshape(3)[2]) <= 0:
-        return None
-    return {
-        "rvec": np.asarray(rvec).reshape(3),
-        "tvec": np.asarray(tvec).reshape(3),
-        "rmse_px": raw_reprojection_rmse(
-            object_points, image_points_raw, rvec, tvec, camera_name
-        ),
-    }
-
-
-def stereo_board_pose(frame0, frame1, marker_ids):
-    """One pose minimizing corner reprojection in both fisheye cameras at once.
-
-    The cross-baseline constraint is what tightens depth, so the two images are
-    fitted together rather than triangulating two independent single-camera
-    poses.
-    """
-    corr0 = stack_correspondences(frame0, marker_ids)
-    corr1 = stack_correspondences(frame1, marker_ids)
-    if corr0 is None or corr1 is None:
-        return None
-    object_points, image0 = corr0
-    _object_points1, image1 = corr1
-    initial = mono_board_pose(frame0, marker_ids, "cam0")
-    if initial is None:
-        return None
-
-    def residual(parameters):
-        rvec0 = parameters[:3].reshape(3, 1)
-        tvec0 = parameters[3:].reshape(3, 1)
-        projected0, _ = cv2.fisheye.projectPoints(
-            object_points.reshape(-1, 1, 3),
-            rvec0,
-            tvec0,
-            camera_models["cam0"]["K"],
-            camera_models["cam0"]["D"],
-        )
-        rvec1, tvec1 = cv2.composeRT(rvec0, tvec0, RVEC_STEREO, T_STEREO.reshape(3, 1))[
-            :2
-        ]
-        projected1, _ = cv2.fisheye.projectPoints(
-            object_points.reshape(-1, 1, 3),
-            rvec1,
-            tvec1,
-            camera_models["cam1"]["K"],
-            camera_models["cam1"]["D"],
-        )
-        return np.concatenate(
-            [
-                (projected0.reshape(-1, 2) - image0).ravel(),
-                (projected1.reshape(-1, 2) - image1).ravel(),
-            ]
-        )
-
-    result = least_squares(
-        residual,
-        np.concatenate([initial["rvec"], initial["tvec"]]),
-        # Matches the validated stereo PnP in
-        # trunkpose/dual_notebooks/verification_dual_camera.py. The cam0-only
-        # seed can have a large cam1 residual, for which a robust loss would
-        # suppress the very measurements needed to refine depth across the
-        # baseline.
-        method="lm",
-        max_nfev=100,
-    )
-    if result.x[5] <= 0:
-        return None
-    point_residuals = residual(result.x).reshape(-1, 2)
-    return {
-        "rvec": result.x[:3],
-        "tvec": result.x[3:],
-        "rmse_px": float(np.sqrt(np.mean(np.sum(point_residuals**2, axis=1)))),
-    }
+solver = common.PoseSolver(rig, camera_models, R_STEREO, T_STEREO)
+stack_correspondences = solver.stack_correspondences
+raw_reprojection_rmse = solver.raw_reprojection_rmse
+single_tag_pose = solver.single_tag_pose
+seed_pose = solver.seed_pose
+mono_board_pose = solver.mono_board_pose
+stereo_board_pose = solver.stereo_board_pose
 
 
 # %% Per-frame tag subsets and the eight conditions
