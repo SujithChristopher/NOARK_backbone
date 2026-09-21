@@ -131,8 +131,11 @@ Exact geometry, from the rigid-body TOML, constant across bursts:
 
 Pose-dependent, from the burst median pose:
 
-- `distance_m`, `mean_incidence_deg`, `min_incidence_deg`,
-  `mean_apparent_size_px`, `reprojection_px`
+- `distance_m` — subset centroid to camera
+- `mean_incidence_deg`, `min_incidence_deg` — angle between each tag normal and
+  the viewing ray to that tag, averaged / minimised over the subset
+- `mean_apparent_size_px` — mean detected tag side length in pixels
+- `reprojection_px` — burst median of the per-frame RMSE
 
 Response: `pos_jitter_mm` + 3 axes, `rot_jitter_mdeg` + 3 axes.
 
@@ -169,6 +172,9 @@ collapsed into one composite spread term and the script prints that it did so.
   "widely separated".
 
 ### Outputs
+
+Written to `<recording>/subset_geometry/`, matching how `05` and `06` place
+their own output subdirectories inside the recording.
 
 - `subset_geometry_cells.csv`, `subset_geometry_model.csv` (coefficients, CIs,
   VIFs)
