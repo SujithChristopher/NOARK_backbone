@@ -7,10 +7,14 @@ from module globals — which is also what lets worker processes and unit tests
 use it.
 """
 
+import pickle
 import warnings
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
+import msgpack
+import msgpack_numpy as mpn
 import numpy as np
 from scipy.optimize import least_squares
 
@@ -345,3 +349,87 @@ class PoseSolver:
             "tvec": result.x[3:],
             "rmse_px": float(np.sqrt(np.mean(np.sum(point_residuals**2, axis=1)))),
         }
+
+
+CACHE_VERSION = 1
+
+
+def load_timestamp_records(path):
+    """Load the per-frame timestamp columns, including this take's burst index.
+
+    The burst recorder appends a sixth column holding the 1-based burst number,
+    which is what groups frames into repeats of one pose. Older recordings stop
+    at five columns, so it is read only when present.
+    """
+    with path.open("rb") as stream:
+        records = list(msgpack.Unpacker(stream, object_hook=mpn.decode))
+    metadata = {
+        "sync": np.asarray([int(record[0]) for record in records], dtype=np.uint8),
+        "monotonic_ns": np.asarray(
+            [int(record[2]) for record in records], dtype=np.int64
+        ),
+        "sensor_ns": np.asarray([int(record[3]) for record in records], dtype=np.int64),
+    }
+    if records and len(records[0]) > 5:
+        metadata["burst"] = np.asarray(
+            [int(record[5]) for record in records], dtype=np.int32
+        )
+    else:
+        metadata["burst"] = np.zeros(len(records), dtype=np.int32)
+    return metadata
+
+
+def cache_is_compatible(cache, *, marker_ids, tag_size_m, recording_dir, camera_names):
+    return (
+        cache.get("version") == CACHE_VERSION
+        and tuple(cache.get("marker_ids", ())) == tuple(marker_ids)
+        and cache.get("tag_size_m") == tag_size_m
+        and cache.get("recording_dir") == str(Path(recording_dir).resolve())
+        and all(name in cache.get("cameras", {}) for name in camera_names)
+    )
+
+
+def load_detection_cache(
+    cache_path, *, marker_ids, tag_size_m, recording_dir, camera_names
+):
+    """The cached detections, or None when absent or stale. Never rebuilds."""
+    cache_path = Path(cache_path)
+    if not cache_path.exists():
+        return None
+    with cache_path.open("rb") as stream:
+        cache = pickle.load(stream)
+    if not cache_is_compatible(
+        cache,
+        marker_ids=marker_ids,
+        tag_size_m=tag_size_m,
+        recording_dir=recording_dir,
+        camera_names=camera_names,
+    ):
+        return None
+    return cache
+
+
+def pair_cameras(cam0_monotonic_ns, cam1_monotonic_ns, max_fraction_of_frame):
+    """Nearest cam1 frame for each cam0 frame, or -1 when none is close enough.
+
+    The two cameras free-run, so they are paired on the shared host-monotonic
+    clock rather than assumed to be in lockstep.
+    """
+    cam0_monotonic_ns = np.asarray(cam0_monotonic_ns, dtype=np.int64)
+    cam1_monotonic_ns = np.asarray(cam1_monotonic_ns, dtype=np.int64)
+    period_ns = float(np.median(np.diff(cam0_monotonic_ns)))
+    tolerance_ns = max_fraction_of_frame * period_ns
+    insert = np.searchsorted(cam1_monotonic_ns, cam0_monotonic_ns)
+    pairs = np.full(len(cam0_monotonic_ns), -1, dtype=np.int64)
+    for index, timestamp in enumerate(cam0_monotonic_ns):
+        candidates = [
+            candidate
+            for candidate in (insert[index] - 1, insert[index])
+            if 0 <= candidate < len(cam1_monotonic_ns)
+        ]
+        if not candidates:
+            continue
+        best = min(candidates, key=lambda c: abs(cam1_monotonic_ns[c] - timestamp))
+        if abs(cam1_monotonic_ns[best] - timestamp) <= tolerance_ns:
+            pairs[index] = best
+    return pairs
