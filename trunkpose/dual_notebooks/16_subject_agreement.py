@@ -4,6 +4,7 @@
 # 15_subject_icp.py.
 #
 #   <output>/icp_vs_mocap_agreement.png   scatter + Bland-Altman, 3 axes x N subjects
+#   <output>/subject_rmse_bar.png         anonymized per-subject RMSE bar chart
 #   <output>/agreement_summary.csv        per-subject per-axis r / RMSE / bias / LoA
 #
 # Only frames where BOTH systems are valid are scored -- the ICP series carries NaN
@@ -77,13 +78,13 @@ def paired(d, axis):
 
 def stats(moc, icp):
     d = icp - moc
-    return dict(n=len(d), r=float(np.corrcoef(moc, icp)[0, 1]),
-                rmse=float(np.sqrt((d ** 2).mean())),
-                bias=float(d.mean()), sd=float(d.std(ddof=1)),
-                rom_moc=float(np.percentile(moc, 97.5) - np.percentile(moc, 2.5)),
-                rom_icp=float(np.percentile(icp, 97.5) - np.percentile(icp, 2.5)),
-                # slope of camera on mocap: < 1 means the camera under-reads the range
-                slope=float(np.polyfit(moc, icp, 1)[0]))
+    return {"n": len(d), "r": float(np.corrcoef(moc, icp)[0, 1]),
+            "rmse": float(np.sqrt((d ** 2).mean())),
+            "bias": float(d.mean()), "sd": float(d.std(ddof=1)),
+            "rom_moc": float(np.percentile(moc, 97.5) - np.percentile(moc, 2.5)),
+            "rom_icp": float(np.percentile(icp, 97.5) - np.percentile(icp, 2.5)),
+            # slope of camera on mocap: < 1 means the camera under-reads the range
+            "slope": float(np.polyfit(moc, icp, 1)[0])}
 
 
 def main():
@@ -138,6 +139,39 @@ def main():
               f"more than 30 deg): {', '.join(flagged)}. Their magnitude row still "
               "holds -- it does not depend on S.")
     print(f"-> {csv_path}")
+
+    # ---- anonymized figure: per-subject RMSE for the anatomical axes ----
+    # Preserve the configured subject order, but keep identifying labels out of the
+    # figure. The console mapping makes the output reproducible without embedding names.
+    anon = {s: f"Sub{j + 1}" for j, (s, _) in enumerate(data)}
+    print("anonymous labels: " + ", ".join(f"{anon[s]}={s}" for s, _ in data))
+    bar_axes = ("flexion", "lateral", "axial")
+    row_by_key = {(r["subject"], r["axis"]): r for r in rows}
+    x = np.arange(len(data), dtype=float)
+    width = 0.24
+    axis_colors = ("#0072B2", "#009E73", "#D55E00")
+
+    fig_bar, ax_bar = plt.subplots(figsize=(9.2, 5.5))
+    for k, (ax_name, color) in enumerate(zip(bar_axes, axis_colors)):
+        values = [row_by_key[(s, ax_name)]["rmse"] for s, _ in data]
+        bars = ax_bar.bar(x + (k - 1) * width, values, width,
+                          label=ax_name.capitalize(), color=color)
+        ax_bar.bar_label(bars, labels=[f"{v:.1f}" for v in values],
+                         padding=3, fontsize=9)
+
+    ax_bar.set_xticks(x, [anon[s] for s, _ in data])
+    ax_bar.set_ylabel("RMSE (degrees)")
+    ax_bar.set_xlabel("Subject")
+    ax_bar.set_title("Per-subject trunk-angle error")
+    ax_bar.legend(frameon=False, ncol=len(bar_axes), loc="upper left")
+    ax_bar.grid(axis="y", alpha=0.25)
+    ax_bar.spines[["top", "right"]].set_visible(False)
+    ax_bar.set_ylim(0, ax_bar.get_ylim()[1] * 1.12)
+    fig_bar.tight_layout()
+    bar_png = out_dir / "subject_rmse_bar.png"
+    fig_bar.savefig(bar_png)
+    plt.close(fig_bar)
+    print(f"-> {bar_png}")
 
     # ---- figure: scatter (top) + Bland-Altman (bottom), one column per axis ----
     fig, axes = plt.subplots(2, len(AXES), figsize=(4.8 * len(AXES), 9))

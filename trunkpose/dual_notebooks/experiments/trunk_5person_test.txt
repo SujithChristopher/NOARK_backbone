@@ -1,0 +1,2585 @@
+ ▐▛███▛█   Claude Code v2.1.278
+▝▜██████▀  Opus 5 · Claude Pro
+  ▝▝ ▝▝    E:\CMC\pyprojects\programs_rpi\NOARK_backbone
+
+  Get to finished work sooner with Opus 5.5. Update Claude Code to try it.
+
+❯ can we generate a tight fit plot of the 3d hull registration and line plot of 
+  angles, icp vs mocap alone? for poster presentation.                          
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Skill(scientific-skills:scientific-visualization)
+  ⎿  Successfully loaded skill
+
+● Bash(cd /e/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose && ls plots/ |
+      head -50 && echo "=== 08_icp_video.py ===" && cat
+      dual_notebooks/08_icp_video.py)
+  ⎿  dataset_sanity_check.png  1.1M
+     dataset_sanity_check2.png  1.1M
+     densepose_262145.png  1.3M
+     … +346 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+● Bash(cd /e/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks
+      && echo "=== 08_angle_check.py ===" && cat 08_angle_check.py && echo "===
+      09_mocap_ang…)
+  ⎿  === 08_angle_check.py ===
+     # %% 08_angle_check.py
+     # Plot-only REPL notebook for GPIO-synchronized ICP and mocap trunk an
+     … +345 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+  Ran 2 shell commands (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ lets do it for this dataset                                                   
+  data\july27\july_27_sujith_no_comp                                            
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Bash(grep -n "RECORDING_DIR\|RECORDING_NAME\|CHARUCO_TOML\|STEREO_TOML\|enviro
+      n\|^N_NEUTRAL\|^QUAD_\|^N_WORKERS\|^AXIS_LEN\|ANGLE_COLORS\|CAM0_FRAMES\|C
+      AM1_FRAMES" 0…)
+  ⎿  31 matches in 1 files:
+
+     54:RECORDING_NAME = os.environ.get("TRUNK_RECORDING_NAME", "july_27_su
+     … +25 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Dataset default already. Cache exist. Write poster figure script.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Write(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Wrote 221 lines to trunkpose\dual_notebooks\12_poster_figures.py
+       1 # %% 12_poster_figures.py
+         e (07_icp_trunk.py),
+       3 # same data path / sync / zeroing as the validation run -- nothi
+       4 # differently here, only drawn for print.
+       6 #   A) icp_hull_registration.png  3D convex-hull registration, t
+         ight fit:
+         d through the ICP
+       8 #      transform (green hull wireframe + points). Overlap == hea
+       9 #   B) icp_vs_mocap_angles.png    3-row trunk-angle traces, ICP 
+      10 #
+     … +253 lines (ctrl+o to expand)
+
+  Listed 1 directory, ran 5 shell commands (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Added 34 lines
+      26  from scipy.spatial import ConvexHull, cKDTree
+      27  
+      28  sys.path.insert(0, str(Path(__file__).resolve().parent))
+      29 +                                                               
+      30 +                                                               
+      31 +def _stub_inference_deps():                                    
+      32 +    """Let 06 import without mediapipe/ultralytics installed.  
+      33 +                                                               
+      34 +    This script only ever draws from the cached geometry pass, 
+         +so the pose/seg                                                
+      35 +    models are never called -- but 06 imports them at module le
+         +vel. If the cache                                              
+      36 +    turns out to be missing or stale, main() stops with an expl
+         +icit message                                                   
+      37 +    instead of letting a stub blow up somewhere deep in the geo
+         +metry pass."""                                                 
+      38 +    import types                                               
+      39 +                                                               
+      40 +    class _Stub(types.ModuleType):                             
+      41 +        def __getattr__(self, name):                           
+      42 +            raise RuntimeError(                                
+      43 +                f"{self.__name__}.{name} needs the real package
+         +: install "                                                    
+      44 +                "mediapipe + ultralytics (uv sync) to recompute
+         + geometry")                                                    
+      45 +                                                               
+      46 +    for name in ("mediapipe", "mediapipe.tasks", "mediapipe.tas
+         +ks.python",                                                    
+      47 +                 "mediapipe.tasks.python.vision", "ultralytics"
+         +):                                                             
+      48 +        sys.modules.setdefault(name, _Stub(name))              
+      49 +    sys.modules["mediapipe"].tasks = sys.modules["mediapipe.tas
+         +ks"]                                                           
+      50 +    sys.modules["mediapipe.tasks"].python = sys.modules["mediap
+         +ipe.tasks.python"]                                             
+      51 +    sys.modules["mediapipe.tasks.python"].BaseOptions = object 
+      52 +    sys.modules["mediapipe.tasks.python"].vision = \           
+      53 +        sys.modules["mediapipe.tasks.python.vision"]           
+      54 +    sys.modules["ultralytics"].YOLO = object                   
+      55 +                                                               
+      56 +                                                               
+      57 +try:                                                           
+      58 +    import mediapipe  # noqa: F401                             
+      59 +    import ultralytics  # noqa: F401                           
+      60 +except ImportError:                                            
+      61 +    _stub_inference_deps()                                     
+      62 +                                                               
+      63  m6 = importlib.import_module("06_trunk_axis")
+      64  m7 = importlib.import_module("07_icp_trunk")
+      65  
+
+● Update(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Added 5 lines
+      143  # %% Main
+      144  def main():
+      145      poster_style()
+      146 +    cache = os.environ.get("TRUNK_GEOM_CACHE", "")            
+      147 +    if not (cache and Path(cache).exists()):                  
+      148 +        raise SystemExit(                                     
+      149 +            "No geometry cache. Run 07_icp_trunk.py once (with
+          + mediapipe + "                                                
+      150 +            "ultralytics installed) or set TRUNK_GEOM_CACHE.")
+      151      inp = m7.load_inputs()
+      152      frames, n, ts0 = inp["frames"], inp["n"], inp["ts0"]
+      153  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Added 3 lines, removed 1 line
+      45  
+      46      for name in ("mediapipe", "mediapipe.tasks", "mediapipe.tas
+          ks.python",
+      47                   "mediapipe.tasks.python.vision", "ultralytics"
+          ):
+      48 -        sys.modules.setdefault(name, _Stub(name))              
+      48 +        mod = _Stub(name)                                      
+      49 +        mod.__path__ = []          # import machinery asks pack
+         +ages for this                                                  
+      50 +        sys.modules.setdefault(name, mod)                      
+      51      sys.modules["mediapipe"].tasks = sys.modules["mediapipe.tas
+          ks"]
+      52      sys.modules["mediapipe.tasks"].python = sys.modules["mediap
+          ipe.tasks.python"]
+      53      sys.modules["mediapipe.tasks.python"].BaseOptions = object
+
+  Read 2 files, ran 1 shell command (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Added 17 lines, removed 18 lines
+      114  
+      115  
+      116  def draw_panel(ax, neutral, moved, lim, title, sub, subcol):
+      117 -    tri_n, h_n = hull_faces(neutral)                          
+      118 -    ax.add_collection3d(Poly3DCollection(tri_n, facecolor=C_NE
+          -U, alpha=0.16,                                                
+      119 -                                         edgecolor="none"))   
+      120 -    ax.add_collection3d(Line3DCollection(hull_edges(neutral, h
+          -_n), colors=C_NEU,                                            
+      121 -                                         linewidths=0.5, alpha
+          -=0.6))                                                        
+      117 +    # Hull faces carry their own faint edges -- a separate wir
+          +eframe collection                                             
+      118 +    # reads as noise at poster size because every back-facing 
+          +triangle shows                                                
+      119 +    # through the translucent surface.                        
+      120 +    tri_n, _ = hull_faces(neutral)                            
+      121 +    ax.add_collection3d(Poly3DCollection(tri_n, facecolor=C_NE
+          +U, alpha=0.22,                                                
+      122 +                                         edgecolor=C_NEU, line
+          +widths=0.25))                                                 
+      123      if moved is not None:
+      123 -        tri_m, h_m = hull_faces(moved)                        
+      124 -        ax.add_collection3d(Poly3DCollection(tri_m, facecolor=
+          -C_REG, alpha=0.10,                                            
+      125 -                                             edgecolor="none")
+          -)                                                             
+      126 -        ax.add_collection3d(Line3DCollection(hull_edges(moved,
+          - h_m), colors=C_REG,                                          
+      127 -                                             linewidths=1.0, a
+          -lpha=0.95))                                                   
+      128 -        ax.scatter(moved[:, 0], moved[:, 1], moved[:, 2], c=C_
+          -REG, s=1.2,                                                   
+      129 -                   alpha=0.55, depthshade=False)              
+      124 +        tri_m, _ = hull_faces(moved)                          
+      125 +        ax.add_collection3d(Poly3DCollection(tri_m, facecolor=
+          +C_REG, alpha=0.20,                                            
+      126 +                                             edgecolor=C_REG, 
+          +linewidths=0.35))                                             
+      127 +        ax.scatter(moved[:, 0], moved[:, 1], moved[:, 2], c=C_
+          +REG, s=2.0,                                                   
+      128 +                   alpha=0.75, depthshade=False, edgecolors="n
+          +one")                                                         
+      129      ax.set_xlim(lim[0])
+      130      ax.set_ylim(lim[1])
+      131      ax.set_zlim(lim[2])
+      133 -    ax.set_box_aspect([lim[k][1] - lim[k][0] for k in range(3)
+          -])                                                            
+      132 +    ax.set_box_aspect([lim[k][1] - lim[k][0] for k in range(3)
+          +], zoom=1.35)                                                 
+      133      ax.view_init(elev=14, azim=-72)
+      135 -    ax.set_xlabel("x (m)", labelpad=-6, fontsize=11)          
+      136 -    ax.set_ylabel("y (m)", labelpad=-6, fontsize=11)          
+      137 -    ax.set_zlabel("z (m)", labelpad=-6, fontsize=11)          
+      134 +    ax.set_xlabel("x (m)", labelpad=-4, fontsize=10)          
+      135 +    ax.set_ylabel("y (m)", labelpad=-4, fontsize=10)          
+      136 +    ax.set_zlabel("z (m)", labelpad=-6, fontsize=10)          
+      137      ax.tick_params(labelsize=8, pad=-2)
+      138      ax.grid(alpha=0.25)
+      140 -    ax.set_title(title, pad=2)                                
+      141 -    ax.text2D(0.5, -0.02, sub, transform=ax.transAxes, ha="cen
+          -ter", va="top",                                               
+      139 +    ax.set_title(title, pad=0)                                
+      140 +    ax.text2D(0.5, 0.995, sub, transform=ax.transAxes, ha="cen
+          +ter", va="top",                                               
+      141                fontsize=12, color=subcol)
+      142  
+      143  
+
+● Bash(python - <<'EOF'
+      import re,io,pathlib…)
+  ⎿  patched
+  ⎿  1 file changed (binary, mode only or too large to show)
+
+  Read 1 file, ran 2 shell commands, wrote 1 memory (ctrl+o to expand)
+
+● Both figures done. Dataset data/july27/july_27_sujith_no_comp, reused its
+  geom_cache.pkl.
+
+  New script: trunkpose/dual_notebooks/12_poster_figures.py — same
+  load/ICP/sync/zero path as 07, only drawing differs.
+
+  A — icp_hull_registration.png (3 panels, 400 dpi, 15×5 in)
+  Grey = neutral torso convex hull. Green = live cloud pushed through ICP
+  transform (hull + points). Frames picked: neutral, peak flexion, peak axial
+  rotation.
+  - A neutral: rms 3.8 mm, 100% inliers
+  - B flexion +21°: rms 7.2 mm, 100%
+  - C axial +28°: rms 8.5 mm, 93% (hull slides where the far flank self-occludes
+    — that's the honest failure mode, visible on purpose)
+
+  B — icp_vs_mocap_angles.png (3 rows, ICP vs mocap only, no plane baseline)
+  - Flexion r=+0.95, RMSE 2.3°
+  - Lateral r=+0.98, RMSE 1.4°
+  - Axial r=+0.98, RMSE 2.2°
+    n=801, clean mocap segment 0–26.7 s, GPIO-synced.
+
+  Poster styling: Okabe-Ito colors, mocap black dashed (greyscale-safe), big
+  fonts, despined, white bg.
+
+  Two notes:
+  - .venv has no mediapipe/ultralytics, and 06 imports them at module top.
+    Script installs import stubs and refuses to run if the cache is
+    missing/stale, so no silent fake geometry. Run with .venv/Scripts/python.exe
+    ..., not uv run.
+  - PNG only right now. Want PDF/SVG vector too for print? One-line change.
+
+✻ Churned for 5m 37s · done 9:10 AM
+
+❯ let us just have one subfigure, for rigid registration, peak axial rotation,  
+  +28 degree, is there a better way to show the displacement? i like the        
+  figure, but can we show that its displaced by some amount? how can we do      
+  that?                                                                         
+
+● Caveman pause — this a design choice, worth one question.
+● User declined to answer questions
+  ⎿  · For the single peak-axial-rotation panel, how should the displacement be 
+     shown? (Residual heat map + mm colorbar (Recommended) / Before/after ghost 
+     hulls / Point-to-point displacement quiver / Heat map + a cut-plane 
+     profile)
+
+● What you want clarify?
+
+  Quick recap of what I offered, in case that helps frame it:
+
+  1. Residual heat map — registered points colored by distance to neutral
+     surface, colorbar in mm + histogram inset (median/p95/rms).
+  2. Before/after ghost hulls — grey neutral, red raw pre-ICP cloud, green
+     post-ICP, arrow labeled with the mm/deg ICP removed.
+  3. Displacement quiver — arrows from each registered point to its nearest
+     neutral point, mm scale bar.
+  4. Heat map + cut-plane section — option 1 plus a 2D cross-section outline
+     with the gap annotated.
+
+  Ambiguity on my side: "displaced by some amount" reads two ways — (a) residual
+  misfit left after ICP (how tight the fit is), or (b) the rigid motion ICP
+  measured (28° axial, how far the torso moved from neutral). Options 1/3/4
+  answer (a), option 2 answers (b). Which one carry the poster message?
+
+✻ Sautéed for 41s · done 9:14 AM
+
+❯ plot all 4 designs i will choose what is best                                 
+
+● Plot all four. One frame: peak axial rotation.
+
+● Write(trunkpose\dual_notebooks\13_hull_displacement_designs.py)
+  ⎿  Wrote 295 lines to
+     trunkpose\dual_notebooks\13_hull_displacement_designs.py
+       1 # %% 13_hull_displacement_designs.py
+         otation pose -- each
+         , throw the rest.
+       4 #
+         e to the neutral
+         togram inset
+          hull (green) over
+       8 #                           the neutral hull (grey), labelled wi
+       9 #                           ICP measured (deg + centroid travel)
+          its nearest neutral
+     … +347 lines (ctrl+o to expand)
+
+  Read 4 files, ran 1 shell command (ctrl+o to expand)
+
+● All four rendered. Layout needs a pass — colorbar collides with z-axis, D3
+  arrows spill. Fixing.
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+  ⎿  1 file changed (binary, mode only or too large to show)
+
+  Read 3 files, ran 1 shell command (ctrl+o to expand)
+  ⎿  Found 93 new diagnostic issues in 1 file (ctrl+o to expand)
+
+● Four designs rendered, same frame (501, t=+14.8 s, axial +28.3°, ICP rot
+  29.0°). Script: trunkpose/dual_notebooks/13_hull_displacement_designs.py.
+  Files in the recording dir:
+
+  ┌─────┬──────────────────────────────┬─────────────────────────────────────┐
+  │     │             file             │            what it says             │
+  ├─────┼──────────────────────────────┼─────────────────────────────────────┤
+  │     │                              │ points colored by distance to       │
+  │ D1  │ design1_residual_heatmap.png │ neutral surface, mm colorbar +      │
+  │     │                              │ residual histogram. median 5.5 mm,  │
+  │     │                              │ p95 33.9, rms 8.5                   │
+  ├─────┼──────────────────────────────┼─────────────────────────────────────┤
+  │     │                              │ orange raw pose → green registered  │
+  │ D2  │ design2_ghost_hulls.png      │ over grey neutral, arrow labeled    │
+  │     │                              │ 29° / 74 mm                         │
+  ├─────┼──────────────────────────────┼─────────────────────────────────────┤
+  │ D3  │ design3_residual_quiver.png  │ residual arrows (×4, drawn below    │
+  │     │                              │ p95) + heat-colored points          │
+  ├─────┼──────────────────────────────┼─────────────────────────────────────┤
+  │     │                              │ D1 + horizontal cut in the trunk    │
+  │ D4  │ design4_heatmap_section.png  │ basis, outline gap max 34 mm /      │
+  │     │                              │ median 14 mm                        │
+  └─────┴──────────────────────────────┴─────────────────────────────────────┘
+
+  My read:
+
+  - D2 answers "displaced by how much" literally — one number, one arrow, reads
+    from 2 m away. Best poster panel if the message is "ICP measures the
+    motion".
+  - D1 answers "how tight is the fit" — best if the message is "registration is
+    trustworthy". Histogram tail does the honest work.
+  - D3 is pretty but noisy at poster size; arrow directions carry little meaning
+    for a reviewer.
+  - D4's section is informative but the gap number is easy to misread.
+
+  One caveat before you put a number on a poster: the p95 33.9 mm tail is not
+  ICP error. At +28° the camera sees a different patch of torso than at neutral,
+  so the far flank has no true counterpart — those are the black points
+  top-left. The defensible numbers are median 5.5 mm and the inlier rms 8.5 mm;
+  quote the tail as self-occlusion, not misfit.
+
+  Say which one and I'll polish it to a single final panel (and strip the other
+  three).
+
+✻ Baked for 3m 49s · done 9:18 AM
+
+※ recap: Goal: poster figures for the ICP trunk tracker. Angle plot and hull registration figure are done; four displacement-panel designs are rendered for the peak axial rotation frame. Next: you pick one, I polish it to a final panel. (disable recaps in /config)
+
+❯ i like the ghost pose, can we reduce the height of the figure a bit?          
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     frame 501  t=+14.8s  axial +28.3 deg  ICP rot 29.0 deg  rms 8.5 mm
+     D1 -> E:\CMC\pyprojects\programs_rpi\NOARK_backbone\data\july27\july_2
+     … +7 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\13_hull_displacement_designs.py (+6 
+     -4)
+      159  
+      160  # %% D2 -- ghost hulls: what ICP removed
+      161  def design2(b, path):
+      162 -    fig = plt.figure(figsize=(9.0, 6.6))                      
+      162 +    # Short and wide: the torso hulls are much wider than they
+          + are tall in this                                             
+      163 +    # view, so a square figure is mostly empty margin.        
+      164 +    fig = plt.figure(figsize=(9.0, 4.8))                      
+      165      ax = fig.add_subplot(111, projection="3d")
+      166 +    ax.set_position([0.01, 0.07, 0.98, 0.80])                 
+      167      neutral_hull(ax, b["neutral"], alpha=0.18)
+      168      for pts, col, lw in ((b["raw"], C_RAW, 0.35), (b["moved"],
+            C_REG, 0.35)):
+      169          ax.add_collection3d(Poly3DCollection(hull_tris(pts), f
+           acecolor=col,
+     ...
+      179      for pts, col in ((b["raw"], C_RAW), (b["moved"], C_REG)):
+      180          ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], c=col, s=1
+           .6, alpha=0.5,
+      181                     depthshade=False, edgecolors="none")
+      179 -    style3d(ax, limits([b["neutral"], b["raw"], b["moved"]])) 
+      182 +    style3d(ax, limits([b["neutral"], b["raw"], b["moved"]]), 
+          +zoom=1.5)                                                     
+      183      ax.set_title("Rigid motion recovered by ICP", pad=0)
+      184      ax.text2D(0.5, 0.99, caption(b), transform=ax.transAxes, h
+           a="center",
+      185                va="top", fontsize=12, color="#333333")
+     ...
+      187          Line2D([], [], color=C_NEU, lw=3, label="Neutral hull"
+           ),
+      188          Line2D([], [], color=C_RAW, lw=3, label="Live cloud, r
+           aw pose"),
+      189          Line2D([], [], color=C_REG, lw=3, label="Live cloud, r
+           egistered"),
+      187 -    ], loc="lower center", ncol=3, frameon=False, bbox_to_anch
+          -or=(0.5, 0.0))                                                
+      188 -    fig.tight_layout(rect=(0, 0.06, 1, 1))                    
+      190 +    ], loc="lower center", ncol=3, frameon=False, bbox_to_anch
+          +or=(0.5, -0.01))                                              
+      191      fig.savefig(path)
+      192      plt.close(fig)
+      193      print(f"D2 -> {path}")
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+       axial   : r=+0.99 RMSE= 2.3d
+     frame 501  t=+14.8s  axial +28.3 deg  ICP rot 29.0 deg  rms 8.5 mm
+     … +2 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\13_hull_displacement_designs.py (+7 
+     -5)
+      161  def design2(b, path):
+      162      # Short and wide: the torso hulls are much wider than they
+            are tall in this
+      163      # view, so a square figure is mostly empty margin.
+      164 -    fig = plt.figure(figsize=(9.0, 4.8))                      
+      164 +    fig = plt.figure(figsize=(9.0, 4.4))                      
+      165      ax = fig.add_subplot(111, projection="3d")
+      166 -    ax.set_position([0.01, 0.07, 0.98, 0.80])                 
+      166 +    ax.set_position([0.01, 0.02, 0.98, 0.84])                 
+      167      neutral_hull(ax, b["neutral"], alpha=0.18)
+      168      for pts, col, lw in ((b["raw"], C_RAW, 0.35), (b["moved"],
+            C_REG, 0.35)):
+      169          ax.add_collection3d(Poly3DCollection(hull_tris(pts), f
+           acecolor=col,
+     ...
+      179      for pts, col in ((b["raw"], C_RAW), (b["moved"], C_REG)):
+      180          ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], c=col, s=1
+           .6, alpha=0.5,
+      181                     depthshade=False, edgecolors="none")
+      182 -    style3d(ax, limits([b["neutral"], b["raw"], b["moved"]]), 
+          -zoom=1.5)                                                     
+      182 +    style3d(ax, limits([b["neutral"], b["raw"], b["moved"]]), 
+          +zoom=1.55)                                                    
+      183      ax.set_title("Rigid motion recovered by ICP", pad=0)
+      184      ax.text2D(0.5, 0.99, caption(b), transform=ax.transAxes, h
+           a="center",
+      185                va="top", fontsize=12, color="#333333")
+      186 -    fig.legend(handles=[                                      
+      186 +    # legend inside the axes -- a figure-level one at the bott
+          +om fought the                                                 
+      187 +    # x-axis label for the same strip of pixels once the figur
+          +e got shorter                                                 
+      188 +    ax.legend(handles=[                                       
+      189          Line2D([], [], color=C_NEU, lw=3, label="Neutral hull"
+           ),
+      190          Line2D([], [], color=C_RAW, lw=3, label="Live cloud, r
+           aw pose"),
+      191          Line2D([], [], color=C_REG, lw=3, label="Live cloud, r
+           egistered"),
+      190 -    ], loc="lower center", ncol=3, frameon=False, bbox_to_anch
+          -or=(0.5, -0.01))                                              
+      192 +    ], loc="upper left", bbox_to_anchor=(0.02, 0.90), frameon=
+          +False, fontsize=12)                                           
+      193      fig.savefig(path)
+      194      plt.close(fig)
+      195      print(f"D2 -> {path}")
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     frame 501  t=+14.8s  axial +28.3 deg  ICP rot 29.0 deg  rms 8.5 mm
+     D2 -> E:\CMC\pyprojects\programs_rpi\NOARK_backbone\data\july27\july_2
+     7_sujith_no_comp\design2_ghost_hulls.png
+  ⎿  Updated trunkpose\dual_notebooks\13_hull_displacement_designs.py (+8 
+     -7)
+      161  def design2(b, path):
+      162      # Short and wide: the torso hulls are much wider than they
+            are tall in this
+      163      # view, so a square figure is mostly empty margin.
+      164 -    fig = plt.figure(figsize=(9.0, 4.4))                      
+      164 +    fig = plt.figure(figsize=(9.0, 4.8))                      
+      165      ax = fig.add_subplot(111, projection="3d")
+      166 -    ax.set_position([0.01, 0.02, 0.98, 0.84])                 
+      166 +    ax.set_position([0.02, 0.14, 0.94, 0.78])                 
+      167      neutral_hull(ax, b["neutral"], alpha=0.18)
+      168      for pts, col, lw in ((b["raw"], C_RAW, 0.35), (b["moved"],
+            C_REG, 0.35)):
+      169          ax.add_collection3d(Poly3DCollection(hull_tris(pts), f
+           acecolor=col,
+     ...
+      179      for pts, col in ((b["raw"], C_RAW), (b["moved"], C_REG)):
+      180          ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], c=col, s=1
+           .6, alpha=0.5,
+      181                     depthshade=False, edgecolors="none")
+      182 -    style3d(ax, limits([b["neutral"], b["raw"], b["moved"]]), 
+          -zoom=1.55)                                                    
+      182 +    style3d(ax, limits([b["neutral"], b["raw"], b["moved"]]), 
+          +zoom=1.45)                                                    
+      183      ax.set_title("Rigid motion recovered by ICP", pad=0)
+      184      ax.text2D(0.5, 0.99, caption(b), transform=ax.transAxes, h
+           a="center",
+      185                va="top", fontsize=12, color="#333333")
+      186 -    # legend inside the axes -- a figure-level one at the bott
+          -om fought the                                                 
+      187 -    # x-axis label for the same strip of pixels once the figur
+          -e got shorter                                                 
+      188 -    ax.legend(handles=[                                       
+      186 +    # legend gets its own strip at the bottom; the axes box is
+          + lifted to 0.14 so                                            
+      187 +    # the x-axis label, which hangs below the 3D box, does not
+          + land on it                                                   
+      188 +    fig.legend(handles=[                                      
+      189          Line2D([], [], color=C_NEU, lw=3, label="Neutral hull"
+           ),
+      190          Line2D([], [], color=C_RAW, lw=3, label="Live cloud, r
+           aw pose"),
+      191          Line2D([], [], color=C_REG, lw=3, label="Live cloud, r
+           egistered"),
+      192 -    ], loc="upper left", bbox_to_anchor=(0.02, 0.90), frameon=
+          -False, fontsize=12)                                           
+      192 +    ], loc="lower center", ncol=3, frameon=False, bbox_to_anch
+          +or=(0.5, 0.005),                                              
+      193 +        fontsize=12)                                          
+      194      fig.savefig(path)
+      195      plt.close(fig)
+      196      print(f"D2 -> {path}")
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Shorter: 9 × 4.8 in (was 9 × 6.6). No collisions — legend has its own bottom
+  strip, z-label back in frame, hulls fill more of the box.
+
+  design2_ghost_hulls.png in the recording dir. Content unchanged: 29° / 74 mm
+  centroid travel at t=+14.8 s.
+
+  Want it shorter still? Next lever is dropping the axis-tick clutter (3D ticks
+  eat ~25% of the height and carry little for a poster) — would give roughly 9 ×
+  3.8 in with the hulls the same size.
+
+✻ Churned for 2m 28s · done 9:25 AM
+
+❯ can we also plot a disparity image, like the depth image, + we can have a     
+  segmentation outline in the depth image, depth image + segmentation outline   
+  with depth image.                                                             
+
+  Searched for 1 pattern, ran 3 shell commands (ctrl+o to expand)
+
+● Write(trunkpose\dual_notebooks\14_depth_segmentation_figure.py)
+  ⎿  Wrote 149 lines to
+     trunkpose\dual_notebooks\14_depth_segmentation_figure.py
+       1 # %% 14_depth_segmentation_figure.py
+         one and with the
+       3 # torso region outlined.
+       5 #   left   depth (disparity reprojected to metres) for the recti
+       6 #   right  same map + the outline of the torso front shell that 
+         feeds ICP
+       8 # The outline is NOT the raw YOLO mask: it is the cached torso f
+         ront-shell cloud
+         _M kept) projected
+          consumes, and it
+     … +176 lines (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\14_depth_segmentation_figure.py)
+  ⎿  Removed 3 lines
+      104      print(f"frame {i}  t={t_s:+.1f}s  valid depth {100 * finit
+           e.mean():.0f}%  "
+      105            f"range {vmin:.2f}-{vmax:.2f} m")
+      106  
+      107 -    R1, Q = m6.build_rectification(inp_k := m6.load_stereo(m6.
+          -STEREO_TOML)[0],                                              
+      108 -                                   *m6.load_stereo(m6.STEREO_T
+          -OML)[1:],                                                     
+      109 -                                   m6.CAM_SIZE)[:2] if False e
+          -lse (None, None)                                              
+      107      K0, D0, K1, D1, R, T_mm = m6.load_stereo(m6.STEREO_TOML)
+      108      R1, Q, _m0, _m1 = m6.build_rectification(K0, D0, K1, D1, R
+           , T_mm, m6.CAM_SIZE)
+      109      px = rect_pixels(fr["cloud"], inp["R0_c"], inp["t0_c"], R1
+           , Q, z.shape)
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+       File "E:\CMC\pyprojects\programs_rpi\NOARK_backbone\trunkpose\dual_n
+     otebooks\14_depth_segmentation_figure.py", line 106, in main
+     … +4 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+155
+     -146)
+        1 -# %% 14_depth_segmentation_figure.py                          
+        2 -# Poster panel: the stereo depth map behind the ICP pipeline, 
+          -alone and with the                                            
+        3 -# torso region outlined.                                      
+        4 -#                                                             
+        5 -#   left   depth (disparity reprojected to metres) for the rec
+          -tified cam0 view                                              
+        6 -#   right  same map + the outline of the torso front shell tha
+          -t feeds ICP                                                   
+        7 -#                                                             
+        8 -# The outline is NOT the raw YOLO mask: it is the cached torso
+          - front-shell cloud                                            
+        9 -# (mask eroded by MASK_ERODE_FRAC, arms removed, frontmost SHE
+          -LL_M kept) projected                                          
+       10 -# back into the rectified image. That is the region ICP actual
+          -ly consumes, and it                                           
+       11 -# is the only one recoverable from the geometry cache -- drawi
+          -ng the raw mask would                                         
+       12 -# need the YOLO weights and would overstate what the pipeline 
+          -uses.                                                         
+       13 -#                                                             
+       14 -#   TRUNK_FIG_FRAME=<i>  pick the frame (default: the peak axi
+          -al-rotation frame,                                            
+       15 -#                        i.e. the same pose as the ghost-hull 
+          -panel)                                                        
+       16 -#   uv run python trunkpose/dual_notebooks/14_depth_segmentati
+          -on_figure.py                                                  
+       17 -                                                              
+       18 -import importlib                                              
+       19 -import os                                                     
+       20 -import sys                                                    
+       21 -from pathlib import Path                                      
+       22 -                                                              
+       23 -import matplotlib                                             
+       24 -                                                              
+       25 -matplotlib.use("Agg")                                         
+       26 -import matplotlib.pyplot as plt                               
+       27 -import numpy as np                                            
+       28 -                                                              
+       29 -import cv2                                                    
+       30 -from matplotlib.lines import Line2D                           
+       31 -                                                              
+       32 -sys.path.insert(0, str(Path(__file__).resolve().parent))      
+       33 -m12 = importlib.import_module("12_poster_figures")            
+       34 -m6, m7 = m12.m6, m12.m7                                       
+       35 -                                                              
+       36 -OUT_PNG = m6.RECORDING_DIR / "depth_segmentation_figure.png"  
+       37 -C_OUT = "#009E73"        # torso outline                      
+       38 -CMAP = "viridis"                                              
+       39 -DILATE_PX = 9            # the cached cloud is voxel-downsampl
+          -ed, so fill gaps first                                        
+       40 -MIN_BLOB_PX = 300                                             
+     … 261 more lines (ctrl+o to expand)
+  ⎿  (timeout 10m)
+
+● Update(trunkpose\dual_notebooks\14_depth_segmentation_figure.py)
+  ⎿  Added 1 line, removed 1 line
+      103      finite = np.isfinite(z)
+      104      vmin = float(np.percentile(z[finite], 1))
+      105      print(f"frame {i}  t={t_s:+.1f}s  valid depth {100 * finit
+           e.mean():.0f}%  "
+      106 -          f"range {vmin:.2f}-{vmax:.2f} m")                   
+      106 +          f"range {vmin:.2f}-{np.nanmax(z):.2f} m")           
+      107  
+      108      K0, D0, K1, D1, R, T_mm = m6.load_stereo(m6.STEREO_TOML)
+      109      R1, Q, _m0, _m1 = m6.build_rectification(K0, D0, K1, D1, R
+           , T_mm, m6.CAM_SIZE)
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+● Done — depth_segmentation_figure.png, script
+  trunkpose/dual_notebooks/14_depth_segmentation_figure.py.
+
+  A rectified cam0 stereo depth (disparity → metres, SGBM + bilateral, white =
+  no match, 42% valid). B same map + torso outline. Color ramp clipped at 1.9 m
+  (torso median 0.71 m) so the subject isn't crushed into the dark end; the wall
+  saturates yellow.
+
+  One thing to be straight about: the outline is not the raw YOLO mask.
+  YOLO/ultralytics isn't installed in .venv, and the mask isn't cached — only
+  the torso front-shell cloud is. So the outline is that cloud reprojected into
+  the rectified image: YOLO mask after erosion (6%·√area), arm subtraction, and
+  the frontmost-10 cm shell gate. That is what ICP actually eats, which I'd
+  argue is the better claim for a poster, but it is tighter than the
+  segmentation mask and the caption should say "torso region used for
+  registration", not "segmentation".
+
+  If you want the true YOLO mask contour instead, it needs uv sync (pulls torch,
+  ~GBs) and a re-run of one frame's segmentation — say the word.
+
+  Two optional upgrades:
+  - Zoom panel: replace B with a crop around the torso so the chest depth
+    gradient and outline read from 2 m away.
+  - Disparity vs depth: right now it's depth in metres. Raw disparity (px) is
+    recoverable only by re-running SGBM on that frame pair — cheap, no YOLO
+    needed, if you'd rather show disparity.
+
+✻ Cogitated for 4m 5s · done 9:32 AM
+
+❯ No i think the heatmap should be like blue to red hotspots, turbo?            
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     torso outline: 1 contour(s) from 1336 projected points
+     torso median depth 0.71 m -> colour range 0.25-1.91 m
+     … +2 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+2 
+     -2)
+      34  m6, m7 = m12.m6, m12.m7
+      35  
+      36  OUT_PNG = m6.RECORDING_DIR / "depth_segmentation_figure.png"
+      37 -C_OUT = "#009E73"        # torso outline                       
+      38 -CMAP = "viridis"                                               
+      37 +C_OUT = "#111111"        # torso outline -- black reads on ever
+         +y turbo hue                                                    
+      38 +CMAP = "turbo"           # matches 06's depth panel (cv2.COLORM
+         +AP_TURBO)                                                      
+      39  DILATE_PX = 9            # the cached cloud is voxel-downsample
+          d, so fill gaps first
+      40  MIN_BLOB_PX = 300
+      41  CLIP_ABOVE_TORSO_M = 1.2  # colour ramp ends this far behind th
+          e torso
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Turbo now — blue near, red far, matching 06's depth panel
+  (cv2.COLORMAP_TURBO). Outline switched to black; the green got lost against
+  turbo's mid-greens.
+
+  Torso reads cyan/teal (~0.7 m), desk blue, back wall dark red at the 1.9 m
+  clip.
+
+  Two caveats, then it's yours:
+  - Turbo is not perceptually uniform and not colorblind-safe — the
+    blue→cyan→green band compresses real depth differences and the red end
+    expands them. Fine for "here is the scene", weaker if a reviewer tries to
+    read depth off it. cividis would keep the warm/cool feel while staying safe
+    if you ever want to swap (CMAP at line 38).
+  - The dark-red saturation at top is the 1.9 m clip, not the true wall distance
+    (~3.4 m). Caption it or raise CLIP_ABOVE_TORSO_M.
+
+✻ Cogitated for 36s · done 9:34 AM
+
+❯ which colormap does this one use? you can use yolo by fetching if required    
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 05_create_plane.py has no colormap at all. Assuming you meant the figure on
+  screen: matplotlib turbo — same ramp as 06's video depth panel (DEPTH_CMAP = 
+  cv2.COLORMAP_TURBO, 06_trunk_axis.py:104).
+
+  YOLO weights are already on disk
+  (trunkpose/runs/trunk_seg-{2,5,6}/weights/best.pt) — only the ultralytics
+  package is missing. Installing.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched 12
+  ⎿  Updated trunkpose\dual_notebooks\12_poster_figures.py (+1 -1)
+      28  sys.path.insert(0, str(Path(__file__).resolve().parent))
+      29  
+      30  
+      31 -def _stub_inference_deps():                                    
+      31 +def _stub_inference_deps(missing):                             
+      32      """Let 06 import without mediapipe/ultralytics installed.
+      33  
+      34      This script only ever draws from the cached geometry pass, 
+          so the pose/seg
+
+● Now add the real YOLO mask outline to the depth figure.
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ you can use nutral pose for this plot                                         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd /e/CMC/pyprojects/programs_rpi/NOARK_backbone && python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched 14
+       File "<frozen importlib._bootstrap_external>", line 1026, in exec_mo
+     dule
+     … +8 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+50 
+     -23)
+       5  #   left   depth (disparity reprojected to metres) for the rect
+          ified cam0 view
+       6  #   right  same map + the outline of the torso front shell that
+           feeds ICP
+       7  #
+       8 -# The outline is NOT the raw YOLO mask: it is the cached torso 
+         -front-shell cloud                                              
+       9 -# (mask eroded by MASK_ERODE_FRAC, arms removed, frontmost SHEL
+         -L_M kept) projected                                            
+      10 -# back into the rectified image. That is the region ICP actuall
+         -y consumes, and it                                             
+      11 -# is the only one recoverable from the geometry cache -- drawin
+         -g the raw mask would                                           
+      12 -# need the YOLO weights and would overstate what the pipeline u
+         -ses.                                                           
+       8 +# Two outlines, because they are not the same thing:           
+       9 +#   * YOLO torso mask -- the raw segmentation, re-run on this f
+         +rame                                                           
+      10 +#   * torso front shell -- what ICP actually consumes: that mas
+         +k eroded by                                                    
+      11 +#     MASK_ERODE_FRAC, arms subtracted, only the frontmost SHEL
+         +L_M kept. Recovered                                            
+      12 +#     by projecting the cached cloud back into the rectified im
+         +age.                                                           
+      13 +# The gap between them is the erosion + front-shell gate, and i
+         +t is the point.                                                
+      14  #
+      14 -#   TRUNK_FIG_FRAME=<i>  pick the frame (default: the peak axia
+         -l-rotation frame,                                              
+      15 -#                        i.e. the same pose as the ghost-hull p
+         -anel)                                                          
+      15 +#   TRUNK_FIG_FRAME=<i>  pick the frame (default: the neutral p
+         +ose)                                                           
+      16 +#   TRUNK_SEG_WEIGHTS    YOLO weights (inherited from 06)      
+      17  #   uv run python trunkpose/dual_notebooks/14_depth_segmentatio
+          n_figure.py
+      18  
+      19  import importlib
+     ...
+      35  m6, m7 = m12.m6, m12.m7
+      36  
+      37  OUT_PNG = m6.RECORDING_DIR / "depth_segmentation_figure.png"
+      37 -C_OUT = "#111111"        # torso outline -- black reads on ever
+         -y turbo hue                                                    
+      38 +C_SHELL = "#111111"      # ICP input outline -- black reads on 
+         +every turbo hue                                                
+      39 +C_SEG = "#FFFFFF"        # raw YOLO mask outline               
+      40  CMAP = "turbo"           # matches 06's depth panel (cv2.COLORM
+          AP_TURBO)
+      41  DILATE_PX = 9            # the cached cloud is voxel-downsample
+          d, so fill gaps first
+      42  MIN_BLOB_PX = 300
+     ...
+       78      return mask, [c.reshape(-1, 2) for c in cnts if cv2.contou
+           rArea(c) >= MIN_BLOB_PX]
+       79  
+       80  
+       81 +def yolo_outline(i, maps0, shape):                            
+       82 +    """Re-run the YOLO torso segmentation on cam0 frame `i`, r
+          +ectified + downscaled."""                                     
+       83 +    from ultralytics import YOLO                              
+       84 +                                                              
+       85 +    gray = None                                               
+       86 +    for k, f0 in enumerate(m6.iter_frames(m6.CAM0_FRAMES)):   
+     … 89 more lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Added 26 lines, removed 16 lines
+      43                  f"{self.__name__}.{name} needs the real package
+          : install "
+      44                  "mediapipe + ultralytics (uv sync) to recompute
+           geometry")
+      45  
+      46 -    for name in ("mediapipe", "mediapipe.tasks", "mediapipe.tas
+         -ks.python",                                                    
+      47 -                 "mediapipe.tasks.python.vision", "ultralytics"
+         -):                                                             
+      48 -        mod = _Stub(name)                                      
+      49 -        mod.__path__ = []          # import machinery asks pack
+         -ages for this                                                  
+      50 -        sys.modules.setdefault(name, mod)                      
+      51 -    sys.modules["mediapipe"].tasks = sys.modules["mediapipe.tas
+         -ks"]                                                           
+      52 -    sys.modules["mediapipe.tasks"].python = sys.modules["mediap
+         -ipe.tasks.python"]                                             
+      53 -    sys.modules["mediapipe.tasks.python"].BaseOptions = object 
+      54 -    sys.modules["mediapipe.tasks.python"].vision = \           
+      55 -        sys.modules["mediapipe.tasks.python.vision"]           
+      56 -    sys.modules["ultralytics"].YOLO = object                   
+      46 +    names = {"mediapipe": ("mediapipe", "mediapipe.tasks", "med
+         +iapipe.tasks.python",                                          
+      47 +                           "mediapipe.tasks.python.vision"),   
+      48 +             "ultralytics": ("ultralytics",)}                  
+      49 +    for top in missing:                                        
+      50 +        for name in names[top]:                                
+      51 +            mod = _Stub(name)                                  
+      52 +            mod.__path__ = []      # import machinery asks pack
+         +ages for this                                                  
+      53 +            sys.modules.setdefault(name, mod)                  
+      54 +    if "mediapipe" in missing:                                 
+      55 +        sys.modules["mediapipe"].tasks = sys.modules["mediapipe
+         +.tasks"]                                                       
+      56 +        sys.modules["mediapipe.tasks"].python = sys.modules["me
+         +diapipe.tasks.python"]                                         
+      57 +        sys.modules["mediapipe.tasks.python"].BaseOptions = obj
+         +ect                                                            
+      58 +        sys.modules["mediapipe.tasks.python"].vision = \       
+      59 +            sys.modules["mediapipe.tasks.python.vision"]       
+      60 +    if "ultralytics" in missing:                               
+      61 +        sys.modules["ultralytics"].YOLO = object               
+      62  
+      63  
+      59 -try:                                                           
+      60 -    import mediapipe  # noqa: F401                             
+      61 -    import ultralytics  # noqa: F401                           
+      62 -except ImportError:                                            
+      63 -    _stub_inference_deps()                                     
+      64 +# Stub only what is actually absent -- stubbing an installed pa
+         +ckage would shadow                                             
+      65 +# the real one for every later import (e.g. 14's YOLO segmentat
+         +ion pass).                                                     
+      66 +_missing = []                                                  
+      67 +for _top in ("mediapipe", "ultralytics"):                      
+      68 +    try:                                                       
+      69 +        importlib.import_module(_top)                          
+      70 +    except ImportError:                                        
+      71 +        _missing.append(_top)                                  
+      72 +if _missing:                                                   
+      73 +    _stub_inference_deps(_missing)                             
+      74  
+      75  m6 = importlib.import_module("06_trunk_axis")
+      76  m7 = importlib.import_module("07_icp_trunk")
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\12_poster_figures.py)
+  ⎿  Added 4 lines
+      39  
+      40      class _Stub(types.ModuleType):
+      41          def __getattr__(self, name):
+      42 +            # dunders must fail as AttributeError: inspect/torc
+         +h walk sys.modules                                             
+      43 +            # and probe __file__, __spec__ ... a RuntimeError t
+         +here kills them                                                
+      44 +            if name.startswith("__") and name.endswith("__"):  
+      45 +                raise AttributeError(name)                     
+      46              raise RuntimeError(
+      47                  f"{self.__name__}.{name} needs the real package
+          : install "
+      48                  "mediapipe + ultralytics (uv sync) to recompute
+           geometry")
+
+  Read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+● Two outlines came out nearly identical (6620 vs 6187 px) — my
+  cloud-reprojection outline was inflated by the 9 px gap-fill dilation, so it
+  hid the erosion. Computing the real eroded/front-shell pixel mask instead.
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib, re…)
+  ⎿  patched
+       axial   : r=+0.99 RMSE= 2.3d
+     frame 58  t=+0.0s  valid depth 41%  range 0.25-3.98 m
+     … +4 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+53 
+     -45)
+      38  C_SHELL = "#111111"      # ICP input outline -- black reads on 
+          every turbo hue
+      39  C_SEG = "#FFFFFF"        # raw YOLO mask outline
+      40  CMAP = "turbo"           # matches 06's depth panel (cv2.COLORM
+          AP_TURBO)
+      41 -DILATE_PX = 9            # the cached cloud is voxel-downsample
+         -d, so fill gaps first                                          
+      41  MIN_BLOB_PX = 300
+      42  CLIP_ABOVE_TORSO_M = 1.2  # colour ramp ends this far behind th
+          e torso
+      43  
+     ...
+       51      return z
+       52  
+       53  
+       55 -def rect_pixels(cloud_b, R0_c, t0_c, R1, Q, shape):           
+       56 -    """Board-frame cloud -> pixel coords on the stored (rectif
+          -ied, downscaled) map."""                                      
+       57 -    cam = cloud_b.astype(np.float64) @ R0_c.T + t0_c     # boa
+          -rd -> cam0                                                    
+       58 -    rect = cam @ R1.T                                    # cam
+          -0 -> rectified cam0                                           
+       59 -    f, cx, cy = float(Q[2, 3]), float(-Q[0, 3]), float(-Q[1, 3
+          -])                                                            
+       60 -    ok = rect[:, 2] > 1e-6                                    
+       61 -    rect = rect[ok]                                           
+       62 -    u = f * rect[:, 0] / rect[:, 2] + cx                      
+       63 -    v = f * rect[:, 1] / rect[:, 2] + cy                      
+       64 -    h, w = shape                                              
+       65 -    return np.column_stack([u * w / m6.CAM_SIZE[0], v * h / m6
+          -.CAM_SIZE[1]])                                                
+       54 +def contours_of(mask_small):                                  
+       55 +    cnts, _ = cv2.findContours(mask_small, cv2.RETR_EXTERNAL, 
+          +cv2.CHAIN_APPROX_SIMPLE)                                      
+       56 +    return [c.reshape(-1, 2) for c in cnts if cv2.contourArea(
+          +c) >= MIN_BLOB_PX]                                            
+       57  
+       58  
+       68 -def outline_contours(px, shape):                              
+       69 -    """Rasterize the projected points, close the gaps, return 
+          -contour polylines."""                                         
+       70 -    h, w = shape                                              
+       71 -    mask = np.zeros((h, w), np.uint8)                         
+       72 -    inside = ((px[:, 0] >= 0) & (px[:, 0] < w) & (px[:, 1] >= 
+          -0) & (px[:, 1] < h))                                          
+       73 -    ij = px[inside].round().astype(int)                       
+       74 -    mask[ij[:, 1], ij[:, 0]] = 255                            
+       75 -    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DILATE_P
+          -X, DILATE_PX))                                                
+       76 -    mask = cv2.morphologyEx(cv2.dilate(mask, k), cv2.MORPH_CLO
+          -SE, k)                                                        
+       77 -    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CH
+          -AIN_APPROX_SIMPLE)                                            
+       78 -    return mask, [c.reshape(-1, 2) for c in cnts if cv2.contou
+          -rArea(c) >= MIN_BLOB_PX]                                      
+       79 -                                                              
+       80 -                                                              
+       81 -def yolo_outline(i, maps0, shape):                            
+     … 83 more lines (ctrl+o to expand)
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     YOLO mask 6347 px -> front shell 5490 px (86% kept)
+     torso median depth 0.70 m -> colour range 0.25-1.90 m
+     … +2 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+3 
+     -2)
+      178      axes[1].legend(handles=[
+      179          Line2D([], [], color=C_SEG, lw=3, label="YOLO torso ma
+           sk"),
+      180          Line2D([], [], color=C_SHELL, lw=3, label="Front shell
+            (ICP input)"),
+      181 -    ], loc="lower right", frameon=True, facecolor="white", fra
+          -mealpha=0.85,                                                 
+      182 -        edgecolor="none", fontsize=11, labelcolor="#111111")  
+      181 +    ], loc="lower right", frameon=True, facecolor="#b0b0b0", f
+          +ramealpha=0.9,                                                
+      182 +        edgecolor="none", fontsize=11, labelcolor="#111111")  
+          +# grey: white AND                                             
+      183 +    # black swatches both read on it                          
+      184      fig.suptitle(f"Rectified cam0 stereo depth, neutral pose "
+      185                   f"(frame {i}, t = {t_s:+.1f} s)", y=0.99)
+      186      fig.savefig(OUT_PNG)
+  ⎿  (timeout 10m)
+
+● Done. depth_segmentation_figure.png, neutral pose (frame 58, t = 0.0 s).
+
+  Colormap: turbo — same ramp as 06's video depth panel (DEPTH_CMAP = 
+  cv2.COLORMAP_TURBO). 05_create_plane.py, which you had open, sets no colormap
+  at all.
+
+  YOLO is now real. Installed ultralytics; the weights were already on disk
+  (runs/trunk_seg-2/weights/best.pt, the same model that built the cache). Panel
+  B now shows two outlines computed from 06's actual mask path on this frame:
+  - white = raw YOLO torso mask, 6347 px
+  - black = front shell fed to ICP, 5490 px (86% kept after the 6%·√area
+    erosion, arm subtraction, and frontmost-10 cm gate)
+
+  I threw away the earlier cloud-reprojection outline — it needed a 9 px
+  dilation to close gaps in the voxel-downsampled cloud, and that dilation
+  cancelled exactly the erosion the panel is supposed to show. It was reporting
+  the shell as larger than the mask, which was wrong.
+
+  One thing you should know before running anything else: uv pip install 
+  ultralytics pulled in opencv-python 5.0.0, which now shadows the project's
+  opencv-contrib-python 4.13 — import cv2 gives 5.0.0. fisheye and aruco both
+  still resolve, and this figure ran clean, but that is a silent version bump
+  across the whole repo (recorder, GameStream, calibration). To put it back: uv 
+  pip install --reinstall opencv-contrib-python. Say the word and I'll do it —
+  or leave it if you want ultralytics available.
+
+✻ Churned for 4m 34s · done 9:42 AM
+
+※ recap: Goal: poster figures from the july27 ICP trunk data. Built the ghost-hull registration panel, ICP-vs-mocap angle plot, and a turbo depth map with YOLO and front-shell outlines. Next: decide whether to restore opencv-contrib-python, which ultralytics shadowed. (disable recaps in /config)
+
+❯ [Image #1] what is this colormap? i want something similar                    
+  ⎿  [Image #1]
+  ⎿  ⧉ Selected 1 lines from 
+     trunkpose\dual_notebooks\14_depth_segmentation_figure.py in Visual Studio 
+     Code
+● Let me render candidates rather than guess — that image reads like an HSV-wrap
+  rainbow (magenta and red and green), but nipy_spectral also fits since it
+  starts at black.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Rendering the same six at full depth range (no 1.9 m clip) — the reference has
+  a green mid-band, which means a wider range than my clipped version.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Closest matches to your reference are nipy_spectral (blue subject, green
+  walls, red blob, purple/magenta desk — the magenta bits in your image) and
+  jet, both at full range with no-data black. Applying nipy_spectral.
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     YOLO mask 6347 px -> front shell 5490 px (86% kept)
+     torso median depth 0.70 m -> colour range 0.25-3.47 m
+     … +2 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+15 
+     -8)
+      37  OUT_PNG = m6.RECORDING_DIR / "depth_segmentation_figure.png"
+      38  C_SHELL = "#111111"      # ICP input outline -- black reads on 
+          every turbo hue
+      39  C_SEG = "#FFFFFF"        # raw YOLO mask outline
+      40 -CMAP = "turbo"           # matches 06's depth panel (cv2.COLORM
+         -AP_TURBO)                                                      
+      40 +CMAP = "nipy_spectral"   # saturated rainbow with a black low e
+         +nd; "jet"                                                      
+      41 +                         # and "turbo" are the other two that s
+         +uit depth                                                      
+      42 +NODATA = "black"         # unmatched pixels; black merges with 
+         +the ramp end                                                   
+      43  MIN_BLOB_PX = 300
+      42 -CLIP_ABOVE_TORSO_M = 1.2  # colour ramp ends this far behind th
+         -e torso                                                        
+      44 +CLIP_ABOVE_TORSO_M = None  # metres behind the torso to end the
+         + ramp;                                                         
+      45 +                           # None = full scene range (more room
+         + colour,                                                       
+      46 +                           # less contrast across the torso its
+         +elf)                                                           
+      47  
+      48  
+      49  def depth_metres(depth_u8):
+     ...
+      151      # Everything past the clip saturates, which is the correct
+            reading ("far wall").
+      152      in_torso = finite & (mask > 0)
+      153      z_torso = float(np.median(z[in_torso])) if in_torso.any() 
+           else float(np.nanmedian(z))
+      150 -    vmax = min(float(np.percentile(z[finite], 99)), z_torso + 
+          -CLIP_ABOVE_TORSO_M)                                           
+      154 +    vmax = float(np.percentile(z[finite], 99))                
+      155 +    if CLIP_ABOVE_TORSO_M is not None:                        
+      156 +        vmax = min(vmax, z_torso + CLIP_ABOVE_TORSO_M)        
+      157      print(f"torso median depth {z_torso:.2f} m -> colour range
+            {vmin:.2f}-{vmax:.2f} m")
+      158  
+      159      fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.2))
+      160      for k, ax in enumerate(axes):
+      161          im = ax.imshow(np.ma.masked_invalid(z), cmap=CMAP, vmi
+           n=vmin, vmax=vmax,
+      162                         interpolation="nearest")
+      157 -        im.cmap.set_bad("white")           # 0 in the packed m
+          -ap = no stereo match                                          
+      163 +        im.cmap.set_bad(NODATA)            # 0 in the packed m
+          +ap = no stereo match                                          
+      164          if k == 1:
+      165              for col, lw, group in ((C_SEG, 2.2, seg_cnts), (C_
+           SHELL, 2.4, cnts)):
+      166                  for c in group:
+     ...
+      171                  ax.fill(loop[:, 0], loop[:, 1], color=C_SHELL,
+            alpha=0.12)
+      172          ax.set_xticks([])
+      173          ax.set_yticks([])
+      168 -        for s in ax.spines.values():                          
+      169 -            s.set_visible(True)                               
+      170 -            s.set_color("#999999")                            
+      174 +        for sp in ax.spines.values():                         
+     … 13 more lines (ctrl+o to expand)
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     torso median depth 0.70 m -> colour range 0.25-3.47 m
+     Depth figure -> E:\CMC\pyprojects\programs_rpi\NOARK_backbone\data\jul
+     y27\july_27_sujith_no_comp\depth_segmentation_figure.png
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+12 
+     -11)
+      35  m6, m7 = m12.m6, m12.m7
+      36  
+      37  OUT_PNG = m6.RECORDING_DIR / "depth_segmentation_figure.png"
+      38 -C_SHELL = "#111111"      # ICP input outline -- black reads on 
+         -every turbo hue                                                
+      39 -C_SEG = "#FFFFFF"        # raw YOLO mask outline               
+      38 +C_SHELL = "#FFFFFF"      # ICP input outline -- dashed, see bel
+         +ow                                                             
+      39 +# Both outlines are white and told apart by dash pattern: the r
+         +amp runs the                                                   
+      40 +# whole rainbow, so no single hue contrasts everywhere, and the
+         + torso sits at                                                 
+      41 +# the dark end where a black line vanishes.                    
+      42 +C_SEG = "#FFFFFF"        # raw YOLO mask outline -- solid      
+      43  CMAP = "nipy_spectral"   # saturated rainbow with a black low e
+          nd; "jet"
+      44                           # and "turbo" are the other two that s
+          uit depth
+      45  NODATA = "black"         # unmatched pixels; black merges with 
+          the ramp end
+     ...
+      165                         interpolation="nearest")
+      166          im.cmap.set_bad(NODATA)            # 0 in the packed m
+           ap = no stereo match
+      167          if k == 1:
+      165 -            for col, lw, group in ((C_SEG, 2.2, seg_cnts), (C_
+          -SHELL, 2.4, cnts)):                                           
+      168 +            for col, lw, ls, group in ((C_SEG, 2.4, "-", seg_c
+          +nts),                                                         
+      169 +                                       (C_SHELL, 1.8, (0, (4, 
+          +2)), cnts)):                                                  
+      170                  for c in group:
+      171                      loop = np.vstack([c, c[:1]])
+      168 -                    ax.plot(loop[:, 0], loop[:, 1], color=col,
+          - lw=lw)                                                       
+      169 -            for c in cnts:                                    
+      170 -                loop = np.vstack([c, c[:1]])                  
+      171 -                ax.fill(loop[:, 0], loop[:, 1], color=C_SHELL,
+          - alpha=0.12)                                                  
+      172 +                    ax.plot(loop[:, 0], loop[:, 1], color=col,
+          + lw=lw, ls=ls)                                                
+      173          ax.set_xticks([])
+      174          ax.set_yticks([])
+      175          for sp in ax.spines.values():
+     ...
+      185      cb.ax.tick_params(labelsize=11)
+      186      axes[1].legend(handles=[
+      187          Line2D([], [], color=C_SEG, lw=3, label="YOLO torso ma
+           sk"),
+      187 -        Line2D([], [], color=C_SHELL, lw=3, label="Front shell
+          - (ICP input)"),                                               
+      188 -    ], loc="lower right", frameon=True, facecolor="#b0b0b0", f
+          -ramealpha=0.9,                                                
+      189 -        edgecolor="none", fontsize=11, labelcolor="#111111")  
+          -# grey: white AND                                             
+      190 -    # black swatches both read on it                          
+      188 +        Line2D([], [], color=C_SHELL, lw=2, ls=(0, (4, 2)),   
+      189 +               label="Front shell (ICP input)"),              
+      190 +    ], loc="lower right", frameon=True, facecolor="#555555", f
+          +ramealpha=0.9,                                                
+      191 +        edgecolor="none", fontsize=11, labelcolor="white")    
+     … 3 more lines (ctrl+o to expand)
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Your reference is a saturated full-rainbow with a black low end. Best match in
+  matplotlib is nipy_spectral; jet and OpenCV's COLORMAP_RAINBOW are close
+  cousins. I can't pin it exactly from a 185 px thumbnail, but two comparison
+  sheets are in the recording dir if you want to eyeball it yourself:
+
+  - depth_colormap_options.png — six maps, clipped range
+  - depth_colormap_options_fullrange.png — same six, full 0.25–3.4 m (this is
+    the one that matches your image)
+
+  Applied nipy_spectral + full range + black no-data to
+  depth_segmentation_figure.png. Also changed the two outlines to white solid
+  (YOLO mask) / white dashed (front shell) — the ramp now spans every hue, so no
+  single outline color contrasted everywhere, and the torso sits at the dark
+  end where the old black line disappeared.
+
+  One real cost of this scheme, your call whether it matters: no-data black and 
+  near-depth black are now the same color. The subject at 0.7 m renders dark
+  purple-to-black, indistinguishable from unmatched pixels. Ways out, if you
+  want one:
+  - NODATA = "#3a3a3a" (grey) — keeps the rainbow, separates missing from near
+  - put the clip back (CLIP_ABOVE_TORSO_M = 1.2) — torso gets the bright end
+    again, room saturates
+  - jet instead — starts at blue, not black, so near pixels never collide with
+    no-data
+
+  All three are one-line changes at the top of 14_depth_segmentation_figure.py.
+
+✻ Sautéed for 3m 0s · done 9:48 AM
+
+❯ let us use jet, jet seems to be better                                        
+
+● Bash(python - <<'PYEOF'
+      import pathlib…)
+  ⎿  patched
+     torso median depth 0.70 m -> colour range 0.25-3.47 m
+     Depth figure -> E:\CMC\pyprojects\programs_rpi\NOARK_backbone\data\jul
+     y27\july_27_sujith_no_comp\depth_segmentation_figure.png
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+3 
+     -3)
+      40  # whole rainbow, so no single hue contrasts everywhere, and the
+           torso sits at
+      41  # the dark end where a black line vanishes.
+      42  C_SEG = "#FFFFFF"        # raw YOLO mask outline -- solid
+      43 -CMAP = "nipy_spectral"   # saturated rainbow with a black low e
+         -nd; "jet"                                                      
+      44 -                         # and "turbo" are the other two that s
+         -uit depth                                                      
+      45 -NODATA = "black"         # unmatched pixels; black merges with 
+         -the ramp end                                                   
+      43 +CMAP = "jet"             # starts at blue, so near depth never 
+         +collides with the                                              
+      44 +                         # black no-data; "nipy_spectral" and "
+         +turbo" also work                                               
+      45 +NODATA = "black"         # unmatched pixels, outside the ramp e
+         +ntirely                                                        
+      46  MIN_BLOB_PX = 300
+      47  CLIP_ABOVE_TORSO_M = None  # metres behind the torso to end the
+           ramp;
+      48                             # None = full scene range (more room
+           colour,
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● Jet it is. depth_segmentation_figure.png updated — subject blue at ~0.7 m,
+  walls cyan/green, far clutter red, black = no stereo match (now unambiguous,
+  since jet starts at blue).
+
+  Current poster set in data/july27/july_27_sujith_no_comp/:
+
+  ┌───────────────────────────────┬─────────────────────────────────┐
+  │             file              │             script              │
+  ├───────────────────────────────┼─────────────────────────────────┤
+  │ depth_segmentation_figure.png │ 14_depth_segmentation_figure.py │
+  ├───────────────────────────────┼─────────────────────────────────┤
+  │ design2_ghost_hulls.png       │ 13_hull_displacement_designs.py │
+  ├───────────────────────────────┼─────────────────────────────────┤
+  │ icp_vs_mocap_angles.png       │ 12_poster_figures.py            │
+  └───────────────────────────────┴─────────────────────────────────┘
+
+  Two loose ends from earlier, still open:
+  - opencv-python 5.0.0 is shadowing opencv-contrib-python 4.13 after the
+    ultralytics install. Fix when you want: uv pip install --reinstall 
+    opencv-contrib-python.
+  - 13_hull_displacement_designs.py still renders all four designs; say the word
+    and I'll strip it to D2 only.
+
+✻ Crunched for 39s · done 9:49 AM
+
+※ recap: Goal is a poster figure set from the july27 ICP/mocap data; the three figures (depth+segmentation, ghost hulls, angle traces) are all rendered and styled. Next: decide whether to restore opencv-contrib and trim the designs script to D2 only. (disable recaps in /config)
+
+❯ /compact                                                                      
+  ⎿  Compacted (ctrl+o to see full summary)
+  ⎿  Referenced file trunkpose\dual_notebooks\12_poster_figures.py
+  ⎿  Read trunkpose\dual_notebooks\14_depth_segmentation_figure.py (200 lines)
+  ⎿  Referenced file trunkpose\dual_notebooks\13_hull_displacement_designs.py
+  ⎿  Read C:\Users\Pintu\.claude\projects\E--CMC-pyprojects-programs-rpi-NOARK-b
+     ackbone\memory\trunkpose-venv-missing-inference-deps.md (25 lines)
+  ⎿  Read C:\Users\Pintu\.claude\RTK.md (9 lines)
+  ⎿  Skills restored (scientific-skills:scientific-visualization)
+
+❯ now analysis, i have collected data for different subjects, the mocap rb      
+  markers are m2 - m3 -> xvec and m2 - m4 -> zvec, m2 org, the data is here     
+  data\sep23_26\diwakar_wc                                                      
+  , data\sep23_26\gokul_wc, data\sep23_26\ram_wc, data\sep23_26\kabil_wc,       
+  data\sep23_26\js_wc, lets catch relevant info in the data directory itself,   
+  for analysis. lets do icp vs mocap for all of them, 5 subject agreement plot  
+  in the                                                                        
+  data\sep23_26\output                                                          
+  directory                                                                     
+
+  Read 1 file, listed 1 directory, ran 2 shell commands (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" && ls data/ && echo
+      === && ls data/sep23_26/ && echo === && ls data/sep23_26/output/
+      data/sep23_26/mocap_rw/…)
+  ⎿  calibration/
+     dome/
+     dual_data/
+     … +44 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+● Bash(cd
+      "E:/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks"
+      && grep -n "def read_rigid_body_csv" -A 45 pd_support.py)
+  ⎿  230:def read_rigid_body_csv(_pth):
+     231-    """
+     232-    _pth: path to the rigid body file
+     … +43 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+  Ran 8 shell commands (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" && ls
+      data/calibration/dual_160/calib_radxa_sep18_26/ && echo === && ls
+      data/dual_data data/recordings 2>/dev…)
+  ⎿  cam0_frame.msgpack  2354.6M
+     cam0_timestamp.msgpack  117.7K
+     cam1_frame.msgpack  2354.6M
+     … +16 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+● Bash(cd
+      "E:/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks"
+      && grep -n "def load_frame_times" -A 20 06_trunk_axis.py; grep -n "def
+      load_sync_fla…)  ⎿  212:def load_frame_times(path):
+     213-    with open(path, "rb") as f:
+     214-        recs = list(msgpack.Unpacker(f, object_hook=mpn.decode))
+     … +56 lines (ctrl+o to expand)
+  ⎿  (another command ran in this repository at the same time; a change 
+     made by either may show under either result)
+
+  Read 2 files, ran 16 shell commands (ctrl+o to expand)
+
+● Now patching 06 for session-driven config (new rig: half-res, swapped cams,
+  inverted mount, different mocap RB).
+
+  Made 1 scratchpad edit +227, ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" && cp
+      trunkpose/dual_notebooks/06_trunk_axis.py
+      "C:/Users/Pintu/AppData/Local/Temp/claude/E--CMC-pyprojects-p…)
+  ⎿  patched 06
+     syntax ok
+  ⎿  1 file changed (binary, mode only or too large to show)
+
+● Write(data\sep23_26\session.toml)
+  ⎿  Wrote 66 lines to data\sep23_26\session.toml
+       1 # sep23_26 capture session -- everything the trunkpose pipeline 
+       2 # THIS session that is not in the recordings themselves. 06_trun
+         k_axis.py picks this
+          parent), so running a
+       4 # subject is just TRUNK_RECORDING_DIR=data/sep23_26/<subject>.
+       6 # Read by: trunkpose/dual_notebooks/06_trunk_axis.py -> load_ses
+         sion()
+         he rest is provenance.
+       8 
+      10 date = "2026-09-23"
+     … +87 lines (ctrl+o to expand)
+
+● Bash(cd
+      "E:/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks"
+      && python - <<'PY'
+      from pathlib import Path…)
+  ⎿  patched 07
+  ⎿  1 file changed (binary, mode only or too large to show)
+
+  Made 1 scratchpad edit +31, ran 2 shell commands (ctrl+o to expand)
+
+● Bash(cd
+      "E:/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks"
+      && grep -n "^CAM_SIZE" 06_trunk_axis.py && python - <<'PY'
+      from pathlib import Path…)
+  ⎿  91:CAM_SIZE = tuple(int(v) for v in _cam_cfg.get("size", (1280, 800)))
+     130:CAM_SIZE = (1280, 800)
+     removed duplicate CAM_SIZE
+     91:CAM_SIZE = tuple(int(v) for v in _cam_cfg.get("size", (1280, 800)))
+  ⎿  Updated trunkpose\dual_notebooks\06_trunk_axis.py (+0 -1)
+      127  OUT_VIDEO = RECORDING_DIR / "trunk_axis_charuco.mp4"
+      128  
+      129  # %% Config
+      130 -CAM_SIZE = (1280, 800)                                        
+      130  VISIBILITY_THRESH = 0.5
+      131  DEPTH_MIN_M, DEPTH_MAX_M = 0.2, 3.0     # torso-fit depth gate
+      132  SCENE_DEPTH_MAX_M = 4.0                  # depth-heatmap far c
+           lip
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● Write(trunkpose\dual_notebooks\15_subject_icp.py)
+  ⎿  Wrote 183 lines to trunkpose\dual_notebooks\15_subject_icp.py
+       1 # %% 15_subject_icp.py
+         p23_26).
+       3 #
+         ry (cached per
+       5 # recording) -> ICP to the neutral cloud -> GPIO sync -> telepor
+       6 # residual frame rotation S -> per-axis agreement -- and writes:
+       7 #
+         ouds + shoulders)
+       9 #   <subject>/icp_vs_mocap.npz          the two angle series + a
+      10 #   <output>/<subject>_icp_vs_mocap.png 3-row ICP vs mocap trace
+     … +214 lines (ctrl+o to expand)
+
+  Made 1 scratchpad edit +20, ran 6 shell commands (ctrl+o to expand)
+  ⎿  Found 36 new diagnostic issues in 1 file (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" &&
+      ./.venv/Scripts/python.exe "C:/Users/Pintu/AppData/Local/Temp/claude/E--CM
+      C-pyprojects-programs-rpi-NOARK-…)
+  ⎿  patched pd_support (2 sites)
+     [ram_wc] session=E:\CMC\pyprojects\programs_rpi\NOARK_backbone\data\se
+     p23_26\session.toml cam=(640, 400) swap=True rot180=True seg=trunk_seg
+     … +20 lines (ctrl+o to expand)
+  ⎿  1 file changed (binary, mode only or too large to show)
+  ⎿  (timeout 10m)
+
+  Read 1 file (ctrl+o to expand)
+
+● ICP loses lock at ~8.7 s (232 frames gated) and the NaN gap gets interpolated
+  into a flat line. Making the ICP gates session-tunable, then sweeping on the
+  cached geometry.
+
+  Made 1 scratchpad edit +42 (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" &&
+      ./.venv/Scripts/python.exe "C:/Users/Pintu/AppData/Local/Temp/claude/E--CM
+      C-pyprojects-programs-rpi-NOARK-…)
+  ⎿  patched 07 tunables
+     # Registration tunables. Defaults are the july-27 values; a session wh
+     ose task has a
+     … +33 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\07_icp_trunk.py (+17 -5)
+      29  sys.path.insert(0, str(Path(__file__).resolve().parent))
+      30  m6 = importlib.import_module("06_trunk_axis")
+      31  
+      32 +# Registration tunables. Defaults are the july-27 values; a ses
+         +sion whose task has a                                          
+      33 +# different motion envelope overrides them in its session.toml 
+         +[icp] table (or per run                                        
+      34 +# via TRUNK_<KEY>), so tuning one dataset never silently re-sco
+         +res another.                                                   
+      35 +_icp_cfg = m6.SESSION.get("icp", {})                           
+      36 +                                                               
+      37 +                                                               
+      38 +def _icp_cfg_val(key, default, cast=float):                    
+      39 +    return cast(os.environ.get(f"TRUNK_{key.upper()}", _icp_cfg
+         +.get(key, default)))                                           
+      40 +                                                               
+      41 +                                                               
+      42  NEUTRAL_MAX_PTS = 6000       # pooled neutral cloud size
+      43  ICP_ITERS = 20
+      44  ICP_DISTS = (0.06, 0.03, 0.02)   # trimming threshold annealing
+           (m)
+     ...
+      48  # Very loose on purpose: wrong minima are prevented by the shou
+          lder anchors, and
+      49  # odometry composition drifts (it twisted the whole series ~138
+           deg when it ran for
+      50  # 700+ frames), so direct should win whenever the registration 
+          converges at all.
+      41 -DIRECT_RMS_M, DIRECT_FRAC = 0.030, 0.30                        
+      42 -ODO_RMS_M, ODO_FRAC = 0.010, 0.50                              
+      43 -KEY_ROT_DEG = 15.0           # spawn a new keyframe after rotat
+         -ing this far from it                                           
+      51 +DIRECT_RMS_M = _icp_cfg_val("direct_rms_m", 0.030)             
+      52 +DIRECT_FRAC = _icp_cfg_val("direct_frac", 0.30)                
+      53 +ODO_RMS_M = _icp_cfg_val("odo_rms_m", 0.010)                   
+      54 +ODO_FRAC = _icp_cfg_val("odo_frac", 0.50)                      
+      55 +KEY_ROT_DEG = _icp_cfg_val("key_rot_deg", 15.0)   # new keyfram
+         +e after this much rotation                                     
+      56  # Anchor support kept for future trustworthy keypoints, but DIS
+          ABLED for MediaPipe
+      57  # shoulders: tried it -- 2 jittery points at ~30% total weight 
+          steered the rotation
+      58  # axes wrong (S blew up to ~143 deg, flexion RMSE 21 deg). Not 
+          worth it.
+     ...
+      61  SEG_JUMP_M = 0.10            # mocap displacement across a gap 
+          that flags a re-lock teleport
+      62  # Wrong-basin registrations look healthy in rms/frac, but a sea
+          ted trunk never
+      63  # exceeds ~45 deg from neutral -> gate on physical plausibility
+           instead.
+      52 -ROT_MAX_DEG = 45.0                                             
+      53 -ODO_MAX_RUN = 30             # max consecutive odometry frames 
+         -before declaring loss                                          
+      64 +ROT_MAX_DEG = _icp_cfg_val("rot_max_deg", 45.0)                
+      65 +ODO_MAX_RUN = _icp_cfg_val("odo_max_run", 30, int)   # consecut
+         +ive odometry frames allowed                                    
+      66  ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "all"
+          ).lower()
+      67  if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):
+      68      raise ValueError("TRUNK_ANGLE_PLOT_MODE must be all, icp_on
+          ly, or mocap_only")
+
+  Made 2 scratchpad edits +111, ran 2 shell commands (ctrl+o to expand)
+
+● ICP is converging into a mirrored ~180° basin (rms 7–8 mm, 90% matched — looks
+  healthy, is wrong), and the gated pose was being kept as the warm start, so
+  the flip propagated. Fixing with multi-seed registration.
+
+  Made 1 scratchpad edit +72, ran 1 shell command (ctrl+o to expand)
+
+● Write(trunkpose\dual_notebooks\16_subject_agreement.py)
+  ⎿  Wrote 189 lines to trunkpose\dual_notebooks\16_subject_agreement.py
+       1 # %% 16_subject_agreement.py
+         s every subject of a
+       3 # session, pooled from the per-subject icp_vs_mocap.npz files wr
+       4 # 15_subject_icp.py.
+       6 #   <output>/icp_vs_mocap_agreement.png   scatter + Bland-Altman
+         , 3 axes x N subjects
+          / RMSE / bias / LoA
+       8 #
+          series carries NaN
+         ed here rather than
+     … +221 lines (ctrl+o to expand)
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● Background command "Apply multi-seed patch and re-sweep" completed (exit code
+0)
+
+  Made 2 scratchpad edits +125, searched for 1 pattern, ran 5 shell commands (ctrl+o to expand)
+
+● Mocap checks out (large axial rotation, ~70°, consistent with the 16 cm
+  sternum sweep). The camera ICP under-reads it 3× — a near-cylindrical front
+  shell is degenerate under axial rotation. Testing whether keeping more torso
+  curvature helps.
+
+  Made 2 scratchpad edits +82 (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" &&
+      ./.venv/Scripts/python.exe "C:/Users/Pintu/AppData/Local/Temp/claude/E--CM
+      C-pyprojects-programs-rpi-NOARK-…)
+  ⎿  patched 06 geometry knobs
+     [wide] erode=0.03 shell=0.2 front_pctl=5.0 voxel=0.01 max=2000
+     [wide] cloud pts median 1236
+     … +3 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\06_trunk_axis.py (+14 -4)
+      130  VISIBILITY_THRESH = 0.5
+      131  DEPTH_MIN_M, DEPTH_MAX_M = 0.2, 3.0     # torso-fit depth gate
+      132  SCENE_DEPTH_MAX_M = 4.0                  # depth-heatmap far c
+           lip
+      133 -MASK_ERODE_FRAC = 0.06                   # erode torso mask by
+          - ~this * sqrt(area) px                                        
+      134 -ARM_EXCLUDE_DILATE_PX = 9                # dilate 'arm' class 
+          -mask before subtracting from torso                            
+      135 -FRONT_PCTL = 5.0                         # frontmost-depth per
+          -centile for the front shell                                   
+      136 -SHELL_M = 0.10                           # keep points within 
+          -this depth of the front cap                                   
+      133 +# Cloud-extraction knobs. A session with a different framing (
+          +sep23: half-res sensor,                                       
+      134 +# subject ~1.1 m away, so the torso is ~7 k px instead of ~40 
+          +k) can widen the shell                                        
+      135 +# from its session.toml [geometry] table, or per run via TRUNK
+          +_<KEY>. More of the                                           
+      136 +# torso flanks means more curvature, which is what makes an ax
+          +ial rotation observable                                       
+      137 +# at all -- a perfectly cylindrical front patch is degenerate 
+          +under it.                                                     
+      138 +def _geom_cfg(key, default, cast=float):                      
+      139 +    return cast(os.environ.get(f"TRUNK_{key.upper()}",        
+      140 +                               SESSION.get("geometry", {}).get
+          +(key, default)))                                              
+      141 +                                                              
+      142 +                                                              
+      143 +MASK_ERODE_FRAC = _geom_cfg("mask_erode_frac", 0.06)  # erode 
+          +mask by this * sqrt(area) px                                  
+      144 +ARM_EXCLUDE_DILATE_PX = _geom_cfg("arm_exclude_dilate_px", 9, 
+          +int)                                                          
+      145 +FRONT_PCTL = _geom_cfg("front_pctl", 5.0)   # frontmost-depth 
+          +percentile for the shell                                      
+      146 +SHELL_M = _geom_cfg("shell_m", 0.10)        # keep points with
+          +in this depth of the cap                                      
+      147  Z_MAX_M = 5.0
+      148  N_NEUTRAL = 15
+      149  SAVGOL_WINDOW = 11       # camera-angle smoothing window (fram
+           es, odd); mocap left raw
+  ⎿  (timeout 10m)
+
+  Made 2 scratchpad edits +170, ran 3 shell commands (ctrl+o to expand)
+
+● Per-axis numbers are hostage to the fitted frame rotation S (114.9°, half-fit
+  differs 36°). Testing a geometric S from the neutral pose instead of the
+  Kabsch fit.
+
+  Made 1 scratchpad edit +61, ran 1 shell command (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+❯ there maybe two persons in the video, we should take the person in the        
+  center, in case there were two detection.                                     
+
+● Good catch — YOLO returns every torso instance and the current code ORs them
+  all into one mask, and MediaPipe takes whichever pose it ranks first. A
+  bystander would corrupt both the cloud and the shoulders. Fixing both to pick
+  the centre-most person.
+
+  Made 1 scratchpad edit +113, ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd "C:/Users/Pintu/AppData/Local/Temp/claude/E--CMC-pyprojects-programs-r
+      pi-NOARK-backbone/a95d1e4d-a0f9-42d5-9d9b-efd6edacdbf8/scratchpad" &&
+      python - <<'PY'
+      f…)
+  ⎿  fixed patch ordering
+     patched 06: centre-most person for both segmentation and pose
+     syntax ok
+  ⎿  Updated trunkpose\dual_notebooks\06_trunk_axis.py (+44 -9)
+      144  ARM_EXCLUDE_DILATE_PX = _geom_cfg("arm_exclude_dilate_px", 9, 
+           int)
+      145  FRONT_PCTL = _geom_cfg("front_pctl", 5.0)   # frontmost-depth 
+           percentile for the shell
+      146  SHELL_M = _geom_cfg("shell_m", 0.10)        # keep points with
+           in this depth of the cap
+      147 +MAX_POSES = _geom_cfg("max_poses", 3, int)  # people MediaPipe
+          + may detect per frame                                         
+      148  Z_MAX_M = 5.0
+      149  N_NEUTRAL = 15
+      150  SAVGOL_WINDOW = 11       # camera-angle smoothing window (fram
+           es, odd); mocap left raw
+     ...
+      414  
+      415  
+      416  def torso_mask(seg_model, gray, size):
+      416 -    """Torso mask from either the new ``torso`` class or legac
+          -y ``chest`` class.                                            
+      417 -                                                              
+      418 -    With the multi-class model, subtract a small dilation of c
+          -lass ``arm`` so an arm                                        
+      419 -    resting on/crossing the chest does not bleed into the tors
+          -o surface.                                                    
+      417 +    """Torso mask of the SUBJECT: the centre-most torso instan
+          +ce, arms removed.                                             
+      418 +                                                              
+      419 +    A second person in frame (assistant, bystander) gets its o
+          +wn torso instance. The                                        
+      420 +    subject is the one seated in front of the rig, so instance
+          +s are ranked by how far                                       
+      421 +    their centroid sits from the image centre and only the clo
+          +sest one is kept -- ORing                                     
+      422 +    them together would merge two bodies into one cloud and wr
+          +eck the registration.                                         
+      423 +    Arm masks are all subtracted (after a small dilation) so a
+          +n arm crossing the chest                                      
+      424 +    does not bleed into the torso surface.                    
+      425      """
+      426      W, H = size
+      427      res = seg_model.predict(cv2.cvtColor(for_inference(gray), 
+           cv2.COLOR_GRAY2RGB),
+     ...
+      431      if res.masks is not None:
+      432          names = res.names
+      433          cls_ids = res.boxes.cls.cpu().numpy().astype(int)
+      434 +        best, best_d = None, None                             
+      435          for m, cid in zip(res.masks.data.cpu().numpy(), cls_id
+           s):
+      436              resized = cv2.resize(m, (W, H), interpolation=cv2.
+           INTER_NEAREST) > 0.5
+      437 +            if not resized.any():                             
+      438 +                continue                                      
+      439              if names[cid] in ("torso", "chest"):
+      432 -                torso[resized] = 255                          
+      440 +                ys, xs = np.nonzero(resized)                  
+      441 +                d = float(np.hypot(xs.mean() - W / 2, ys.mean(
+          +) - H / 2))                                                   
+      442 +                if best_d is None or d < best_d:              
+      443 +                    best, best_d = resized, d                 
+      444              elif names[cid] == "arm":
+     … 52 more lines (ctrl+o to expand)
+
+  Made 1 scratchpad edit +63, read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Confirmed — subject at the table plus a standing bystander; the old mask
+  merged both into one cloud. Re-running with the centre-person rule.
+
+  Ran 3 shell commands (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ continue, use gpu for inference                                               
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● GPU present (RTX 4060, 8 GB) but torch is the CPU build. Installing the CUDA
+  build.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Background command "Install CUDA torch build" completed (exit code 0)
+
+  Made 1 scratchpad edit +37, ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" &&
+      ./.venv/Scripts/python.exe "C:/Users/Pintu/AppData/Local/Temp/claude/E--CM
+      C-pyprojects-programs-rpi-NOARK-…)
+  ⎿  patched 06: YOLO device selection
+     geometry(chunks):  25%|##5       | 1/4 [00:52<02:38, 52.73s/it]geometr
+     y(chunks):  75%|#######5  | 3/4 [00:53<00:14, 14.03s/it]geometry(chunk
+     … +16 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\06_trunk_axis.py (+15 -1)
+      145  FRONT_PCTL = _geom_cfg("front_pctl", 5.0)   # frontmost-depth 
+           percentile for the shell
+      146  SHELL_M = _geom_cfg("shell_m", 0.10)        # keep points with
+           in this depth of the cap
+      147  MAX_POSES = _geom_cfg("max_poses", 3, int)  # people MediaPipe
+            may detect per frame
+      148 +# Where YOLO runs: "auto" takes the GPU when torch reports one
+          +. Each geometry worker is                                     
+      149 +# a separate process and so holds its own CUDA context (~0.5 G
+          +B), so keep TRUNK_WORKERS                                     
+      150 +# modest on a GPU run -- MediaPipe stays on the CPU either way
+          + (no Windows GPU delegate),                                   
+      151 +# which is what the remaining workers are for.                
+      152 +SEG_DEVICE = str(_geom_cfg("seg_device", "auto", str))        
+      153  Z_MAX_M = 5.0
+      154  N_NEUTRAL = 15
+      155  SAVGOL_WINDOW = 11       # camera-angle smoothing window (fram
+           es, odd); mocap left raw
+     ...
+      418      return (W - 1 - p[0], H - 1 - p[1])
+      419  
+      420  
+      421 +def load_seg_model(weights=None, device=SEG_DEVICE):          
+      422 +    """YOLO segmentation model on the requested device ("auto"
+          + -> GPU if present)."""                                       
+      423 +    from ultralytics.utils.torch_utils import select_device   
+      424 +                                                              
+      425 +    model = YOLO(str(weights or SEG_WEIGHTS))                 
+      426 +    dev = select_device("" if device == "auto" else device, ve
+          +rbose=False)                                                  
+      427 +    return model.to(dev)                                      
+      428 +                                                              
+      429 +                                                              
+      430  def torso_mask(seg_model, gray, size):
+      431      """Torso mask of the SUBJECT: the centre-most torso instan
+           ce, arms removed.
+      432  
+     ...
+      872      _G = dict(
+      873          K0=K0, D0=D0, K1=K1, D1=D1, R=R, T_m=T_mm / 1000.0,
+      874          R0_c=R0_c, t0_c=t0_c,
+      861 -        seg=YOLO(str(SEG_WEIGHTS)),                           
+      875 +        seg=load_seg_model(),                                 
+      876          lmk0=make_pose_landmarker(), lmk1=make_pose_landmarker
+           (),
+      877          rect=build_rectification(K0, D0, K1, D1, R, T_mm, CAM_
+           SIZE),
+      878          sgbm=make_sgbm(), rng=np.random.default_rng(0))
+  ⎿  (timeout 10m)
+
+● GPU inference in place (53 s for ram_wc's geometry; MediaPipe on CPU is now
+  the bottleneck). Back to the S instability — testing the geometric S.
+
+  Made 1 scratchpad edit +83, ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" &&
+      ./.venv/Scripts/python.exe "C:/Users/Pintu/AppData/Local/Temp/claude/E--CM
+      C-pyprojects-programs-rpi-NOARK-…)
+  ⎿  patched 15: magnitude stats, validity masks, geometric-S cross-check
+         in_win, zwin = cmp_["in_win"], cmp_["zwin"]
+         t_s = ((ts0 - ts0[zwin[0]]) / np.timedelta64(1, "s")).astype(np.fl
+     … +54 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\15_subject_icp.py (+204 -183)
+        1 -# %% 15_subject_icp.py                                        
+        2 -# ICP-vs-mocap trunk angles for a multi-subject session (data/
+          -sep23_26).                                                    
+        3 -#                                                             
+        4 -# Per subject it runs exactly the validated 07 path -- 06 geom
+          -etry (cached per                                              
+        5 -# recording) -> ICP to the neutral cloud -> GPIO sync -> telep
+          -ort-split mocap ->                                            
+        6 -# residual frame rotation S -> per-axis agreement -- and write
+          -s:                                                            
+        7 -#                                                             
+        8 -#   <subject>/geom_cache.pkl            cached geometry pass (
+          -clouds + shoulders)                                           
+        9 -#   <subject>/icp_vs_mocap.npz          the two angle series +
+          - agreement stats                                              
+       10 -#   <output>/<subject>_icp_vs_mocap.png 3-row ICP vs mocap tra
+          -ce                                                            
+       11 -#                                                             
+       12 -# 16_subject_agreement.py then pools the npz files into the gr
+          -oup figure.                                                   
+       13 -#                                                             
+       14 -# The session's rig facts (half-res sensor, swapped cameras, u
+          -pside-down mounting,                                          
+       15 -# Motive rigid-body naming) live in data/sep23_26/session.toml
+          -, which 06 reads.                                             
+       16 -#                                                             
+       17 -#   uv run python trunkpose/dual_notebooks/15_subject_icp.py -
+          --all                                                          
+       18 -#   uv run python trunkpose/dual_notebooks/15_subject_icp.py -
+          --subject ram_wc                                               
+       19 -#                                                             
+       20 -# --all spawns one subprocess per subject: 06's configuration 
+          -is resolved at import                                         
+       21 -# time from the recording directory, so a single interpreter c
+          -annot switch subjects.                                        
+       22 -                                                              
+       23 -import argparse                                               
+       24 -import os                                                     
+       25 -import subprocess                                             
+       26 -import sys                                                    
+       27 -from pathlib import Path                                      
+       28 -                                                              
+       29 -SCRIPT = Path(__file__).resolve()                             
+       30 -SCRIPT_DIR = SCRIPT.parent                                    
+       31 -PROJECT_ROOT = SCRIPT_DIR.parents[1]                          
+       32 -DEFAULT_SESSION = PROJECT_ROOT / "data" / "sep23_26"          
+       33 -                                                              
+       34 -                                                              
+       35 -# %% Driver (one subprocess per subject)                      
+       36 -def run_all(session_dir, subjects, workers, extra_env):       
+       37 -    import toml                                               
+       38 -                                                              
+       39 -    if not subjects:                                          
+       40 -        cfg = toml.load(session_dir / "session.toml")         
+     … 347 more lines (ctrl+o to expand)
+
+  Made 1 scratchpad edit +111 (ctrl+o to expand)
+
+● Now running all five subjects end to end.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Monitor(five-subject ICP batch progress)
+  ⎿  Monitor started · task bidjqay9a · timeout 1800s
+
+● Waiting on the batch. Meanwhile — note the two-person finding also affects the
+  existing figure scripts (10/11/14 call torso_mask), which now inherit the
+  centre-person rule automatically.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The earlier uv add ultralytics stripped the x86_64 markers off
+  torch/torchvision/pycocotools — that would drag torch onto the aarch64 boards.
+  Restoring them.
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" && python - <<'PY'
+      from pathlib import Path…)
+  ⎿  markers restored
+     diff --git a/pyproject.toml b/pyproject.toml
+     index 9077359..52738e1 100644
+     … +13 lines (ctrl+o to expand)
+  ⎿  Updated pyproject.toml (+76 -76)
+       1 -[project]                                                      
+       2 -name = "noark-backbone"                                        
+       3 -version = "0.1.0"                                              
+       4 -description = "Add your description here"                      
+       5 -readme = "README.md"                                           
+       6 -requires-python = ">=3.13"                                     
+       7 -dependencies = [                                               
+       8 -    "ipykernel>=7.2.0",                                        
+       9 -    "joblib>=1.5.3",                                           
+      10 -    "jupyter>=1.1.1",                                          
+      11 -    "matplotlib>=3.10.8",                                      
+      12 -    "msgpack>=1.1.2",                                          
+      13 -    "msgpack-numpy>=0.4.8",                                    
+      14 -    "opencv-contrib-python>=4.13.0.92",                        
+      15 -    "pandas>=3.0.2",                                           
+      16 -    "more-itertools>=10.7.0",                                  
+      17 -    "polars>=1.40.0",                                          
+      18 -    "scipy>=1.17.1",                                           
+      19 -    "toml>=0.10.2",                                            
+      20 -    "tqdm>=4.67.3",                                            
+      21 -    # No manylinux aarch64 wheels on PyPI; only the analysis sc
+         -ripts in                                                       
+      22 -    # trunkpose/ use it, and those run on the workstation.     
+      23 -    "mediapipe>=0.10.35; platform_machine == 'x86_64'",        
+      24 -    # Training / dataset / 3D-rendering stack: x86_64 workstati
+         -ons only.                                                      
+      25 -    # The aarch64 boards (Radxa Q6A, RPi) only run capture + tr
+         -acking, and                                                    
+      26 -    # several of these have no aarch64 wheels.                 
+      27 -    "torch>=2.11.0",                                           
+      28 -    "torchvision>=0.26.0",                                     
+      29 -    "pyrender>=0.1.45; platform_machine == 'x86_64'",          
+      30 -    "smplx>=0.1.28; platform_machine == 'x86_64'",             
+      31 -    "trimesh>=4.12.2; platform_machine == 'x86_64'",           
+      32 -    "maturin>=1.14.1; platform_machine == 'x86_64'",           
+      33 -    "fiftyone>=1.19.0; platform_machine == 'x86_64'",          
+      34 -    "requests>=2.34.2; platform_machine == 'x86_64'",          
+      35 -    "pycocotools>=2.0.11",                                     
+      36 -    "gpiod>=2.5.0 ; sys_platform == 'linux'",                  
+      37 -    "rapidtag>=0.1.4",                                         
+      38 -    "ultralytics>=8.4.102",                                    
+      39 -    "mediapipe>=0.10.35",                                      
+      40 -]                                                              
+     … 112 more lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" && git checkout --
+      uv.lock && git status --short)
+  ⎿   M pyproject.toml
+      M trunkpose/dual_notebooks/06_trunk_axis.py
+      M trunkpose/dual_notebooks/07_icp_trunk.py
+     … +3 lines (ctrl+o to expand)
+  ⎿  1 file changed (binary, mode only or too large to show)
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Bash(cd
+      "E:/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks"
+      && python - <<'PY'
+      from pathlib import Path…)
+  ⎿  14 now uses m6.load_seg_model (device-aware)
+  ⎿  Updated trunkpose\dual_notebooks\14_depth_segmentation_figure.py (+1 
+     -3)
+      70      cloud back: the cloud is voxel-downsampled, so reprojecting
+           it needs a dilation
+      71      to close the gaps, and that dilation cancels exactly the er
+          osion the figure is
+      72      meant to show. Both masks come back as rectified, downscale
+          d pixel masks."""
+      73 -    from ultralytics import YOLO                               
+      74 -                                                               
+      73      pair = None
+      74      for k, (f0, f1) in enumerate(m6.iter_frame_pairs(m6.CAM0_FR
+          AMES, m6.CAM1_FRAMES)):
+      75          if k == i:
+     ...
+      79          raise SystemExit(f"Frame {i} not in {m6.CAM0_FRAMES}")
+      80      g0, g1 = (f if f.ndim == 2 else cv2.cvtColor(f, cv2.COLOR_R
+          GB2GRAY) for f in pair)
+      81  
+      84 -    mask0 = m6.torso_mask(YOLO(str(m6.SEG_WEIGHTS)), g0, m6.CAM
+         -_SIZE)                                                         
+      82 +    mask0 = m6.torso_mask(m6.load_seg_model(), g0, m6.CAM_SIZE)
+      83      if not mask0.any():
+      84          raise SystemExit(f"YOLO ({m6.SEG_WEIGHTS.name}) found n
+          o torso on frame {i}")
+      85      mrect = cv2.remap(mask0, *maps0, cv2.INTER_NEAREST)
+
+● Batch still running; waiting on the monitor rather than polling.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The batch's output is buffered behind its grep, so progress only lands at the
+  end — I'll pick it up when the task completes.
+
+● Stop Task  ⎿  tail -f "C:/Users/Pintu/AppData/Local/Temp/claude/E--CMC-pyprojects-pr
+     ograms-rpi-NOARK-backbone/a95d1e4d-a0f9-42d5-9d9b-efd6edacdbf8/tasks/b
+     hj0j4uh3.output" | g… · stopped
+
+● Stopped the now-useless monitor. Status while the five-subject batch finishes:
+
+  Fixed this round
+  - Two people in frame (your catch — it was the big one): 63–78 % of sampled
+    frames had a second torso detection ~250–300 px away, and the old code OR'd
+    every instance into one mask, so the ICP cloud contained two bodies.
+    torso_mask now keeps only the centre-most torso instance, and MediaPipe runs
+    with num_poses=3 + a centre_pose() picker ranked on the shoulder/hip quad.
+  - GPU: torch is 2.12.1+cu130, CUDA available on the RTX 4060. New
+    m6.load_seg_model() puts YOLO on the GPU (seg_device = "auto"); MediaPipe
+    stays CPU (no Windows GPU delegate), so workers still matter. ram_wc
+    geometry: 65 s → 53 s.
+  - pyproject.toml: an earlier uv add ultralytics had stripped platform_machine 
+    == 'x86_64' off torch/torchvision/pycocotools — that would have pulled torch
+    onto the Radxa/RPi. Markers restored, uv.lock reverted to HEAD.
+
+  New rig facts, recorded in data/sep23_26/session.toml (06 reads it
+  automatically, so a new session is a data change, not a code edit): 640×400
+  sensor vs 1280×800 calibration (intrinsics rescaled), swap = true (calib T_x >
+  0 ⇒ cam1 is the left camera; cam0-first gave 0 % valid depth), rot180 = true
+  (both cameras inverted — YOLO found nothing until rotation), no ChArUco basis
+  for this session, trunk_seg-7 weights, and the RigidBody m2/m3/m4 mapping you
+  gave.
+
+  Known limitation, honest version: even with clean masks, ICP recovers only
+  part of the trunk rotation — pairwise registration between frames a known 45°
+  apart returns ~16°. The front shell is near-cylindrical, which is degenerate
+  under axial rotation, and the shell's plane residual is 18.5 mm against only
+  74 mm of depth extent. Upsampling before SGBM did not help (matching-limited,
+  not quantisation-limited). So the per-subject numbers will show good
+  flexion/lateral and an under-read axial; 15/16 now report the regression slope
+  and an S-stability flag so that is visible rather than hidden.
+
+✻ Churned for 9m 6s · done 11:09 AM
+
+※ recap: Goal: ICP-vs-mocap trunk angles for all five sep23_26 subjects plus a group agreement plot in data/sep23_26/output. The five-subject batch is still running; next I'll read its results and run 16_subject_agreement.py to build the figure.
+
+● Background command "Run all five subjects" completed (exit code 0)
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● All five completed (the log only kept the tail). Aggregating.
+
+  Read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+● Update(trunkpose\dual_notebooks\16_subject_agreement.py)
+  ⎿  Added 3 lines
+      187          ba.set_xlabel(f"mean of both (deg)")
+      188          if k == 0:
+      189              ba.set_ylabel("camera $-$ mocap (deg)")
+      190 +        # headroom so the annotation never lands on the upper 
+          +LoA line                                                      
+      191 +        ylo, yhi = ba.get_ylim()                              
+      192 +        ba.set_ylim(ylo, yhi + 0.22 * (yhi - ylo))            
+      193          ba.text(0.04, 0.96, f"bias = {st['bias']:+.1f}$\\degre
+           e$\n"
+      194                              f"LoA [{lo:+.1f}, {hi:+.1f}]$\\deg
+           ree$",
+      195                  transform=ba.transAxes, va="top", ha="left", f
+           ontsize=12)
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Write(data\sep23_26\output\README.md)
+  ⎿  Wrote 77 lines to data\sep23_26\output\README.md
+       1 # sep23_26 - camera ICP vs mocap trunk angles (5 subjects)
+       3 Generated by `trunkpose/dual_notebooks/15_subject_icp.py --all` 
+         followed by
+       4 `16_subject_agreement.py`. Session facts (calibration, rig mount
+       5 mapping) live in `../session.toml`; everything below is the resu
+         lt.
+       7 ```
+       8 uv run python trunkpose/dual_notebooks/15_subject_icp.py --all -
+         -workers 4
+      10 ```
+     … +106 lines (ctrl+o to expand)
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● Bash(cd
+      "E:/CMC/pyprojects/programs_rpi/NOARK_backbone/trunkpose/dual_notebooks"
+      && python - <<'PY'
+      from pathlib import Path…)
+  ⎿  lint fixes applied
+     3  C408    unnecessary-collection-call
+     Found 3 errors.
+     … +2 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\15_subject_icp.py (+2 -2)
+      48          print(f"\n{'=' * 70}\n== {s}\n{'=' * 70}", flush=True)
+      49          env = {**os.environ, **extra_env, "TRUNK_WORKERS": str(
+          workers)}
+      50          r = subprocess.run([sys.executable, str(SCRIPT), "--sub
+          ject", s,
+      51 -                            "--session", str(session_dir)], env
+         -=env)                                                          
+      51 +                            "--session", str(session_dir)], env
+         +=env, check=False)                                             
+      52          if r.returncode != 0:
+      53              failed.append(s)
+      54              print(f"!! {s} failed (exit {r.returncode}) -- cont
+          inuing", flush=True)
+     ...
+      88  
+      89      inp = m7.load_inputs()
+      90      frames, n, ts0 = inp["frames"], inp["n"], inp["ts0"]
+      91 -    _R_t, R_neu, *_ = m6.assemble(frames)                      
+      91 +    R_neu = m6.assemble(frames)[1]                             
+      92      icp = m7.run_icp_pass(frames, R_neu, n)
+      93      cmp_ = m7.compare_mocap(inp, icp["Rb_icp"], R_neu)
+      94  
+  ⎿  Updated trunkpose\dual_notebooks\16_subject_agreement.py (+1 -1)
+      184          lo, hi = st["bias"] - 1.96 * st["sd"], st["bias"] + 1.
+           96 * st["sd"]
+      185          for y, ls, lw in ((st["bias"], "-", 1.6), (lo, "--", 1
+           .2), (hi, "--", 1.2)):
+      186              ba.axhline(y, color="#111111", ls=ls, lw=lw, zorde
+           r=3)
+      187 -        ba.set_xlabel(f"mean of both (deg)")                  
+      187 +        ba.set_xlabel("mean of both (deg)")                   
+      188          if k == 0:
+      189              ba.set_ylabel("camera $-$ mocap (deg)")
+      190          # headroom so the annotation never lands on the upper 
+           LoA line
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both scripts verified after the edits; results reproduce. Done.
+
+  What you have
+
+  data/sep23_26/output/: icp_vs_mocap_agreement.png (the 5-subject figure),
+  agreement_summary.csv, five per-subject trace PNGs, and a README.md with the
+  numbers and caveats. Per-subject series live in
+  data/sep23_26/<subject>/icp_vs_mocap.npz, geometry cached alongside.
+
+  uv run python trunkpose/dual_notebooks/15_subject_icp.py --all --workers 4
+  uv run python trunkpose/dual_notebooks/16_subject_agreement.py
+
+  Results (pooled, n = 5661)
+
+  ┌──────────────────┬───────┬───────┬───────┬───────┐
+  │       axis       │   r   │ RMSE  │ bias  │ slope │
+  ├──────────────────┼───────┼───────┼───────┼───────┤
+  │ flexion          │ +0.73 │ 7.3°  │ +0.3° │ 0.65  │
+  ├──────────────────┼───────┼───────┼───────┼───────┤
+  │ lateral          │ +0.64 │ 10.0° │ +1.9° │ 0.46  │
+  ├──────────────────┼───────┼───────┼───────┼───────┤
+  │ axial            │ +0.65 │ 14.1° │ −0.1° │ 0.41  │
+  ├──────────────────┼───────┼───────┼───────┼───────┤
+  │ magnitude (no S) │ +0.74 │ 12.2° │ −3.3° │ 0.47  │
+  └──────────────────┴───────┴───────┴───────┴───────┘
+
+  Best to worst: kabil (flexion r .98 / 1.7°, 96 % coverage), gokul, js,
+  diwakar, ram.
+
+  Three things to know before you use these
+
+  1. Slopes are all below 1 — the camera tracks the motion but under-reads its
+     size, worst in axial. That is the front shell being near-cylindrical:
+     registering frame pairs a known 45° apart recovers ~16°. Shell noise is
+     18.5 mm rms against 74 mm of depth extent, and upsampling before SGBM does
+     not help (matching-limited). Quote these as tracking agreement, not
+     calibrated amplitude.
+  2. ram_wc is not trustworthy — 23 s take, 72 % coverage, and its fitted S
+     disagrees with the neutral-pose S by 132°, which is why its "lateral" shows
+     a 142° mocap ROM against 24° camera. Only its magnitude row (r .84) is
+     worth quoting. js and kabil are flagged over the 30° threshold too, but
+     their traces stay coherent.
+  3. Everything predating today's two-person fix is void — that includes the
+     earlier runs in this session.
+
+  Session facts captured in the data directory
+
+  data/sep23_26/session.toml holds what makes this rig different, and 06 reads
+  it automatically: 640×400 sensor vs 1280×800 calibration, swap = true (cam1 is
+  the left camera — cam0-first gave 0 % valid depth), rot180 = true (inverted
+  mounting), no ChArUco basis, trunk_seg-7 weights, and your RigidBody m2/m3/m4
+  mapping. New knobs are session- and env-overridable: [geometry]
+  shell/erosion/max_poses/seg_device, [icp] gates.
+
+  Code changes: 06 (session config, centre-person selection, GPU seg loader,
+  rescale/swap/rot180), 07 (multi-seed registration — the old code kept a gated
+  pose as the warm start, so a mirrored 180° fit propagated through the rest of
+  a take), pd_support (Motive "Unlabeled NNNN" columns crashed the CSV reader),
+  14 (uses the shared loader), plus 15/16 new. I also restored the x86_64
+  markers in pyproject.toml that an earlier uv add had stripped, and reverted
+  uv.lock — note your venv now has torch 2.12.1+cu130, which a plain uv sync
+  would replace with the CPU build.
+
+✻ Worked for 3m 26s · done 11:26 AM
+
+❯ perfect, now what is causing the 10 degree error? is it the segmentation? or  
+  the hull has outliers?                                                        
+
+● Good question — "10° error" lumps together three different things, so let me
+  decompose it rather than guess. First, recording per-frame registration
+  quality so it can be correlated with the error.
+
+  Made 2 scratchpad edits +165, ran 1 shell command (ctrl+o to expand)
+
+● Bash(cd "E:/CMC/pyprojects/programs_rpi/NOARK_backbone" &&
+      ./.venv/Scripts/python.exe "C:/Users/Pintu/AppData/Local/Temp/claude/E--CM
+      C-pyprojects-programs-rpi-NOARK-…)
+  ⎿  patched 07: per-frame registration quality
+     Neutral cloud: 2529 pts from first 15 frames
+     ICP valid 1000/1038 (direct 1000, odometry 0, gated 18)  rms 6.1mm  ma
+     … +28 lines (ctrl+o to expand)
+  ⎿  Updated trunkpose\dual_notebooks\07_icp_trunk.py (+9 -0)
+      231      A_raw = [None] * n              # incl. poses the plausibi
+           lity gate threw away
+      232      gated = np.zeros(n, bool)       # converged but rejected a
+           s physically implausible
+      233      rms_l, match_l = [], []
+      234 +    # per-frame registration quality, kept for error attributi
+          +on (which frames are                                          
+      235 +    # bad, and do they coincide with a small cloud / a poor fi
+          +t / fast motion)                                              
+      236 +    rms_f = np.full(n, np.nan)      # nn residual of the accep
+          +ted registration (m)                                          
+      237 +    frac_f = np.full(n, np.nan)     # fraction of source point
+          +s matched                                                     
+      238 +    npts_f = np.zeros(n, int)       # cloud size that went int
+          +o it                                                          
+      239      A = (np.eye(3), np.zeros(3))   # warm start / current esti
+           mate: cur -> neutral
+      240      key = None                     # (tree, cloud, A_k) fallba
+           ck keyframe
+      241      last_good = None               # (cloud, A) most recent ac
+           cepted frame
+     ...
+      244          if fr["cloud"] is None:
+      245              continue
+      246          src = fr["cloud"].astype(np.float64)
+      247 +        npts_f[i] = len(src)                                  
+      248          anch = None
+      249          if USE_SHOULDER_ANCHORS:
+      250              pairs = [(fr["cam_pts"][nm], neu_anch[nm]) for nm 
+           in neu_anch
+     ...
+      279          if best is not None:
+      280              got = (best[0], best[1]); key = None; odo_run = 0;
+            n_direct += 1
+      281              rms_l.append(best[2]); match_l.append(best[3])
+      282 +            rms_f[i], frac_f[i] = best[2], best[3] / len(src) 
+      283          elif gate_fail is not None:
+      284              # converged, but only onto an implausible pose: re
+           cord it for rendering
+      285              # and leave the warm start on the last accepted po
+           se
+     ...
+      300                      got = (Rk @ Rrel, Rk @ trel + tk)
+      301                      odo_run += 1; n_odo += 1
+      302                      rms_l.append(res2[2]); match_l.append(res2
+           [3])
+      303 +                    rms_f[i], frac_f[i] = res2[2], res2[3] / l
+          +en(src)                                                       
+      304                      if rot_deg(Rrel) > KEY_ROT_DEG:
+      305                          key = (cKDTree(src), src, got, estimat
+           e_normals(src))
+      306          if got is None:
+     ...
+      319            f"(direct {n_direct}, odometry {n_odo}, gated {int(g
+           ated.sum())})  "
+      320            f"rms {np.mean(rms_l)*1000:.1f}mm  matched ~{int(np.
+           mean(match_l))} pts")
+      321      return dict(Rb_icp=Rb_icp, A_list=A_list, A_raw=A_raw, gat
+           ed=gated, neutral=neu,
+      322 +                rms_f=rms_f, frac_f=frac_f, npts_f=npts_f,    
+      323                  flex=flex_i, lat=lat_i, axi=axi_i)
+      324  
+      325  
+  ⎿  (timeout 10m)
+
+● Clear signal on the best subject. Let me confirm the pattern generalises and
+  test your two candidate causes directly.
+
+  Made 1 scratchpad edit +140, ran 3 shell commands (ctrl+o to expand)
+
+● Both diagnostics are running. Preliminary answer from kabil_wc (the cleanest
+  subject), before the confirmations land:
+
+  It is neither segmentation noise nor hull outliers — it is pose-dependent 
+  systematic error.
+
+  The RMSE decomposes as:
+
+  ┌─────────┬──────┬────────────────┬─────────────────────┬─────────────────┐
+  │  axis   │ RMSE │   constant     │    gain deficit     │    leftover     │
+  │         │      │     offset     │       (slope)       │     scatter     │
+  ├─────────┼──────┼────────────────┼─────────────────────┼─────────────────┤
+  │ flexion │ 1.7° │ −0.6°          │ 0.5° (0.90)         │ 1.4°            │
+  ├─────────┼──────┼────────────────┼─────────────────────┼─────────────────┤
+  │ lateral │ 3.3° │ +0.8°          │ 0.9° (0.84)         │ 3.0°            │
+  ├─────────┼──────┼────────────────┼─────────────────────┼─────────────────┤
+  │ axial   │ 9.3° │ −5.4°          │ 2.6° (0.67)         │ 6.0°            │
+  └─────────┴──────┴────────────────┴─────────────────────┴─────────────────┘
+
+  Three things point away from your two candidates:
+
+  - The fit residual does not track the error. Spearman |error| vs ICP
+    nn-residual is +0.10 / +0.03 / −0.03. Outliers or a ragged mask would
+    inflate the residual on exactly the bad frames — they don't. The
+    registration looks healthy while being wrong, which is the signature of a
+    wrong correspondence, not a noisy one.
+  - The leftover is drift, not jitter. Splitting at 1 s: axial drift 4.8° vs
+    per-frame noise 2.6°; flexion 1.0° vs 0.9°. Segmentation jitter is
+    frame-to-frame by nature and would land in the fast term.
+  - The error grows with how far the trunk is from neutral (ρ = +0.19 / +0.45 /
+    +0.35) and with trunk speed (≈ +0.3), and falls when there are more cloud
+    points (−0.24 / −0.31 / −0.29). So: more visible torso → better; further
+    from neutral → worse.
+
+  That is self-occlusion. As the trunk turns, the camera sees a different patch
+  of skin than the neutral cloud holds, and ICP slides that patch onto the old
+  one — under-reading the rotation (slope < 1) and accumulating a slow offset.
+  Worst in axial, where the shell is closest to a surface of revolution.
+
+  The lag scan also found lateral wanting +165 ms and axial −165 ms —
+  inconsistent signs, so not a sync error; that's the drift being fitted by a
+  shift.
+
+  The running jobs will confirm this on the other four subjects and test your
+  two suspects head-on: statistical outlier removal + tighter ICP trimming (if
+  outliers matter, error must drop), and overlap-vs-error binned by trunk angle.
+
+✻ Crunched for 3m 38s · done 11:32 AM
+
+● Background command "Run cause tests on kabil_wc" completed (exit code 0)
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Diagnostics are conclusive. Neither suspect — it is self-occlusion: loss of 
+  shared surface with the neutral reference.
+
+  Your two hypotheses, tested directly (kabil_wc)
+
+  Hull outliers — ruled out. Statistical outlier removal dropped 3.6 % of points
+  and changed nothing:
+
+  ┌──────────────────────┬──────────────────┬────────────┬────────────┐
+  │       variant        │     flexion      │  lateral   │   axial    │
+  ├──────────────────────┼──────────────────┼────────────┼────────────┤
+  │ as-is                │ 1.7° (slope .90) │ 3.3° (.84) │ 9.3° (.67) │
+  ├──────────────────────┼──────────────────┼────────────┼────────────┤
+  │ outliers removed     │ 1.6° (.91)       │ 3.2° (.84) │ 9.3° (.67) │
+  ├──────────────────────┼──────────────────┼────────────┼────────────┤
+  │ tighter ICP trimming │ 1.9° (.90)       │ 3.6° (.85) │ 8.4° (.73) │
+  └──────────────────────┴──────────────────┴────────────┴────────────┘
+
+  Tighter trimming buys ~1° of axial and costs a little elsewhere — a wash, not
+  a cause.
+
+  Segmentation — no longer limiting. It was the dominant error until this
+  morning (two bodies in one mask). With the centre-person fix, pairwise
+  registration between two clean shells now recovers the true rotation well:
+  true 10° → 8.4°, 20° → 16.4°, 30° → 28.6°, 45° → 40.8°. It collapses only at
+  60° → 17.0°, and the matched fraction falls in lockstep (0.97 → 0.91 → 0.79 →
+  0.64 → 0.61).
+
+  What it actually is
+
+  Error tracks how much of the neutral shell is still visible:
+
+  ┌───────────────────────┬─────────────────────┬─────────┬─────────┬───────┐
+  │   trunk angle from    │   neutral shell     │ flexion │ lateral │ axial │
+  │        neutral        │       covered       │         │         │       │
+  ├───────────────────────┼─────────────────────┼─────────┼─────────┼───────┤
+  │ 0–10°                 │ 96 %                │ 1.4°    │ 1.4°    │ 4.6°  │
+  ├───────────────────────┼─────────────────────┼─────────┼─────────┼───────┤
+  │ 10–20°                │ 91 %                │ 1.8°    │ 2.4°    │ 5.7°  │
+  ├───────────────────────┼─────────────────────┼─────────┼─────────┼───────┤
+  │ 20–30°                │ 77 %                │ 1.9°    │ 3.2°    │ 6.3°  │
+  ├───────────────────────┼─────────────────────┼─────────┼─────────┼───────┤
+  │ 30–45°                │ 47 %                │ 2.4°    │ 4.3°    │ 6.3°  │
+  ├───────────────────────┼─────────────────────┼─────────┼─────────┼───────┤
+  │ 45–90°                │ 38 %                │ 2.8°    │ 15.3°   │ 50.1° │
+  └───────────────────────┴─────────────────────┴─────────┴─────────┴───────┘
+
+  Same story on gokul_wc: |error| vs angle-from-neutral ρ = +0.39 / +0.76 /
+  +0.57, vs cloud points −0.45 / −0.60 / −0.55, and the leftover is drift rather
+  than jitter (axial drift 8.6° vs per-frame noise 3.5°). js_wc and diwakar_wc
+  are still computing; I'll flag it if they dissent.
+
+  So the ~10° is not spread evenly — inside ±30° the camera is at 1.4–6.3° and
+  the pooled figure is dragged up by the minority of frames past 30–45°, where
+  the camera is looking at skin the neutral cloud never contained. Axial is
+  worst because the shell is closest to a surface of revolution there.
+
+  The fix, if you want it: replace the single neutral cloud with a reference
+  model that accumulates — merge each confidently registered frame back into the
+  reference (voxel-merged, capped, anchored on neutral). By ±30° the model
+  would then already hold the side surfaces, so overlap at 60° stops collapsing.
+  That is a change to run_icp_pass in 07, roughly 30 lines, and the pairwise
+  numbers say the registration itself is sound enough for it to work. Say the
+  word and I'll build it.
+
+✻ Churned for 46s · done 11:35 AM
+
+● Background command "Error budget for remaining subjects" completed (exit code
+0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All four subjects agree — no dissent.
+
+  Angle from neutral is the top predictor of error in every subject, on every 
+  axis:
+
+  ┌─────────┬─────────┬─────────┬───────┐
+  │ subject │ flexion │ lateral │ axial │
+  ├─────────┼─────────┼─────────┼───────┤
+  │ kabil   │ +0.19   │ +0.45   │ +0.35 │
+  ├─────────┼─────────┼─────────┼───────┤
+  │ gokul   │ +0.39   │ +0.76   │ +0.57 │
+  ├─────────┼─────────┼─────────┼───────┤
+  │ js      │ +0.58   │ +0.36   │ +0.64 │
+  ├─────────┼─────────┼─────────┼───────┤
+  │ diwakar │ +0.52   │ +0.48   │ +0.60 │
+  └─────────┴─────────┴─────────┴───────┘
+
+  Cloud points is the strongest negative predictor throughout (−0.24 … −0.61):
+  fewer visible torso points → more error. Both are the same mechanism — the
+  trunk turns, the visible shell shrinks and stops overlapping the neutral
+  cloud.
+
+  Drift exceeds per-frame noise in 11 of 12 subject×axis cells (js flexion is
+  the lone tie, 3.8 vs 3.7). Segmentation jitter and stray points are
+  frame-to-frame phenomena; they would land in the fast term, and they don't.
+
+  Two secondary contributors worth noting:
+
+  - Gain deficit dominates axial for gokul and diwakar — 6.9° of 14.3° and 8.9°
+    of 18.2°, slopes 0.24/0.25. These two barely rotate axially in the shell's
+    visible region, so the camera reads a quarter of the true amplitude.
+  - Speed matters for diwakar (+0.34/+0.46/+0.57), the only subject where it
+    does, and his best lag is a consistent −231 to −264 ms across all three
+    axes. That is a genuine temporal misalignment worth a separate look — unlike
+    kabil's sign-flipped ±165 ms, which was drift being absorbed by a shift.
+    Worth checking his GPIO rise frame against the phase log if you care about
+    that take.
+
+  So the ranking of causes for the residual error: self-occlusion ≫ amplitude 
+  under-read (same root cause) > temporal lag (one subject) ≫ depth noise > 
+  outliers ≈ 0. Segmentation was the dominant error before the centre-person fix
+  and is now a non-factor.
+
+✻ Worked for 16s · done 11:38 AM
+
+❯ whenever we have self occulution we don't need to compute, the angle, will    
+  that improve the current results?                                             
+
+● Good instinct — that's a legitimate gate if it uses only camera-side
+  information (no mocap), and if you report what it costs. Let me measure it
+  rather than assert it.
+
+  Made 1 scratchpad edit +99, ran 1 shell command (ctrl+o to expand)
+
+● Running across all five. Short answer while it computes: yes, the numbers will
+  improve — but only because you stop reporting the frames you were getting 
+  wrong, and those are the large-angle frames.
+
+  Three things the measurement has to settle before this is a legitimate method
+  rather than a flattering one:
+
+  1. The gate must not touch mocap. I'm testing two camera-only signals:
+     neutral-shell coverage (KD query against the registered cloud) and ICP's
+     matched fraction (free, already computed). If the cheap one tracks the real
+     one, it's the gate to ship.
+  2. What the gate costs. For kabil, frames past 30° from neutral are 7 % of the
+     take but carry the 50° axial errors. Cutting them makes axial RMSE look
+     excellent and simultaneously removes the range a clinician cares about —
+     the reported ROM shrinks to whatever the camera could see. The table prints
+     kept-% and the surviving mocap p95 |rotation| side by side so that trade
+     is explicit.
+  3. It changes the claim. Ungated, the claim is "trunk angle over the whole
+     task". Gated, it becomes "trunk angle whenever the torso is sufficiently
+     visible, which is X % of the time" — with a duty cycle that must be
+     reported alongside every RMSE.
+
+  So gating is the honest way to report the current pipeline, but it does not
+  make the pipeline measure more. The accumulating reference model I mentioned
+  is the version that actually recovers those frames instead of discarding them.
+  If the gate table shows coverage ≥ 0.65 keeping most of the take, I'd ship
+  both: gate now, model next.
+✻ Sautéed for 55s · done 11:46 AM
+
+● Background command "Test occlusion gating across subjects" completed (exit
+code 0)
+
+  Read 1 file (ctrl+o to expand)
+
+● Measured. Yes — substantially, and more than I expected. But only the coverage
+  gate works; the cheap one doesn't.
+
+  Coverage ≥ 0.65 (fraction of the neutral shell still visible)
+
+  ┌─────────┬──────┬─────────────┬─────────────┬─────────────┬──────────────┐
+  │ subject │ kept │   flexion   │   lateral   │    axial    │ axial slope  │
+  ├─────────┼──────┼─────────────┼─────────────┼─────────────┼──────────────┤
+  │ kabil   │ 89 % │ 1.7 → 1.6°  │ 3.3 → 2.1°  │ 9.3 → 5.1°  │ 0.67 → 0.86  │
+  ├─────────┼──────┼─────────────┼─────────────┼─────────────┼──────────────┤
+  │ gokul   │ 70 % │ 6.3 → 2.3°  │ 5.0 → 1.6°  │ 14.3 → 3.3° │ 0.24 → 1.02  │
+  ├─────────┼──────┼─────────────┼─────────────┼─────────────┼──────────────┤
+  │ js      │ 51 % │ 6.8 → 2.8°  │ 8.5 → 3.8°  │ 11.1 → 3.9° │ 0.61 → 0.67  │
+  ├─────────┼──────┼─────────────┼─────────────┼─────────────┼──────────────┤
+  │ diwakar │ 68 % │ 8.4 → 5.5°  │ 6.8 → 3.3°  │ 18.2 → 6.4° │ 0.25 → 0.77  │
+  ├─────────┼──────┼─────────────┼─────────────┼─────────────┼──────────────┤
+  │ ram     │ 82 % │ 12.5 →      │ 29.5 →      │ 12.6 →      │ −0.07 →      │
+  │         │      │ 13.2°       │ 28.4°       │ 12.4°       │ −0.11        │
+  └─────────┴──────┴─────────────┴─────────────┴─────────────┴──────────────┘
+
+  The headline is not the RMSE — it's the slopes going to ~1. gokul's axial goes
+  0.24 → 1.02, diwakar's 0.25 → 0.77, with r 0.30 → 0.88 and 0.55 → 0.81. That
+  says the amplitude under-read was not a fundamental scale limit of the method:
+  when the torso is actually visible, ICP measures the rotation correctly and
+  without gain bias. My earlier "treat these as tracking, not calibrated
+  amplitude" was too pessimistic — it holds for the ungated series, not for the
+  visible ones.
+
+  Three caveats
+
+  Matched fraction is useless as a gate. It keeps 97–100 % of frames and changes
+  nothing (gokul axial 14.3 → 13.8° at ≥0.85). It saturates near 0.95 even when
+  occluded, because ICP matches the points it still has — it cannot know about
+  the surface that left the view. Correlation with real coverage is only
+  +0.50…+0.71. So the gate needs the KD query against the neutral cloud; one
+  query per frame, cheap.
+
+  The cost is exactly the range you care about. Surviving mocap p95 |rotation|
+  drops from 37→26° (kabil), 37→23° (gokul), 59→25° (js), 64→25° (diwakar). The
+  gate defines a measurable envelope of roughly ±25–30°, and every RMSE then has
+  to be quoted with its duty cycle. For js that duty cycle is 51 % — half the
+  take unreported.
+
+  It does not rescue ram. Gating at 0.65 leaves it unchanged (flexion r −0.01,
+  axial r −0.18); at 0.80 the numbers drop but flexion correlation goes
+  negative. Its problem is the frame assignment, not occlusion — consistent with
+  the 132° S disagreement. It stays excluded.
+
+  What I'd ship
+
+  Both, in order: gate now (MIN_COVERAGE = 0.65 in 07, coverage stored per
+  frame, duty cycle printed in 15 and shown in 16's panels), then the
+  accumulating reference model — which is the version that recovers those 30–50
+  % of frames instead of discarding them. The gated slopes are the evidence that
+  the model will work: registration is sound wherever there's surface to
+  register.
+
+  Want me to wire in the gate?
+
+✻ Cooked for 35s · done 11:54 AM
