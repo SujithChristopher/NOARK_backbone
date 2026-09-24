@@ -33,10 +33,9 @@ dependencies = [
     "fiftyone>=1.19.0; platform_machine == 'x86_64'",
     "requests>=2.34.2; platform_machine == 'x86_64'",
     "pycocotools>=2.0.11; platform_machine == 'x86_64'",
-    "ultralytics>=8.4.102; platform_machine == 'x86_64'",
     "gpiod>=2.5.0 ; sys_platform == 'linux'",
     "rapidtag>=0.1.4",
-    "ultralytics>=8.4.102",
+    "ultralytics>=8.4.102; platform_machine == 'x86_64'",
     "mediapipe>=0.10.35",
 ]
 

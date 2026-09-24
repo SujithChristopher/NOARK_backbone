@@ -29,6 +29,16 @@ from scipy.spatial.transform import Rotation
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 m6 = importlib.import_module("06_trunk_axis")
 
+# Registration tunables. Defaults are the july-27 values; a session whose task has a
+# different motion envelope overrides them in its session.toml [icp] table (or per run
+# via TRUNK_<KEY>), so tuning one dataset never silently re-scores another.
+_icp_cfg = m6.SESSION.get("icp", {})
+
+
+def _icp_cfg_val(key, default, cast=float):
+    return cast(os.environ.get(f"TRUNK_{key.upper()}", _icp_cfg.get(key, default)))
+
+
 NEUTRAL_MAX_PTS = 6000       # pooled neutral cloud size
 ICP_ITERS = 20
 ICP_DISTS = (0.06, 0.03, 0.02)   # trimming threshold annealing (m)
@@ -38,9 +48,11 @@ NORMAL_K = 15                 # neighbors for local-PCA normal estimation
 # Very loose on purpose: wrong minima are prevented by the shoulder anchors, and
 # odometry composition drifts (it twisted the whole series ~138 deg when it ran for
 # 700+ frames), so direct should win whenever the registration converges at all.
-DIRECT_RMS_M, DIRECT_FRAC = 0.030, 0.30
-ODO_RMS_M, ODO_FRAC = 0.010, 0.50
-KEY_ROT_DEG = 15.0           # spawn a new keyframe after rotating this far from it
+DIRECT_RMS_M = _icp_cfg_val("direct_rms_m", 0.030)
+DIRECT_FRAC = _icp_cfg_val("direct_frac", 0.30)
+ODO_RMS_M = _icp_cfg_val("odo_rms_m", 0.010)
+ODO_FRAC = _icp_cfg_val("odo_frac", 0.50)
+KEY_ROT_DEG = _icp_cfg_val("key_rot_deg", 15.0)   # new keyframe after this much rotation
 # Anchor support kept for future trustworthy keypoints, but DISABLED for MediaPipe
 # shoulders: tried it -- 2 jittery points at ~30% total weight steered the rotation
 # axes wrong (S blew up to ~143 deg, flexion RMSE 21 deg). Not worth it.
@@ -49,8 +61,8 @@ USE_SHOULDER_ANCHORS = False
 SEG_JUMP_M = 0.10            # mocap displacement across a gap that flags a re-lock teleport
 # Wrong-basin registrations look healthy in rms/frac, but a seated trunk never
 # exceeds ~45 deg from neutral -> gate on physical plausibility instead.
-ROT_MAX_DEG = 45.0
-ODO_MAX_RUN = 30             # max consecutive odometry frames before declaring loss
+ROT_MAX_DEG = _icp_cfg_val("rot_max_deg", 45.0)
+ODO_MAX_RUN = _icp_cfg_val("odo_max_run", 30, int)   # consecutive odometry frames allowed
 ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "all").lower()
 if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):
     raise ValueError("TRUNK_ANGLE_PLOT_MODE must be all, icp_only, or mocap_only")
@@ -151,8 +163,9 @@ def load_inputs():
         str(m6.RECORDING_DIR / f"{m6.RECORDING_NAME}.csv"))
     mocap_time = np.datetime64(st_time) + (
         mocap_df["seconds"].to_numpy() * 1e6).astype("timedelta64[us]")
-    ts0 = m6.load_frame_times(m6.RECORDING_DIR / "cam0_timestamp.msgpack")
-    ts1 = m6.load_frame_times(m6.RECORDING_DIR / "cam1_timestamp.msgpack")
+    # CAM0_TIMES follows the reference camera, which is cam1 on a swapped rig
+    ts0 = m6.load_frame_times(m6.CAM0_TIMES)
+    ts1 = m6.load_frame_times(m6.CAM1_TIMES)
     n = min(len(ts0), len(ts1))
     max_frames = int(os.environ.get("TRUNK_MAX_FRAMES", "0"))
     if max_frames:
@@ -218,6 +231,11 @@ def run_icp_pass(frames, R_neu, n):
     A_raw = [None] * n              # incl. poses the plausibility gate threw away
     gated = np.zeros(n, bool)       # converged but rejected as physically implausible
     rms_l, match_l = [], []
+    # per-frame registration quality, kept for error attribution (which frames are
+    # bad, and do they coincide with a small cloud / a poor fit / fast motion)
+    rms_f = np.full(n, np.nan)      # nn residual of the accepted registration (m)
+    frac_f = np.full(n, np.nan)     # fraction of source points matched
+    npts_f = np.zeros(n, int)       # cloud size that went into it
     A = (np.eye(3), np.zeros(3))   # warm start / current estimate: cur -> neutral
     key = None                     # (tree, cloud, A_k) fallback keyframe
     last_good = None               # (cloud, A) most recent accepted frame
@@ -226,6 +244,7 @@ def run_icp_pass(frames, R_neu, n):
         if fr["cloud"] is None:
             continue
         src = fr["cloud"].astype(np.float64)
+        npts_f[i] = len(src)
         anch = None
         if USE_SHOULDER_ANCHORS:
             pairs = [(fr["cam_pts"][nm], neu_anch[nm]) for nm in neu_anch
@@ -233,11 +252,40 @@ def run_icp_pass(frames, R_neu, n):
             if pairs:
                 anch = (np.array([p for p, _ in pairs]),
                         np.array([q for _, q in pairs]))
-        got = None
-        res = icp(src, neu, tree, *A, dst_normals=neu_normals, anchors=anch)
-        if res and res[2] <= DIRECT_RMS_M and res[3] >= DIRECT_FRAC * len(src):
-            got = (res[0], res[1]); key = None; odo_run = 0; n_direct += 1
-            rms_l.append(res[2]); match_l.append(res[3])
+        # Direct-to-neutral, tried from several seeds. The torso front shell is a
+        # shallow curved patch, so it has a near-mirror basin roughly 180 deg away
+        # that fits just as well (measured on sep23/ram_wc: rms 7-8 mm, 90% matched,
+        # rot ~172 deg). A single warm-started registration that slips into it stays
+        # there for the rest of the take, because every later frame inherits the
+        # flipped warm start. Seeding from the last ACCEPTED pose and from identity
+        # as well gives the plausible basin a way back in.
+        got, gate_fail = None, None
+        seeds = [A]
+        for cand in ((last_good[1] if last_good else None), (np.eye(3), np.zeros(3))):
+            if cand is not None and not any(
+                    np.allclose(cand[0], s0) and np.allclose(cand[1], t0)
+                    for s0, t0 in seeds):
+                seeds.append(cand)
+        best = None
+        for R_s, t_s in seeds:
+            res = icp(src, neu, tree, R_s, t_s, dst_normals=neu_normals, anchors=anch)
+            if not res or res[2] > DIRECT_RMS_M or res[3] < DIRECT_FRAC * len(src):
+                continue
+            if rot_deg(res[0]) > ROT_MAX_DEG:
+                gate_fail = res if gate_fail is None or res[2] < gate_fail[2] else gate_fail
+                continue
+            if best is None or res[2] < best[2]:
+                best = res
+        if best is not None:
+            got = (best[0], best[1]); key = None; odo_run = 0; n_direct += 1
+            rms_l.append(best[2]); match_l.append(best[3])
+            rms_f[i], frac_f[i] = best[2], best[3] / len(src)
+        elif gate_fail is not None:
+            # converged, but only onto an implausible pose: record it for rendering
+            # and leave the warm start on the last accepted pose
+            A_raw[i] = (gate_fail[0], gate_fail[1])
+            gated[i] = True
+            continue
         else:
             if key is None and last_good is not None:
                 kc, kA = last_good
@@ -252,15 +300,15 @@ def run_icp_pass(frames, R_neu, n):
                     got = (Rk @ Rrel, Rk @ trel + tk)
                     odo_run += 1; n_odo += 1
                     rms_l.append(res2[2]); match_l.append(res2[3])
+                    rms_f[i], frac_f[i] = res2[2], res2[3] / len(src)
                     if rot_deg(Rrel) > KEY_ROT_DEG:
                         key = (cKDTree(src), src, got, estimate_normals(src))
         if got is None:
             continue                       # keep previous estimate as warm start
         A_raw[i] = got                     # what ICP converged to, gate or no gate
         if rot_deg(got[0]) > ROT_MAX_DEG:
-            gated[i] = True
-            A = got                        # keep as warm start so we can re-converge,
-            continue                       # but never report an implausible pose
+            gated[i] = True                # odometry drifted out of the plausible
+            continue                       # envelope; warm start stays where it was
         A = got
         last_good = (src, A)
         # A maps current -> neutral, so the body rotation from neutral is A[0].T
@@ -271,6 +319,7 @@ def run_icp_pass(frames, R_neu, n):
           f"(direct {n_direct}, odometry {n_odo}, gated {int(gated.sum())})  "
           f"rms {np.mean(rms_l)*1000:.1f}mm  matched ~{int(np.mean(match_l))} pts")
     return dict(Rb_icp=Rb_icp, A_list=A_list, A_raw=A_raw, gated=gated, neutral=neu,
+                rms_f=rms_f, frac_f=frac_f, npts_f=npts_f,
                 flex=flex_i, lat=lat_i, axi=axi_i)
 
 
@@ -297,9 +346,9 @@ def compare_mocap(inp, Rb_icp, R_neu):
     # hardware sync: the GPIO sync bit in the camera timestamp file is high while
     # mocap records, so mocap t=0 is the camera frame at the first rising edge.
     # No xcorr guessing -- the two timelines share a wire.
-    sync = m6.load_sync_flags(m6.RECORDING_DIR / "cam0_timestamp.msgpack")[:n]
+    sync = m6.load_sync_flags(m6.CAM0_TIMES)[:n]
     if not (sync == 1).any():
-        raise SystemExit("No GPIO sync pulse in cam0_timestamp.msgpack.")
+        raise SystemExit(f"No GPIO sync pulse in {m6.CAM0_TIMES.name}.")
     rise = int(np.argmax(sync == 1))
     mt = ts0[rise] + (mocap_df["seconds"].to_numpy() * 1e6).astype("timedelta64[us]")
     lag_s = float((mocap_time[0] - mt[0]) / np.timedelta64(1, "s"))

@@ -293,8 +293,12 @@ def read_rigid_body_csv(_pth):
     for i in _rb_marker_idx:
         if isinstance(_rb_df[i].iloc[0], str):
             _col_head = _rb_df[i].iloc[0].lower()
-            _col_head = _col_head.split(":")[1].strip()
-            _col_head = _col_head.replace("marker", "")
+            # "rigidbody:marker2" -> "2". Unlabelled markers ("unlabeled 1064")
+            # carry no rigid-body prefix, so keep the name as-is instead of
+            # indexing past the end of the split.
+            if ":" in _col_head:
+                _col_head = _col_head.split(":")[1].strip()
+            _col_head = _col_head.strip().replace("marker", "")
 
             if isinstance(_rb_df[i].iloc[3], str):
                 _col = _rb_df[i].iloc[3].lower()
@@ -309,8 +313,12 @@ def read_rigid_body_csv(_pth):
     for i in _marker_idx:
         if isinstance(_rb_df[i].iloc[0], str):
             _col_head = _rb_df[i].iloc[0].lower()
-            _col_head = _col_head.split(":")[1].strip()
-            _col_head = _col_head.replace("marker", "")
+            # "rigidbody:marker2" -> "2". Unlabelled markers ("unlabeled 1064")
+            # carry no rigid-body prefix, so keep the name as-is instead of
+            # indexing past the end of the split.
+            if ":" in _col_head:
+                _col_head = _col_head.split(":")[1].strip()
+            _col_head = _col_head.strip().replace("marker", "")
 
             if isinstance(_rb_df[i].iloc[3], str):
                 _col = _rb_df[i].iloc[3].lower()

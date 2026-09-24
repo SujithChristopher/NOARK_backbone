@@ -70,8 +70,6 @@ def pipeline_masks(i, maps0, maps1, Q, shape):
     cloud back: the cloud is voxel-downsampled, so reprojecting it needs a dilation
     to close the gaps, and that dilation cancels exactly the erosion the figure is
     meant to show. Both masks come back as rectified, downscaled pixel masks."""
-    from ultralytics import YOLO
-
     pair = None
     for k, (f0, f1) in enumerate(m6.iter_frame_pairs(m6.CAM0_FRAMES, m6.CAM1_FRAMES)):
         if k == i:
@@ -81,7 +79,7 @@ def pipeline_masks(i, maps0, maps1, Q, shape):
         raise SystemExit(f"Frame {i} not in {m6.CAM0_FRAMES}")
     g0, g1 = (f if f.ndim == 2 else cv2.cvtColor(f, cv2.COLOR_RGB2GRAY) for f in pair)
 
-    mask0 = m6.torso_mask(YOLO(str(m6.SEG_WEIGHTS)), g0, m6.CAM_SIZE)
+    mask0 = m6.torso_mask(m6.load_seg_model(), g0, m6.CAM_SIZE)
     if not mask0.any():
         raise SystemExit(f"YOLO ({m6.SEG_WEIGHTS.name}) found no torso on frame {i}")
     mrect = cv2.remap(mask0, *maps0, cv2.INTER_NEAREST)

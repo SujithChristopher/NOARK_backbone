@@ -56,34 +56,100 @@ RECORDING_DIR = Path(os.environ.get(
     "TRUNK_RECORDING_DIR",
     str(PROJECT_ROOT / "data" / "july27" / RECORDING_NAME),
 ))
-CAM0_FRAMES = RECORDING_DIR / "cam0_frame.msgpack"
-CAM1_FRAMES = RECORDING_DIR / "cam1_frame.msgpack"
-STEREO_TOML = (
+
+# %% Session config
+# Everything that changes between capture sessions -- which stereo calibration, how
+# the rig was mounted, how the Motive rigid body is named -- lives in a session.toml
+# next to the recordings (this dir or its parent), so a new session is a data change,
+# not a code edit. The july-27 defaults below apply when no file is found.
+def load_session(rec_dir):
+    for cand in (Path(rec_dir) / "session.toml", Path(rec_dir).parent / "session.toml"):
+        if cand.exists():
+            return toml.load(cand), cand
+    return {}, None
+
+
+SESSION, SESSION_TOML = load_session(RECORDING_DIR)
+_cam_cfg = SESSION.get("camera", {})
+_cal_cfg = SESSION.get("calibration", {})
+_moc_cfg = SESSION.get("mocap", {})
+
+
+def _session_path(key, cfg, default):
+    """Path from env > session.toml (repo-relative) > hard default. '' / 'none' -> None."""
+    raw = os.environ.get(f"TRUNK_{key.upper()}", cfg.get(key))
+    if raw is None:
+        return default
+    if str(raw).strip().lower() in ("", "none"):
+        return None
+    q = Path(raw)
+    return q if q.is_absolute() else PROJECT_ROOT / q
+
+
+# Sensor resolution of THIS recording. The stereo calibration may have been shot at a
+# different resolution; load_stereo rescales the intrinsics to match.
+CAM_SIZE = tuple(int(v) for v in _cam_cfg.get("size", (1280, 800)))
+# The pair is recorded cam0/cam1, but the calibration's stereo T tells you which one is
+# physically on the left, and SGBM needs the left image first. When the rig is plugged
+# in the other way round (sep23: T_x > 0 => cam1 is left) set swap = true and the whole
+# pipeline runs with cam1 as the reference camera.
+SWAP_CAMS = bool(_cam_cfg.get("swap", False))
+# Camera mounted upside down: geometry is unaffected (the calibration was shot the same
+# way), but YOLO and MediaPipe both fail on an inverted person, so inference runs on a
+# 180-rotated copy and the results are mapped back to sensor pixels.
+ROT180 = bool(_cam_cfg.get("rot180", False))
+
+_c0, _c1 = ("cam1", "cam0") if SWAP_CAMS else ("cam0", "cam1")
+CAM0_FRAMES = RECORDING_DIR / f"{_c0}_frame.msgpack"
+CAM1_FRAMES = RECORDING_DIR / f"{_c1}_frame.msgpack"
+CAM0_TIMES = RECORDING_DIR / f"{_c0}_timestamp.msgpack"
+CAM1_TIMES = RECORDING_DIR / f"{_c1}_timestamp.msgpack"
+
+STEREO_TOML = _session_path("stereo_toml", _cal_cfg, (
     PROJECT_ROOT / "data" / "calibration" / "dual_160"
     / "calib_cz30_dual_v2" / "stereo_calibration.toml"
-)
-CHARUCO_TOML = (
+))
+# Optional: with no ChArUco basis the "board frame" is just the reference-camera frame.
+# That is fine for the trunk angles -- they are read off R_neu's own columns, so a
+# constant frame rotation cancels -- and the mocap side fits its residual rotation S
+# anyway. It only costs the shared world frame used for rendering mocap with the cloud.
+CHARUCO_TOML = _session_path("charuco_toml", _cal_cfg, (
     PROJECT_ROOT / "data" / "july27"
     / "july_27_calib" / "charuco_basis.toml"
-)
+))
 # NOTE: default still points at the old single-class model. After retraining on the
 # multi-class (torso/arm/head) dataset, either edit the default or set env TRUNK_SEG_WEIGHTS
 # (ultralytics names each run trunk_segN, so the new path isn't known ahead of time).
-SEG_WEIGHTS = Path(os.environ.get(
+SEG_WEIGHTS = _session_path("seg_weights", _cal_cfg, None) or Path(os.environ.get(
     "TRUNK_SEG_WEIGHTS",
     str(PROJECT_ROOT / "trunkpose" / "runs" / "trunk_seg-2" / "weights" / "best.pt")))
 POSE_MODEL = SCRIPT_DIR / "pose_landmarker_full.task"
 OUT_VIDEO = RECORDING_DIR / "trunk_axis_charuco.mp4"
 
 # %% Config
-CAM_SIZE = (1280, 800)
 VISIBILITY_THRESH = 0.5
 DEPTH_MIN_M, DEPTH_MAX_M = 0.2, 3.0     # torso-fit depth gate
 SCENE_DEPTH_MAX_M = 4.0                  # depth-heatmap far clip
-MASK_ERODE_FRAC = 0.06                   # erode torso mask by ~this * sqrt(area) px
-ARM_EXCLUDE_DILATE_PX = 9                # dilate 'arm' class mask before subtracting from torso
-FRONT_PCTL = 5.0                         # frontmost-depth percentile for the front shell
-SHELL_M = 0.10                           # keep points within this depth of the front cap
+# Cloud-extraction knobs. A session with a different framing (sep23: half-res sensor,
+# subject ~1.1 m away, so the torso is ~7 k px instead of ~40 k) can widen the shell
+# from its session.toml [geometry] table, or per run via TRUNK_<KEY>. More of the
+# torso flanks means more curvature, which is what makes an axial rotation observable
+# at all -- a perfectly cylindrical front patch is degenerate under it.
+def _geom_cfg(key, default, cast=float):
+    return cast(os.environ.get(f"TRUNK_{key.upper()}",
+                               SESSION.get("geometry", {}).get(key, default)))
+
+
+MASK_ERODE_FRAC = _geom_cfg("mask_erode_frac", 0.06)  # erode mask by this * sqrt(area) px
+ARM_EXCLUDE_DILATE_PX = _geom_cfg("arm_exclude_dilate_px", 9, int)
+FRONT_PCTL = _geom_cfg("front_pctl", 5.0)   # frontmost-depth percentile for the shell
+SHELL_M = _geom_cfg("shell_m", 0.10)        # keep points within this depth of the cap
+MAX_POSES = _geom_cfg("max_poses", 3, int)  # people MediaPipe may detect per frame
+# Where YOLO runs: "auto" takes the GPU when torch reports one. Each geometry worker is
+# a separate process and so holds its own CUDA context (~0.5 GB), so keep TRUNK_WORKERS
+# modest on a GPU run -- MediaPipe stays on the CPU either way (no Windows GPU delegate),
+# which is what the remaining workers are for.
+SEG_DEVICE = str(_geom_cfg("seg_device", "auto", str))
 Z_MAX_M = 5.0
 N_NEUTRAL = 15
 SAVGOL_WINDOW = 11       # camera-angle smoothing window (frames, odd); mocap left raw
@@ -130,9 +196,10 @@ SEG_JUMP_M = 0.10
 #   Marker3 = frame origin, Marker1 = +X direction, Marker4 = +Z direction.
 # These are intentionally separate from the calibration T-frame mapping
 # (calibration: origin=4, +X=1, +Z=3).
-TRUNK_ORIGIN_MARKER = 3
-TRUNK_X_MARKER = 1
-TRUNK_Z_MARKER = 4
+TRUNK_RB_NAME = str(_moc_cfg.get("rigid_body", "trunk"))
+TRUNK_ORIGIN_MARKER = int(_moc_cfg.get("origin_marker", 3))
+TRUNK_X_MARKER = int(_moc_cfg.get("x_marker", 1))
+TRUNK_Z_MARKER = int(_moc_cfg.get("z_marker", 4))
 
 UPPER_LIMB = {
     "L_shoulder": 11, "R_shoulder": 12,
@@ -159,7 +226,15 @@ ANGLE_COLORS = {"flexion": "tomato", "lateral": "gold", "axial": "deepskyblue"}
 
 
 # %% Calibration / basis
-def load_stereo(path):
+def load_stereo(path, size=None, swap=None):
+    """Fisheye intrinsics + stereo extrinsics, rescaled to `size` and optionally swapped.
+
+    A calibration shot at 1280x800 stays valid for a 640x400 binned recording after
+    scaling fx/fy/cx/cy -- the fisheye distortion coefficients are in normalized
+    coordinates, so they carry over untouched. `swap` re-expresses the pair with cam1
+    as the reference camera (R -> R^T, T -> -R^T T)."""
+    size = CAM_SIZE if size is None else size
+    swap = SWAP_CAMS if swap is None else swap
     d = toml.load(path)
     K0 = np.array(d["cam0"]["camera_matrix"])
     D0 = np.array(d["cam0"]["dist_coeffs"][0], dtype=np.float64).reshape(4, 1)
@@ -167,10 +242,27 @@ def load_stereo(path):
     D1 = np.array(d["cam1"]["dist_coeffs"][0], dtype=np.float64).reshape(4, 1)
     R = np.array(d["stereo"]["R"])
     T_mm = np.array(d["stereo"]["T"], dtype=np.float64).reshape(3, 1)
+    res = d["cam0"].get("resolution")
+    if size is not None and res is not None and tuple(res) != tuple(size):
+        sx, sy = size[0] / res[0], size[1] / res[1]
+        if abs(sx - sy) > 1e-6:
+            raise SystemExit(f"Calibration {tuple(res)} and recording {tuple(size)} "
+                             "differ in aspect ratio -- not a pure rescale.")
+        for K in (K0, K1):
+            K[:2] *= sx
+    if swap:
+        K0, K1, D0, D1 = K1, K0, D1, D0
+        R, T_mm = R.T, -R.T @ T_mm
     return K0, D0, K1, D1, R, T_mm
 
 
 def load_charuco_basis(path):
+    """(R0, t0, Rm, tm): reference-cam and mocap poses in the ChArUco board frame.
+
+    `None` -> identity, i.e. the board frame collapses onto the reference-camera frame
+    and mocap stays in Motive world. Trunk angles are unaffected (see CHARUCO_TOML)."""
+    if path is None:
+        return np.eye(3), np.zeros(3), np.eye(3), np.zeros(3)
     d = toml.load(path)
     return (np.array(d["cam0"]["rotation"]), np.array(d["cam0"]["origin"]),
             np.array(d["mocap"]["rotation"]), np.array(d["mocap"]["origin"]))
@@ -309,30 +401,68 @@ def voxel_downsample(pts, voxel=CLOUD_VOXEL_M, max_pts=CLOUD_MAX_PTS, rng=None):
     return ds
 
 
-def torso_mask(seg_model, gray, size):
-    """Torso mask from either the new ``torso`` class or legacy ``chest`` class.
+def for_inference(gray):
+    """Sensor image as the upright image the networks were trained on."""
+    return cv2.rotate(gray, cv2.ROTATE_180) if ROT180 else gray
 
-    With the multi-class model, subtract a small dilation of class ``arm`` so an arm
-    resting on/crossing the chest does not bleed into the torso surface.
+
+def from_inference_mask(mask):
+    return cv2.rotate(mask, cv2.ROTATE_180) if ROT180 else mask
+
+
+def from_inference_px(p, size):
+    """Inference-image pixel -> sensor pixel."""
+    if p is None or not ROT180:
+        return p
+    W, H = size
+    return (W - 1 - p[0], H - 1 - p[1])
+
+
+def load_seg_model(weights=None, device=SEG_DEVICE):
+    """YOLO segmentation model on the requested device ("auto" -> GPU if present)."""
+    from ultralytics.utils.torch_utils import select_device
+
+    model = YOLO(str(weights or SEG_WEIGHTS))
+    dev = select_device("" if device == "auto" else device, verbose=False)
+    return model.to(dev)
+
+
+def torso_mask(seg_model, gray, size):
+    """Torso mask of the SUBJECT: the centre-most torso instance, arms removed.
+
+    A second person in frame (assistant, bystander) gets its own torso instance. The
+    subject is the one seated in front of the rig, so instances are ranked by how far
+    their centroid sits from the image centre and only the closest one is kept -- ORing
+    them together would merge two bodies into one cloud and wreck the registration.
+    Arm masks are all subtracted (after a small dilation) so an arm crossing the chest
+    does not bleed into the torso surface.
     """
     W, H = size
-    res = seg_model.predict(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB),
+    res = seg_model.predict(cv2.cvtColor(for_inference(gray), cv2.COLOR_GRAY2RGB),
                             conf=SEG_CONF, verbose=False)[0]
     torso = np.zeros((H, W), dtype=np.uint8)
     arm = np.zeros((H, W), dtype=np.uint8)
     if res.masks is not None:
         names = res.names
         cls_ids = res.boxes.cls.cpu().numpy().astype(int)
+        best, best_d = None, None
         for m, cid in zip(res.masks.data.cpu().numpy(), cls_ids):
             resized = cv2.resize(m, (W, H), interpolation=cv2.INTER_NEAREST) > 0.5
+            if not resized.any():
+                continue
             if names[cid] in ("torso", "chest"):
-                torso[resized] = 255
+                ys, xs = np.nonzero(resized)
+                d = float(np.hypot(xs.mean() - W / 2, ys.mean() - H / 2))
+                if best_d is None or d < best_d:
+                    best, best_d = resized, d
             elif names[cid] == "arm":
                 arm[resized] = 255
+        if best is not None:
+            torso[best] = 255
     if arm.any():
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ARM_EXCLUDE_DILATE_PX,) * 2)
         torso[cv2.dilate(arm, k) > 0] = 0
-    return torso
+    return from_inference_mask(torso)
 
 
 def fit_plane(pts, rng):
@@ -364,9 +494,32 @@ def fit_plane(pts, rng):
 def make_pose_landmarker():
     opts = mp_vision.PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=str(POSE_MODEL)),
-        running_mode=mp_vision.RunningMode.IMAGE, num_poses=1,
+        # several poses, because a bystander in frame can outrank the subject; the
+        # caller keeps whichever pose is closest to the image centre
+        running_mode=mp_vision.RunningMode.IMAGE, num_poses=MAX_POSES,
         min_pose_detection_confidence=0.5, min_tracking_confidence=0.5)
     return mp_vision.PoseLandmarker.create_from_options(opts)
+
+
+def centre_pose(result):
+    """The detected pose whose torso sits closest to the image centre (or None).
+
+    Landmarks are normalized, so "centre" is (0.5, 0.5) and no image size is needed.
+    Ranking on the shoulder/hip quad rather than the whole skeleton keeps an
+    outstretched arm from dragging a bystander's score below the subject's."""
+    poses = getattr(result, "pose_landmarks", None)
+    if not poses:
+        return None
+    TORSO = (11, 12, 23, 24)   # shoulders + hips
+
+    def dist(lms):
+        pts = [lms[i] for i in TORSO if i < len(lms)]
+        if not pts:
+            return np.inf
+        return float(np.hypot(np.mean([p.x for p in pts]) - 0.5,
+                              np.mean([p.y for p in pts]) - 0.5))
+
+    return min(poses, key=dist)
 
 
 def landmark_px(lms, idx, W, H):
@@ -437,7 +590,8 @@ def load_trunk_rb(
         path,
         origin_marker=TRUNK_ORIGIN_MARKER,
         x_marker=TRUNK_X_MARKER,
-        z_marker=TRUNK_Z_MARKER):
+        z_marker=TRUNK_Z_MARKER,
+        rb_name=TRUNK_RB_NAME):
     """Return (origin, x-marker, z-marker), each (N_mocap, 3), in mocap world.
 
     Marker indices describe the physical rigid-body mounting and are independent of
@@ -451,7 +605,7 @@ def load_trunk_rb(
         cols = {}
         for j in raw.columns:
             if (str(types[j]) == "Rigid Body Marker"
-                    and str(names[j]).lower() == f"trunk:marker{marker}"
+                    and str(names[j]).lower() == f"{rb_name.lower()}:marker{marker}"
                     and str(poslab[j]) == "Position"):
                 cols[str(xyz[j]).strip().upper()] = j
         return np.stack([pd.to_numeric(data[cols[a]], errors="coerce").to_numpy()
@@ -718,7 +872,7 @@ def _init_geom():
     _G = dict(
         K0=K0, D0=D0, K1=K1, D1=D1, R=R, T_m=T_mm / 1000.0,
         R0_c=R0_c, t0_c=t0_c,
-        seg=YOLO(str(SEG_WEIGHTS)),
+        seg=load_seg_model(),
         lmk0=make_pose_landmarker(), lmk1=make_pose_landmarker(),
         rect=build_rectification(K0, D0, K1, D1, R, T_mm, CAM_SIZE),
         sgbm=make_sgbm(), rng=np.random.default_rng(0))
@@ -738,17 +892,16 @@ def _geom_chunk(rng_tuple):
         g0 = f0 if f0.ndim == 2 else cv2.cvtColor(f0, cv2.COLOR_RGB2GRAY)
         g1 = f1 if f1.ndim == 2 else cv2.cvtColor(f1, cv2.COLOR_RGB2GRAY)
         img0 = mp.Image(image_format=mp.ImageFormat.SRGB,
-                        data=cv2.cvtColor(g0, cv2.COLOR_GRAY2RGB))
+                        data=cv2.cvtColor(for_inference(g0), cv2.COLOR_GRAY2RGB))
         img1 = mp.Image(image_format=mp.ImageFormat.SRGB,
-                        data=cv2.cvtColor(g1, cv2.COLOR_GRAY2RGB))
-        r0, r1 = g["lmk0"].detect(img0), g["lmk1"].detect(img1)
-        lms0 = r0.pose_landmarks[0] if r0.pose_landmarks else None
-        lms1 = r1.pose_landmarks[0] if r1.pose_landmarks else None
+                        data=cv2.cvtColor(for_inference(g1), cv2.COLOR_GRAY2RGB))
+        lms0 = centre_pose(g["lmk0"].detect(img0))
+        lms1 = centre_pose(g["lmk1"].detect(img1))
 
         cam_pts, sh_px = {}, {}
         for name, idx in UPPER_LIMB.items():
-            p0 = landmark_px(lms0, idx, W, H)
-            p1 = landmark_px(lms1, idx, W, H)
+            p0 = from_inference_px(landmark_px(lms0, idx, W, H), CAM_SIZE)
+            p1 = from_inference_px(landmark_px(lms1, idx, W, H), CAM_SIZE)
             xyz = None
             if p0 and p1:
                 pc = triangulate(p0, p1, g["K0"], g["D0"], g["K1"], g["D1"],
