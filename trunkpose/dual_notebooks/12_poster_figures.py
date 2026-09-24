@@ -28,7 +28,7 @@ from scipy.spatial import ConvexHull, cKDTree
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-def _stub_inference_deps():
+def _stub_inference_deps(missing):
     """Let 06 import without mediapipe/ultralytics installed.
 
     This script only ever draws from the cached geometry pass, so the pose/seg
@@ -39,28 +39,42 @@ def _stub_inference_deps():
 
     class _Stub(types.ModuleType):
         def __getattr__(self, name):
+            # dunders must fail as AttributeError: inspect/torch walk sys.modules
+            # and probe __file__, __spec__ ... a RuntimeError there kills them
+            if name.startswith("__") and name.endswith("__"):
+                raise AttributeError(name)
             raise RuntimeError(
                 f"{self.__name__}.{name} needs the real package: install "
                 "mediapipe + ultralytics (uv sync) to recompute geometry")
 
-    for name in ("mediapipe", "mediapipe.tasks", "mediapipe.tasks.python",
-                 "mediapipe.tasks.python.vision", "ultralytics"):
-        mod = _Stub(name)
-        mod.__path__ = []          # import machinery asks packages for this
-        sys.modules.setdefault(name, mod)
-    sys.modules["mediapipe"].tasks = sys.modules["mediapipe.tasks"]
-    sys.modules["mediapipe.tasks"].python = sys.modules["mediapipe.tasks.python"]
-    sys.modules["mediapipe.tasks.python"].BaseOptions = object
-    sys.modules["mediapipe.tasks.python"].vision = \
-        sys.modules["mediapipe.tasks.python.vision"]
-    sys.modules["ultralytics"].YOLO = object
+    names = {"mediapipe": ("mediapipe", "mediapipe.tasks", "mediapipe.tasks.python",
+                           "mediapipe.tasks.python.vision"),
+             "ultralytics": ("ultralytics",)}
+    for top in missing:
+        for name in names[top]:
+            mod = _Stub(name)
+            mod.__path__ = []      # import machinery asks packages for this
+            sys.modules.setdefault(name, mod)
+    if "mediapipe" in missing:
+        sys.modules["mediapipe"].tasks = sys.modules["mediapipe.tasks"]
+        sys.modules["mediapipe.tasks"].python = sys.modules["mediapipe.tasks.python"]
+        sys.modules["mediapipe.tasks.python"].BaseOptions = object
+        sys.modules["mediapipe.tasks.python"].vision = \
+            sys.modules["mediapipe.tasks.python.vision"]
+    if "ultralytics" in missing:
+        sys.modules["ultralytics"].YOLO = object
 
 
-try:
-    import mediapipe  # noqa: F401
-    import ultralytics  # noqa: F401
-except ImportError:
-    _stub_inference_deps()
+# Stub only what is actually absent -- stubbing an installed package would shadow
+# the real one for every later import (e.g. 14's YOLO segmentation pass).
+_missing = []
+for _top in ("mediapipe", "ultralytics"):
+    try:
+        importlib.import_module(_top)
+    except ImportError:
+        _missing.append(_top)
+if _missing:
+    _stub_inference_deps(_missing)
 
 m6 = importlib.import_module("06_trunk_axis")
 m7 = importlib.import_module("07_icp_trunk")
