@@ -46,6 +46,8 @@ AXES = ("flexion", "lateral", "axial", "magnitude")
 SUBJ_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00",
                "#56B4E9", "#F0E442", "#000000"]
 MAX_SCATTER = 1500      # points drawn per subject per axis (all points are still scored)
+# flexion / lateral / axial, used by both the bar chart and the boxplots
+AXIS_COLORS = ("#0072B2", "#009E73", "#D55E00")
 
 
 def load_subjects(session_dir, subjects, condition="wc"):
@@ -103,67 +105,82 @@ def abs_errors(d, axis):
 
 
 def error_boxplots(data, anon, out_png, title, other=None, cond_names=None):
-    """|error| distribution per subject, one panel per axis.
+    """|error| per subject, with the anatomical axes side by side inside each subject.
 
-    Box = IQR, line = median, whiskers = 5th/95th percentile. Fliers are left off:
-    with ~1500 frames per subject they draw as a solid smear, and the 95th whisker
+    Box = IQR, line = median (printed), whiskers = 5th/95th percentile. Fliers are left
+    off: with ~1500 frames per subject they draw as a solid smear, and the 95th whisker
     already carries the tail that RMSE is made of. These are frames, not independent
     samples -- consecutive frames are correlated -- so a box describes the error
     distribution within a take, not the spread between subjects.
 
-    With `other`, each subject gets a second, hatched box from that condition.
+    With `other`, every box is doubled: the first condition solid, the second hatched,
+    matched to the same subject by name stem.
     """
     paired_mode = other is not None
     by_stem = ({s.rsplit("_", 1)[0]: d for s, d in other} if paired_mode else {})
-    fig, axes = plt.subplots(1, len(AXES), figsize=(4.3 * len(AXES), 5.0), sharey=True)
-    for k, ax_name in enumerate(AXES):
-        ax = axes[k]
-        series, faces, pos, ticks, tick_pos = [], [], [], [], []
-        for j, (s, d) in enumerate(data):
-            col = SUBJ_COLORS[j % len(SUBJ_COLORS)]
-            base = 1.35 * j if paired_mode else float(j)
-            slots = [(d, 0.0, False)]
-            if paired_mode and s.rsplit("_", 1)[0] in by_stem:
-                slots = [(d, -0.21, False), (by_stem[s.rsplit("_", 1)[0]], 0.21, True)]
-            for src, off, hatched in slots:
+    box_axes = [a for a in AXES if a != "magnitude"]
+    per_subject = len(box_axes) * (2 if paired_mode else 1)
+    step = 0.30 if paired_mode else 0.46          # spacing between boxes in a group
+    span = step * (per_subject - 1)
+    group = span + (1.05 if paired_mode else 0.85)  # subject-to-subject spacing
+
+    # ~2.6 in per subject when the conditions are paired (six boxes), ~1.7 otherwise
+    per_group_in = 2.6 if paired_mode else 1.7
+    fig, ax = plt.subplots(figsize=(max(7.0, 1.8 + per_group_in * len(data)), 5.2))
+    series, faces, pos, ticks, tick_pos = [], [], [], [], []
+    for j, (subj, d) in enumerate(data):
+        base = group * j
+        slot = 0
+        for ax_name, col in zip(box_axes, AXIS_COLORS):
+            sources = [(d, False)]
+            if paired_mode:
+                twin = by_stem.get(subj.rsplit("_", 1)[0])
+                sources = [(d, False), (twin, True)] if twin is not None else sources
+            for src, hatched in sources:
                 e = abs_errors(src, ax_name)
+                offset = -span / 2 + step * slot
+                slot += 1
                 if e is None:
                     continue
                 series.append(e)
                 faces.append((col, hatched))
-                pos.append(base + off)
-            ticks.append(anon[s])
-            tick_pos.append(base)
-        if not series:
-            continue
-        bp = ax.boxplot(series, positions=pos, widths=0.34 if paired_mode else 0.55,
-                        whis=(5, 95), showfliers=False, patch_artist=True,
-                        medianprops={"color": "black", "lw": 1.6})
-        for patch, (col, hatched) in zip(bp["boxes"], faces):
-            patch.set_facecolor(col)
-            patch.set_edgecolor(col)
-            patch.set_alpha(0.45 if hatched else 0.85)
-            if hatched:
-                patch.set_hatch("///")
-        # median printed above each box, on a plate so it stays legible over the
-        # box edge and whisker
-        for x_, e in zip(pos, series):
-            ax.annotate(f"{np.median(e):.1f}", (x_, np.percentile(e, 75)),
-                        textcoords="offset points", xytext=(0, 6), ha="center",
-                        fontsize=7, bbox={"boxstyle": "round,pad=0.15", "fc": "white",
-                                          "ec": "none", "alpha": 0.8})
-        ax.set_xticks(tick_pos, ticks)
-        ax.set_title(ax_name.capitalize())
-        ax.grid(axis="y", alpha=0.25)
-        ax.spines[["top", "right"]].set_visible(False)
-    axes[0].set_ylabel("absolute error (degrees)")
+                pos.append(base + offset)
+        ticks.append(anon[subj])
+        tick_pos.append(base)
+    if not series:
+        raise SystemExit("nothing to plot")
+
+    bp = ax.boxplot(series, positions=pos, widths=step * 0.82, whis=(5, 95),
+                    showfliers=False, patch_artist=True,
+                    medianprops={"color": "black", "lw": 1.5})
+    for patch, (col, hatched) in zip(bp["boxes"], faces):
+        patch.set_facecolor(col)
+        patch.set_edgecolor(col)
+        patch.set_alpha(0.45 if hatched else 0.85)
+        if hatched:
+            patch.set_hatch("///")
+    # median printed above each box, on a plate so it stays legible over the whisker
+    for x_, e in zip(pos, series):
+        ax.annotate(f"{np.median(e):.1f}", (x_, np.percentile(e, 75)),
+                    textcoords="offset points", xytext=(0, 5), ha="center", fontsize=7,
+                    bbox={"boxstyle": "round,pad=0.12", "fc": "white", "ec": "none",
+                          "alpha": 0.8})
+    ax.set_xticks(tick_pos, ticks)
+    ax.set_xlabel("Subject")
+    ax.set_ylabel("absolute error (degrees)")
+    ax.grid(axis="y", alpha=0.25)
+    ax.spines[["top", "right"]].set_visible(False)
+    handles = [Patch(facecolor=c, alpha=0.85, label=a.capitalize())
+               for a, c in zip(box_axes, AXIS_COLORS)]
     if paired_mode:
-        fig.legend(handles=[Patch(facecolor="0.35", alpha=0.85, label=cond_names[0]),
-                            Patch(facecolor="0.35", alpha=0.45, hatch="///",
-                                  label=cond_names[1])],
-                   loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.0))
-    fig.suptitle(title, y=0.99)
-    fig.tight_layout(rect=(0, 0.06 if paired_mode else 0.0, 1, 1))
+        handles += [Patch(facecolor="0.35", alpha=0.85, label=cond_names[0]),
+                    Patch(facecolor="0.35", alpha=0.45, hatch="///",
+                          label=cond_names[1])]
+    ax.legend(handles=handles, frameon=False, ncol=len(handles), loc="upper left",
+              fontsize=9)
+    ax.set_ylim(0, ax.get_ylim()[1] * 1.08)
+    ax.set_title(title)
+    fig.tight_layout()
     fig.savefig(out_png)
     plt.close(fig)
     print(f"-> {out_png}")
@@ -179,6 +196,8 @@ def main():
                     help="output filename suffix (default: '' for wc, else _<condition>)")
     ap.add_argument("--vs", default=None,
                     help="second condition to draw beside the first in the boxplots")
+    ap.add_argument("--exclude", nargs="*", default=(),
+                    help="subjects to drop (e.g. a take whose mocap frame is unusable)")
     a = ap.parse_args()
     session_dir = Path(a.session).resolve()
     out_dir = session_dir / "output"
@@ -190,6 +209,14 @@ def main():
     m12.poster_style()
 
     data = load_subjects(session_dir, a.subjects, a.condition)
+    dropped = [s_ for s_, _ in data if s_ in a.exclude]
+    if dropped:
+        print(f"excluded: {', '.join(dropped)}")
+        data = [(s_, d) for s_, d in data if s_ not in a.exclude] or data
+    # the wc-vs-woc figure spans both conditions, so it cannot use `suffix` (which
+    # names one of them); it carries the exclusion in its own name instead.
+    ex_tag = ("_ex_" + "_".join(sorted(s_.rsplit("_", 1)[0] for s_ in dropped))
+              if dropped else "")
     label = {s: s.replace("_wc", "").replace("_woc", "") for s, _ in data}
     rng = np.random.default_rng(0)
 
@@ -239,10 +266,9 @@ def main():
     row_by_key = {(r["subject"], r["axis"]): r for r in rows}
     x = np.arange(len(data), dtype=float)
     width = 0.24
-    axis_colors = ("#0072B2", "#009E73", "#D55E00")
 
     fig_bar, ax_bar = plt.subplots(figsize=(9.2, 5.5))
-    for k, (ax_name, color) in enumerate(zip(bar_axes, axis_colors)):
+    for k, (ax_name, color) in enumerate(zip(bar_axes, AXIS_COLORS)):
         values = [row_by_key[(s, ax_name)]["rmse"] for s, _ in data]
         bars = ax_bar.bar(x + (k - 1) * width, values, width,
                           label=ax_name.capitalize(), color=color)
@@ -269,7 +295,7 @@ def main():
                    f"({session_dir.name}, {a.condition})")
     if a.vs:
         error_boxplots(data, anon,
-                       out_dir / f"error_distribution_{a.condition}_vs_{a.vs}.png",
+                       out_dir / f"error_distribution_{a.condition}_vs_{a.vs}{ex_tag}.png",
                        f"Trunk-angle error distribution - {a.condition} vs {a.vs} "
                        f"({session_dir.name})",
                        other=load_subjects(session_dir, None, a.vs),
