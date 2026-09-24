@@ -5,6 +5,7 @@
 #
 #   <output>/icp_vs_mocap_agreement.png   scatter + Bland-Altman, 3 axes x N subjects
 #   <output>/subject_rmse_bar.png         anonymized per-subject RMSE bar chart
+#   <output>/error_distribution.png       per-subject |error| boxplots, all axes
 #   <output>/agreement_summary.csv        per-subject per-axis r / RMSE / bias / LoA
 #
 # Only frames where BOTH systems are valid are scored -- the ICP series carries NaN
@@ -12,8 +13,12 @@
 # interpolated, so a subject with poor coverage shows up as a small n, not as a
 # smooth line that was never measured.
 #
+# --condition picks which arm of the session to pool (sep23 recorded every subject
+# twice, _wc with trunk compensation and _woc without) and suffixes the output files so
+# the two never overwrite each other.
+#
 #   uv run python trunkpose/dual_notebooks/16_subject_agreement.py
-#   uv run python trunkpose/dual_notebooks/16_subject_agreement.py --session data/sep23_26
+#   uv run python trunkpose/dual_notebooks/16_subject_agreement.py --condition woc
 
 import argparse
 import csv
@@ -27,6 +32,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[1]
@@ -42,17 +48,17 @@ SUBJ_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00",
 MAX_SCATTER = 1500      # points drawn per subject per axis (all points are still scored)
 
 
-def load_subjects(session_dir, subjects):
+def load_subjects(session_dir, subjects, condition="wc"):
     """(name, npz) per subject that actually has results, in the given order."""
     import toml
 
     if not subjects:
         cfg_path = session_dir / "session.toml"
         cfg = toml.load(cfg_path) if cfg_path.exists() else {}
-        subjects = cfg.get("subjects", {}).get("wc", [])
+        subjects = cfg.get("subjects", {}).get(condition, [])
         if not subjects:
             subjects = sorted(p.parent.name
-                              for p in session_dir.glob("*/icp_vs_mocap.npz"))
+                              for p in session_dir.glob(f"*_{condition}/icp_vs_mocap.npz"))
     out = []
     for s in subjects:
         f = session_dir / s / "icp_vs_mocap.npz"
@@ -78,8 +84,12 @@ def paired(d, axis):
 
 def stats(moc, icp):
     d = icp - moc
+    # RMSE is dominated by the occluded tail, so the median and p95 of |error| are
+    # reported beside it: the median is what a typical frame costs, p95 the bad ones.
+    ad = np.abs(d)
     return {"n": len(d), "r": float(np.corrcoef(moc, icp)[0, 1]),
             "rmse": float(np.sqrt((d ** 2).mean())),
+            "median_abs": float(np.median(ad)), "p95_abs": float(np.percentile(ad, 95)),
             "bias": float(d.mean()), "sd": float(d.std(ddof=1)),
             "rom_moc": float(np.percentile(moc, 97.5) - np.percentile(moc, 2.5)),
             "rom_icp": float(np.percentile(icp, 97.5) - np.percentile(icp, 2.5)),
@@ -87,19 +97,99 @@ def stats(moc, icp):
             "slope": float(np.polyfit(moc, icp, 1)[0])}
 
 
+def abs_errors(d, axis):
+    moc, icp = paired(d, axis)
+    return np.abs(icp - moc) if len(moc) >= 50 else None
+
+
+def error_boxplots(data, anon, out_png, title, other=None, cond_names=None):
+    """|error| distribution per subject, one panel per axis.
+
+    Box = IQR, line = median, whiskers = 5th/95th percentile. Fliers are left off:
+    with ~1500 frames per subject they draw as a solid smear, and the 95th whisker
+    already carries the tail that RMSE is made of. These are frames, not independent
+    samples -- consecutive frames are correlated -- so a box describes the error
+    distribution within a take, not the spread between subjects.
+
+    With `other`, each subject gets a second, hatched box from that condition.
+    """
+    paired_mode = other is not None
+    by_stem = ({s.rsplit("_", 1)[0]: d for s, d in other} if paired_mode else {})
+    fig, axes = plt.subplots(1, len(AXES), figsize=(4.3 * len(AXES), 5.0), sharey=True)
+    for k, ax_name in enumerate(AXES):
+        ax = axes[k]
+        series, faces, pos, ticks, tick_pos = [], [], [], [], []
+        for j, (s, d) in enumerate(data):
+            col = SUBJ_COLORS[j % len(SUBJ_COLORS)]
+            base = 1.35 * j if paired_mode else float(j)
+            slots = [(d, 0.0, False)]
+            if paired_mode and s.rsplit("_", 1)[0] in by_stem:
+                slots = [(d, -0.21, False), (by_stem[s.rsplit("_", 1)[0]], 0.21, True)]
+            for src, off, hatched in slots:
+                e = abs_errors(src, ax_name)
+                if e is None:
+                    continue
+                series.append(e)
+                faces.append((col, hatched))
+                pos.append(base + off)
+            ticks.append(anon[s])
+            tick_pos.append(base)
+        if not series:
+            continue
+        bp = ax.boxplot(series, positions=pos, widths=0.34 if paired_mode else 0.55,
+                        whis=(5, 95), showfliers=False, patch_artist=True,
+                        medianprops={"color": "black", "lw": 1.6})
+        for patch, (col, hatched) in zip(bp["boxes"], faces):
+            patch.set_facecolor(col)
+            patch.set_edgecolor(col)
+            patch.set_alpha(0.45 if hatched else 0.85)
+            if hatched:
+                patch.set_hatch("///")
+        # median printed above each box, on a plate so it stays legible over the
+        # box edge and whisker
+        for x_, e in zip(pos, series):
+            ax.annotate(f"{np.median(e):.1f}", (x_, np.percentile(e, 75)),
+                        textcoords="offset points", xytext=(0, 6), ha="center",
+                        fontsize=7, bbox={"boxstyle": "round,pad=0.15", "fc": "white",
+                                          "ec": "none", "alpha": 0.8})
+        ax.set_xticks(tick_pos, ticks)
+        ax.set_title(ax_name.capitalize())
+        ax.grid(axis="y", alpha=0.25)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].set_ylabel("absolute error (degrees)")
+    if paired_mode:
+        fig.legend(handles=[Patch(facecolor="0.35", alpha=0.85, label=cond_names[0]),
+                            Patch(facecolor="0.35", alpha=0.45, hatch="///",
+                                  label=cond_names[1])],
+                   loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.0))
+    fig.suptitle(title, y=0.99)
+    fig.tight_layout(rect=(0, 0.06 if paired_mode else 0.0, 1, 1))
+    fig.savefig(out_png)
+    plt.close(fig)
+    print(f"-> {out_png}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--session", default=str(PROJECT_ROOT / "data" / "sep23_26"))
     ap.add_argument("--subjects", nargs="*", default=None)
+    ap.add_argument("--condition", default="wc",
+                    help="which [subjects] list in session.toml to pool (wc / woc)")
+    ap.add_argument("--suffix", default=None,
+                    help="output filename suffix (default: '' for wc, else _<condition>)")
+    ap.add_argument("--vs", default=None,
+                    help="second condition to draw beside the first in the boxplots")
     a = ap.parse_args()
     session_dir = Path(a.session).resolve()
     out_dir = session_dir / "output"
     out_dir.mkdir(exist_ok=True)
+    suffix = a.suffix if a.suffix is not None else (
+        "" if a.condition == "wc" else f"_{a.condition}")
 
     m12 = importlib.import_module("12_poster_figures")
     m12.poster_style()
 
-    data = load_subjects(session_dir, a.subjects)
+    data = load_subjects(session_dir, a.subjects, a.condition)
     label = {s: s.replace("_wc", "").replace("_woc", "") for s, _ in data}
     rng = np.random.default_rng(0)
 
@@ -121,18 +211,18 @@ def main():
                              S_diff_deg=float(d["S_diff_deg"])))
 
     # ---- summary table ----
-    csv_path = out_dir / "agreement_summary.csv"
+    csv_path = out_dir / f"agreement_summary{suffix}.csv"
     with open(csv_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
     print(f"\n{'subject':<12}{'axis':<10}{'n':>6}{'cov':>6}{'r':>7}{'RMSE':>7}"
-          f"{'bias':>7}{'slope':>7}{'LoA':>16}{'ROM cam/mocap':>16}")
+          f"{'med':>7}{'p95':>7}{'bias':>7}{'slope':>7}{'LoA':>16}")
     for r in rows:
         print(f"{r['subject']:<12}{r['axis']:<10}{r['n']:>6}{r['coverage'] * 100:>5.0f}%"
-              f"{r['r']:>+7.2f}{r['rmse']:>6.1f}d{r['bias']:>+6.1f}d{r['slope']:>7.2f}"
-              f"   [{r['loa_lo']:+5.1f},{r['loa_hi']:+5.1f}]"
-              f"{r['rom_icp']:>9.0f}/{r['rom_moc']:.0f}d")
+              f"{r['r']:>+7.2f}{r['rmse']:>6.1f}d{r['median_abs']:>6.1f}d"
+              f"{r['p95_abs']:>6.1f}d{r['bias']:>+6.1f}d{r['slope']:>7.2f}"
+              f"   [{r['loa_lo']:+5.1f},{r['loa_hi']:+5.1f}]")
     flagged = sorted({r["subject"] for r in rows if r["S_diff_deg"] > 30})
     if flagged:
         print("\nAxis split unreliable (fitted S disagrees with the neutral-pose S by "
@@ -168,10 +258,22 @@ def main():
     ax_bar.spines[["top", "right"]].set_visible(False)
     ax_bar.set_ylim(0, ax_bar.get_ylim()[1] * 1.12)
     fig_bar.tight_layout()
-    bar_png = out_dir / "subject_rmse_bar.png"
+    bar_png = out_dir / f"subject_rmse_bar{suffix}.png"
     fig_bar.savefig(bar_png)
     plt.close(fig_bar)
     print(f"-> {bar_png}")
+
+    # ---- figure: |error| distributions, all subjects together ----
+    error_boxplots(data, anon, out_dir / f"error_distribution{suffix}.png",
+                   f"Trunk-angle error distribution - {len(data)} subjects "
+                   f"({session_dir.name}, {a.condition})")
+    if a.vs:
+        error_boxplots(data, anon,
+                       out_dir / f"error_distribution_{a.condition}_vs_{a.vs}.png",
+                       f"Trunk-angle error distribution - {a.condition} vs {a.vs} "
+                       f"({session_dir.name})",
+                       other=load_subjects(session_dir, None, a.vs),
+                       cond_names=(a.condition, a.vs))
 
     # ---- figure: scatter (top) + Bland-Altman (bottom), one column per axis ----
     fig, axes = plt.subplots(2, len(AXES), figsize=(4.8 * len(AXES), 9))
@@ -234,9 +336,9 @@ def main():
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False,
                bbox_to_anchor=(0.5, 0.0))
     fig.suptitle(f"Trunk angle agreement, camera ICP vs mocap - "
-                 f"{len(data)} subjects ({session_dir.name})", y=0.99)
+                 f"{len(data)} subjects ({session_dir.name}, {a.condition})", y=0.99)
     fig.tight_layout(rect=(0, 0.045, 1, 1))
-    png = out_dir / "icp_vs_mocap_agreement.png"
+    png = out_dir / f"icp_vs_mocap_agreement{suffix}.png"
     fig.savefig(png)
     print(f"-> {png}")
 

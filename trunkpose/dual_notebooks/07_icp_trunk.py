@@ -14,7 +14,6 @@
 
 import importlib
 import os
-import pickle
 import sys
 from pathlib import Path
 
@@ -172,21 +171,14 @@ def load_inputs():
         n = min(n, max_frames)
     ts0 = ts0[:n]
 
-    cache = os.environ.get("TRUNK_GEOM_CACHE", "")
-    frames = None
-    if cache and Path(cache).exists() and not max_frames:
-        with open(cache, "rb") as f:
-            frames = pickle.load(f)
-        if len(frames) != n or "cloud" not in frames[0]:
-            print("Cache stale (no clouds / wrong length) -> recomputing geometry")
-            frames = None
+    # Shared with 06: the cache is rejected unless it was built under this session's
+    # calibration, weights and extraction knobs.
+    cache = "" if max_frames else os.environ.get("TRUNK_GEOM_CACHE", "")
+    frames = m6.load_geom_cache(cache, n)
     if frames is None:
         print(f"Geometry pass over {n} frames (parallel, via 06)...")
         frames = m6.run_geometry(n)
-        if cache and not max_frames:
-            with open(cache, "wb") as f:
-                pickle.dump(frames, f)
-            print(f"Cached geometry -> {cache}")
+        m6.save_geom_cache(cache, frames)
 
     return dict(R0_c=R0_c, t0_c=t0_c, Rm_c=Rm_c, tm_c=tm_c, mocap_df=mocap_df,
                 mocap_time=mocap_time, ts0=ts0, n=n, frames=frames)

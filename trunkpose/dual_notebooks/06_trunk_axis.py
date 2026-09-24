@@ -17,6 +17,8 @@
 # Both the geometry and render passes are split across a process pool (env TRUNK_WORKERS,
 # default 4; set 1 for a sequential/debuggable run). EMA + neutral stay sequential.
 
+import hashlib
+import json
 import os
 import pickle
 import sys
@@ -105,18 +107,23 @@ CAM1_FRAMES = RECORDING_DIR / f"{_c1}_frame.msgpack"
 CAM0_TIMES = RECORDING_DIR / f"{_c0}_timestamp.msgpack"
 CAM1_TIMES = RECORDING_DIR / f"{_c1}_timestamp.msgpack"
 
-STEREO_TOML = _session_path("stereo_toml", _cal_cfg, (
-    PROJECT_ROOT / "data" / "calibration" / "dual_160"
-    / "calib_cz30_dual_v2" / "stereo_calibration.toml"
-))
+# No default: a stereo calibration belongs to a rig, and picking the wrong rig's is
+# silent (cz30_dual_v2 has T_x < 0, i.e. the cameras the other way round, so the depth
+# comes out inverted rather than absent). Every session states its own -- see
+# data/july27/session.toml and data/sep23_26/session.toml.
+STEREO_TOML = _session_path("stereo_toml", _cal_cfg, None)
+if STEREO_TOML is None:
+    raise SystemExit(
+        f"No stereo calibration for {RECORDING_DIR}. Add a session.toml next to the "
+        "recordings (or in its parent) with [calibration] stereo_toml = ..., or set "
+        "TRUNK_STEREO_TOML.")
+if not Path(STEREO_TOML).exists():
+    raise SystemExit(f"Stereo calibration not found: {STEREO_TOML}")
 # Optional: with no ChArUco basis the "board frame" is just the reference-camera frame.
 # That is fine for the trunk angles -- they are read off R_neu's own columns, so a
 # constant frame rotation cancels -- and the mocap side fits its residual rotation S
 # anyway. It only costs the shared world frame used for rendering mocap with the cloud.
-CHARUCO_TOML = _session_path("charuco_toml", _cal_cfg, (
-    PROJECT_ROOT / "data" / "july27"
-    / "july_27_calib" / "charuco_basis.toml"
-))
+CHARUCO_TOML = _session_path("charuco_toml", _cal_cfg, None)
 # NOTE: default still points at the old single-class model. After retraining on the
 # multi-class (torso/arm/head) dataset, either edit the default or set env TRUNK_SEG_WEIGHTS
 # (ultralytics names each run trunk_segN, so the new path isn't known ahead of time).
@@ -223,6 +230,78 @@ CAM_JOINT_COLORS = {
 AXIS_COLORS_MPL = {"lateral": "red", "up": "lime", "anterior": "deepskyblue"}
 AXIS_COLORS_BGR = {"lateral": (0, 0, 255), "up": (0, 255, 0), "anterior": (255, 128, 0)}
 ANGLE_COLORS = {"flexion": "tomato", "lateral": "gold", "axial": "deepskyblue"}
+
+
+# %% Geometry cache
+# The cached clouds are a function of the calibration, the segmentation weights and the
+# extraction knobs, none of which the cache path records -- so a calibration swap used
+# to be invisible and the stale clouds were silently reused. The key below travels with
+# the pickle as a sidecar (the pickle itself stays a plain list of frames, which the
+# 08-12 figure scripts load directly).
+def _fingerprint(path):
+    """Short identity of a file: sha1 for small ones, size+mtime for model weights."""
+    q = Path(path) if path else None
+    if q is None or not q.exists():
+        return "none"
+    st = q.stat()
+    if st.st_size < 4_000_000:
+        return f"{q.name}:{hashlib.sha1(q.read_bytes()).hexdigest()[:12]}"
+    return f"{q.name}:{st.st_size}:{int(st.st_mtime)}"
+
+
+def geom_cache_key():
+    """Everything that changes the cached clouds. Mocap/sync/ICP settings stay out."""
+    return {
+        "stereo": _fingerprint(STEREO_TOML),
+        "charuco": _fingerprint(CHARUCO_TOML),
+        "seg_weights": _fingerprint(SEG_WEIGHTS),
+        "cam": [list(CAM_SIZE), SWAP_CAMS, ROT180],
+        "mask": [MASK_ERODE_FRAC, ARM_EXCLUDE_DILATE_PX, MAX_POSES],
+        "shell": [FRONT_PCTL, SHELL_M, DEPTH_MIN_M, DEPTH_MAX_M, TRUNK_DROP_M],
+        "cloud": [CLOUD_VOXEL_M, CLOUD_MAX_PTS],
+        "sgbm": [SGBM_MIN_DISP, SGBM_NUM_DISP, SGBM_BLOCK],
+    }
+
+
+def _key_path(cache):
+    return Path(str(cache) + ".key.json")
+
+
+def load_geom_cache(cache, n):
+    """Cached frames, or None with the reason printed (missing / stale / mismatched)."""
+    if not cache or not Path(cache).exists():
+        return None
+    want = geom_cache_key()
+    kp = _key_path(cache)
+    if not kp.exists():
+        print(f"Cache {Path(cache).name} predates the settings key -> recomputing "
+              "geometry (delete it to silence this)")
+        return None
+    got = json.loads(kp.read_text(encoding="utf-8"))
+    diff = [k for k in want if got.get(k) != want[k]]
+    if diff:
+        print(f"Cache {Path(cache).name} was built under different settings "
+              f"({', '.join(diff)}) -> recomputing geometry")
+        for k in diff:
+            print(f"    {k}: cached {got.get(k)} -> now {want[k]}")
+        return None
+    with open(cache, "rb") as f:
+        frames = pickle.load(f)
+    if len(frames) != n or not frames or "cloud" not in frames[0]:
+        print(f"Cache {Path(cache).name} has {len(frames)} frames (expected {n}) or no "
+              "clouds -> recomputing geometry")
+        return None
+    print(f"Loaded geometry cache {cache}")
+    return frames
+
+
+def save_geom_cache(cache, frames):
+    if not cache:
+        return
+    with open(cache, "wb") as f:
+        pickle.dump(frames, f)
+    _key_path(cache).write_text(json.dumps(geom_cache_key(), indent=1), encoding="utf-8")
+    print(f"Cached geometry -> {cache}")
 
 
 # %% Calibration / basis
@@ -1221,21 +1300,14 @@ def main():
     print(f"  usable overlap after teleport split: {int(in_win.sum())}/{n} frames")
 
     # optional geometry cache (TRUNK_GEOM_CACHE=path): lets mocap/sync/mapping tweaks
-    # skip the expensive geometry pass. Only used for full runs. Delete/change env to
-    # force a recompute after any geometry-affecting change (plane, seg, triangulation).
-    cache = os.environ.get("TRUNK_GEOM_CACHE", "")
-    if cache and Path(cache).exists() and not max_frames:
-        print(f"Loading geometry cache {cache} ...")
-        with open(cache, "rb") as f:
-            frames = pickle.load(f)
-        assert len(frames) == n, f"cache has {len(frames)} frames, expected {n}"
-    else:
+    # skip the expensive geometry pass. Only used for full runs; it is rebuilt by itself
+    # whenever the calibration, the weights or an extraction knob changes.
+    cache = "" if max_frames else os.environ.get("TRUNK_GEOM_CACHE", "")
+    frames = load_geom_cache(cache, n)
+    if frames is None:
         print(f"Pass 1/2: geometry over {n} frames...")
         frames = run_geometry(n)
-        if cache and not max_frames:
-            with open(cache, "wb") as f:
-                pickle.dump(frames, f)
-            print(f"Cached geometry -> {cache}")
+        save_geom_cache(cache, frames)
 
     # Transform the trunk L-frame directly from Motive world into the ChArUco board
     # frame using the dedicated July-27 T-frame calibration.

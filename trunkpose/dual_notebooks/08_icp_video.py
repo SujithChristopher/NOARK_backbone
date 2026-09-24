@@ -12,6 +12,16 @@
 # frame's cloud pushed through the ICP transform. They overlap when registration is
 # healthy and visibly slide apart when ICP falls into a wrong minimum.
 #
+# It also prints "shell seen", the fraction of the NEUTRAL cloud that the registered
+# live cloud still covers. That is the self-occlusion measure: as the trunk turns away
+# the surface ICP is asked to match simply stops being visible, and the angle is read
+# off whatever is left. Below COV_GATE the readout turns orange -- those are the frames
+# the coverage gate would refuse to report.
+#
+# Sessions without a ChArUco basis (sep23_26) have no shared camera/mocap world, so the
+# BL panel draws the cloud alone and the mocap comparison lives entirely in the angle
+# traces, which are frame-independent.
+#
 #   $env:TRUNK_GEOM_CACHE=".../geom_cache.pkl"
 #   uv run python trunkpose/dual_notebooks/08_icp_video.py
 #
@@ -48,6 +58,8 @@ OUT_VIDEO = m6.RECORDING_DIR / f"icp_trunk_video{_video_suffix}.mp4"
 QUAD_W, QUAD_H = m6.QUAD_W, m6.QUAD_H
 N_WORKERS = m6.N_WORKERS
 ALIGN_MATCH_M = 0.03         # nn distance counted as "matched" in the live rms readout
+COV_M = 0.02                 # neutral point counted as "still seen" within this
+COV_GATE = 0.65              # below this the frame is self-occluded (see 16's analysis)
 CLOUD_PT_SIZE = 1.5
 AXIS_LEN_M = m6.AXIS_LEN_M
 
@@ -78,6 +90,10 @@ def _panel_cam(g0, vf, i):
         ip = ip.reshape(-1, 2).astype(int)
         for c, name in zip((1, 2, 3), ("lateral", "up", "anterior")):
             cv2.line(img, tuple(ip[0]), tuple(ip[c]), m6.AXIS_COLORS_BGR[name], 3)
+    # The rig is mounted upside down; the overlay is drawn in sensor pixels and then
+    # rotated with the image, so the two stay registered and the person is upright.
+    if m6.ROT180:
+        img = cv2.rotate(img, cv2.ROTATE_180)
     img = cv2.resize(img, (QUAD_W, QUAD_H))
     cv2.putText(img, "cam0 + ICP trunk frame", (12, 26), cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, (255, 255, 255), 2, cv2.LINE_AA)
@@ -112,10 +128,19 @@ def _panel_align(fig, ax, vf):
                    depthshade=False)
         d, _ = v["tree"].query(moved, k=1)
         m = d < ALIGN_MATCH_M
+        # matched% asks "did the points I have find a home" -- it stays high under
+        # occlusion, because ICP cannot miss a surface that is no longer in the cloud.
+        # coverage asks the opposite question, of the neutral shell, and is the one
+        # that tracks the error.
+        cov = float((cKDTree(moved).query(neu, k=1)[0] < COV_M).mean())
         if m.any():
             txt = (f"ICP rms {np.sqrt((d[m] ** 2).mean()) * 1000:.1f} mm   "
-                   f"matched {100 * m.mean():.0f}%")
+                   f"matched {100 * m.mean():.0f}%   shell seen {100 * cov:.0f}%")
             col = "white"
+            if cov < COV_GATE:
+                txt += ("\nSELF-OCCLUDED: only "
+                        f"{100 * cov:.0f}% of the neutral shell is still visible")
+                col = "orange"
             if vf["gated"]:
                 txt += "   REJECTED: >45 deg from neutral"
                 col = "orange"
@@ -134,7 +159,7 @@ def _panel_board(fig, ax, vf):
         c = vf["cloud"]
         ax.scatter(c[:, 0], c[:, 1], c[:, 2], c=c[:, 1], cmap="viridis",
                    s=CLOUD_PT_SIZE, depthshade=False)
-    if vf["moc"] is not None:
+    if vf["moc"] is not None and m6.CHARUCO_TOML is not None:
         mk = np.array(vf["moc"])
         ax.scatter(mk[:, 0], mk[:, 1], mk[:, 2], c="orange", marker="x", s=30,
                    depthshade=False)
@@ -149,7 +174,9 @@ def _panel_board(fig, ax, vf):
                 ax.quiver(*origin, *(R_t[:, col] * AXIS_LEN_M),
                           color=m6.AXIS_COLORS_MPL[name], lw=2)
     ax.scatter(0, 0, 0, c="red", marker="^", s=35)
-    ax.set_title("torso cloud + ICP axes + mocap markers (board frame)",
+    ax.set_title("torso cloud + ICP axes + mocap markers (board frame)"
+                 if m6.CHARUCO_TOML is not None else
+                 "torso cloud + ICP axes (camera frame; no shared mocap world)",
                  color="white", fontsize=8)
     return cv2.resize(m6._fig_to_bgr(fig), (QUAD_W, QUAD_H))
 
