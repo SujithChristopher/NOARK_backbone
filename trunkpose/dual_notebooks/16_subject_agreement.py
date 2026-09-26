@@ -50,22 +50,32 @@ MAX_SCATTER = 1500      # points drawn per subject per axis (all points are stil
 AXIS_COLORS = ("#0072B2", "#009E73", "#D55E00")
 
 
-def load_subjects(session_dir, subjects, condition="wc"):
-    """(name, npz) per subject that actually has results, in the given order."""
+def load_subjects(session_dir, subjects, condition="wc", game=False):
+    """(name, npz) per subject that actually has results, in the given order.
+
+    The game takes keep their npz beside their frames, five levels down in the
+    recorder's tree, so 15 resolves the path for both layouts.
+    """
     import toml
 
+    m15 = importlib.import_module("15_subject_icp")
     if not subjects:
-        cfg_path = session_dir / "session.toml"
-        cfg = toml.load(cfg_path) if cfg_path.exists() else {}
-        subjects = cfg.get("subjects", {}).get(condition, [])
-        if not subjects:
-            subjects = sorted(p.parent.name
-                              for p in session_dir.glob(f"*_{condition}/icp_vs_mocap.npz"))
+        if game:
+            subjects = m15.game_subjects(session_dir)
+        else:
+            cfg_path = session_dir / "session.toml"
+            cfg = toml.load(cfg_path) if cfg_path.exists() else {}
+            subjects = cfg.get("subjects", {}).get(condition, [])
+            if not subjects:
+                subjects = sorted(
+                    p.parent.name
+                    for p in session_dir.glob(f"*_{condition}/icp_vs_mocap.npz"))
     out = []
     for s in subjects:
-        f = session_dir / s / "icp_vs_mocap.npz"
+        f = m15.resolve_recording(session_dir, s, game)[0] / "icp_vs_mocap.npz"
         if not f.exists():
-            print(f"skip {s}: no {f.name} (run 15_subject_icp.py --subject {s})")
+            print(f"skip {s}: no {f.name} (run 15_subject_icp.py"
+                  + (" --game" if game else "") + f" --subject {s})")
             continue
         out.append((s, np.load(f, allow_pickle=True)))
     if not out:
@@ -198,17 +208,20 @@ def main():
                     help="second condition to draw beside the first in the boxplots")
     ap.add_argument("--exclude", nargs="*", default=(),
                     help="subjects to drop (e.g. a take whose mocap frame is unusable)")
+    ap.add_argument("--game", action="store_true",
+                    help="pool the NOARK game takes under <session>/noark_game")
     a = ap.parse_args()
     session_dir = Path(a.session).resolve()
-    out_dir = session_dir / "output"
-    out_dir.mkdir(exist_ok=True)
+    out_dir = (session_dir / "noark_game" / "output") if a.game else (session_dir / "output")
+    out_dir.mkdir(parents=True, exist_ok=True)
     suffix = a.suffix if a.suffix is not None else (
-        "" if a.condition == "wc" else f"_{a.condition}")
+        "_game" if a.game else "" if a.condition == "wc" else f"_{a.condition}")
+    cond = "game" if a.game else a.condition
 
     m12 = importlib.import_module("12_poster_figures")
     m12.poster_style()
 
-    data = load_subjects(session_dir, a.subjects, a.condition)
+    data = load_subjects(session_dir, a.subjects, a.condition, a.game)
     dropped = [s_ for s_, _ in data if s_ in a.exclude]
     if dropped:
         print(f"excluded: {', '.join(dropped)}")
@@ -292,13 +305,13 @@ def main():
     # ---- figure: |error| distributions, all subjects together ----
     error_boxplots(data, anon, out_dir / f"error_distribution{suffix}.png",
                    f"Trunk-angle error distribution - {len(data)} subjects "
-                   f"({session_dir.name}, {a.condition})")
+                   f"({session_dir.name}, {cond})")
     if a.vs:
         error_boxplots(data, anon,
                        out_dir / f"error_distribution_{a.condition}_vs_{a.vs}{ex_tag}.png",
                        f"Trunk-angle error distribution - {a.condition} vs {a.vs} "
                        f"({session_dir.name})",
-                       other=load_subjects(session_dir, None, a.vs),
+                       other=load_subjects(session_dir, None, a.vs, a.game),
                        cond_names=(a.condition, a.vs))
 
     # ---- figure: scatter (top) + Bland-Altman (bottom), one column per axis ----
@@ -362,7 +375,7 @@ def main():
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False,
                bbox_to_anchor=(0.5, 0.0))
     fig.suptitle(f"Trunk angle agreement, camera ICP vs mocap - "
-                 f"{len(data)} subjects ({session_dir.name}, {a.condition})", y=0.99)
+                 f"{len(data)} subjects ({session_dir.name}, {cond})", y=0.99)
     fig.tight_layout(rect=(0, 0.045, 1, 1))
     png = out_dir / f"icp_vs_mocap_agreement{suffix}.png"
     fig.savefig(png)

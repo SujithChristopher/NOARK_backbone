@@ -17,6 +17,14 @@
 #   uv run python trunkpose/dual_notebooks/15_subject_icp.py --all
 #   uv run python trunkpose/dual_notebooks/15_subject_icp.py --subject ram_wc
 #
+# --game switches to the NOARK game recordings (data/sep23_26/noark_game): frames in
+# <subject>/Session-*/Video/rec_*/ as 900-frame chunks, one mocap folder for the whole
+# session, and a camera that rolls for a minute before Motive starts. Those takes run
+# strided (--stride, default 3 -> 10 Hz) and zero both systems on the GPIO rise
+# instead of camera frame 0.
+#
+#   uv run python trunkpose/dual_notebooks/15_subject_icp.py --game --all
+#
 # --all spawns one subprocess per subject: 06's configuration is resolved at import
 # time from the recording directory, so a single interpreter cannot switch subjects.
 
@@ -32,23 +40,54 @@ PROJECT_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_SESSION = PROJECT_ROOT / "data" / "sep23_26"
 
 
+# %% Recording layout
+def resolve_recording(session_dir, subject, game):
+    """(recording dir, mocap CSV, output dir) for this subject under either layout.
+
+    A trunk-protocol take is one folder holding the frames and its own Motive export.
+    A game take lives in the recorder's own tree and shares the session's mocap
+    folder, so the CSV has to be named separately -- 06 reads it from TRUNK_MOCAP_CSV.
+    """
+    if not game:
+        rec = session_dir / subject
+        return rec, rec / f"{subject}.csv", session_dir / "output"
+    root = session_dir / "noark_game"
+    vids = sorted((root / "data" / subject).glob("Session-*/Video/rec_*"))
+    if len(vids) != 1:
+        raise SystemExit(
+            f"{subject}: expected exactly one rec_* folder under "
+            f"{root / 'data' / subject}, found {len(vids)}")
+    return vids[0], root / "mocap" / f"{subject}_game.csv", root / "output"
+
+
+def game_subjects(session_dir):
+    """Subjects with both a game recording and a game mocap export."""
+    root = session_dir / "noark_game"
+    return sorted(q.stem[: -len("_game")] for q in (root / "mocap").glob("*_game.csv")
+                  if (root / "data" / q.stem[: -len("_game")]).is_dir())
+
+
 # %% Driver (one subprocess per subject)
-def run_all(session_dir, subjects, workers, extra_env):
+def run_all(session_dir, subjects, workers, extra_env, game=False, stride=None):
     import toml
 
     if not subjects:
-        cfg = toml.load(session_dir / "session.toml")
-        subjects = cfg.get("subjects", {}).get("wc", [])
+        subjects = (game_subjects(session_dir) if game else
+                    toml.load(session_dir / "session.toml").get("subjects", {}).get("wc", []))
     if not subjects:
         raise SystemExit(f"No subjects given and none listed in {session_dir}/session.toml")
-    out_dir = session_dir / "output"
-    out_dir.mkdir(exist_ok=True)
+    out_dir = resolve_recording(session_dir, subjects[0], game)[2]
+    out_dir.mkdir(parents=True, exist_ok=True)
     failed = []
     for s in subjects:
         print(f"\n{'=' * 70}\n== {s}\n{'=' * 70}", flush=True)
         env = {**os.environ, **extra_env, "TRUNK_WORKERS": str(workers)}
-        r = subprocess.run([sys.executable, str(SCRIPT), "--subject", s,
-                            "--session", str(session_dir)], env=env, check=False)
+        cmd = [sys.executable, str(SCRIPT), "--subject", s, "--session", str(session_dir)]
+        if game:
+            cmd.append("--game")
+        if stride:
+            cmd += ["--stride", str(stride)]
+        r = subprocess.run(cmd, env=env, check=False)
         if r.returncode != 0:
             failed.append(s)
             print(f"!! {s} failed (exit {r.returncode}) -- continuing", flush=True)
@@ -58,14 +97,19 @@ def run_all(session_dir, subjects, workers, extra_env):
 
 
 # %% Per-subject run
-def run_subject(session_dir, subject):
+def run_subject(session_dir, subject, game=False, stride=None):
     """Import 06/07 against this subject's recording and write its results."""
-    rec_dir = session_dir / subject
+    rec_dir, mocap_csv, out_dir = resolve_recording(session_dir, subject, game)
     if not rec_dir.exists():
         raise SystemExit(f"No such recording: {rec_dir}")
+    if not mocap_csv.exists():
+        raise SystemExit(f"No mocap export for {subject}: {mocap_csv}")
     # 06 resolves paths at import time, so the environment has to be set first.
     os.environ["TRUNK_RECORDING_NAME"] = subject
     os.environ["TRUNK_RECORDING_DIR"] = str(rec_dir)
+    os.environ["TRUNK_MOCAP_CSV"] = str(mocap_csv)
+    if stride:
+        os.environ["TRUNK_FRAME_STRIDE"] = str(stride)
     os.environ.setdefault("TRUNK_GEOM_CACHE", str(rec_dir / "geom_cache.pkl"))
 
     import importlib
@@ -81,10 +125,22 @@ def run_subject(session_dir, subject):
     m7 = importlib.import_module("07_icp_trunk")
     m12 = importlib.import_module("12_poster_figures")
 
-    out_dir = session_dir / "output"
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[{subject}] session={m6.SESSION_TOML} cam={m6.CAM_SIZE} "
-          f"swap={m6.SWAP_CAMS} rot180={m6.ROT180} seg={m6.SEG_WEIGHTS.parent.parent.name}")
+          f"swap={m6.SWAP_CAMS} rot180={m6.ROT180} seg={m6.SEG_WEIGHTS.parent.parent.name} "
+          f"stride={m6.FRAME_STRIDE} chunks={len(m6.CAM0_FRAMES)}")
+
+    if game:
+        # The camera rolls for ~40-70 s before Motive starts, so the opening frames are
+        # setup, not a neutral pose. Anchor the neutral window on the GPIO rise, which
+        # IS mocap t=0 -- the same instant 18_game_mocap_rom.py zeroes the mocap on, so
+        # the two sides are zeroed together and the angles are comparable to it.
+        sync = m6.load_sync_flags(m6.CAM0_TIMES)
+        if not (sync == 1).any():
+            raise SystemExit(f"{subject}: no GPIO pulse in the camera timestamps")
+        m6.NEUTRAL_START = int(np.argmax(sync == 1))
+        print(f"[{subject}] neutral window starts at frame {m6.NEUTRAL_START} "
+              f"(GPIO rise, {m6.NEUTRAL_START * m6.FRAME_STRIDE / 30:.0f}s into the take)")
 
     inp = m7.load_inputs()
     frames, n, ts0 = inp["frames"], inp["n"], inp["ts0"]
@@ -191,12 +247,19 @@ def main():
                     help="explicit subject list for --all")
     ap.add_argument("--workers", type=int, default=int(os.environ.get("TRUNK_WORKERS", "6")),
                     help="geometry-pass processes per subject")
+    ap.add_argument("--game", action="store_true",
+                    help="run the NOARK game recordings under <session>/noark_game")
+    ap.add_argument("--stride", type=int, default=None,
+                    help="use every Nth camera frame (default 3 with --game, 1 otherwise)")
     a = ap.parse_args()
     session_dir = Path(a.session).resolve()
+    # 30 Hz over six minutes is far more than the trunk motion needs, and the geometry
+    # cache is ~170 kB a frame; 10 Hz keeps both the run and the cache in proportion.
+    stride = a.stride if a.stride else (3 if a.game else None)
     if a.subject:
-        return run_subject(session_dir, a.subject)
+        return run_subject(session_dir, a.subject, a.game, stride)
     if a.all or a.subjects is not None:
-        return run_all(session_dir, a.subjects, a.workers, {})
+        return run_all(session_dir, a.subjects, a.workers, {}, a.game, stride)
     ap.error("give --subject NAME or --all")
 
 

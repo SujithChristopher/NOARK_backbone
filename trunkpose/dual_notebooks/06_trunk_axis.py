@@ -18,6 +18,7 @@
 # default 4; set 1 for a sequential/debuggable run). EMA + neutral stay sequential.
 
 import hashlib
+import itertools
 import json
 import os
 import pickle
@@ -65,9 +66,19 @@ RECORDING_DIR = Path(os.environ.get(
 # next to the recordings (this dir or its parent), so a new session is a data change,
 # not a code edit. The july-27 defaults below apply when no file is found.
 def load_session(rec_dir):
-    for cand in (Path(rec_dir) / "session.toml", Path(rec_dir).parent / "session.toml"):
-        if cand.exists():
-            return toml.load(cand), cand
+    """Nearest session.toml at or above the recording, searching up to the repo root.
+
+    A protocol take keeps it one level up (data/sep23_26/session.toml serves
+    data/sep23_26/gokul_wc). A game recording sits five levels down inside the
+    recorder's own tree, so the search walks the parents instead of checking one.
+    """
+    d = Path(rec_dir).resolve()
+    for cand in (d, *d.parents):
+        q = cand / "session.toml"
+        if q.exists():
+            return toml.load(q), q
+        if cand == PROJECT_ROOT:
+            break
     return {}, None
 
 
@@ -102,10 +113,46 @@ SWAP_CAMS = bool(_cam_cfg.get("swap", False))
 ROT180 = bool(_cam_cfg.get("rot180", False))
 
 _c0, _c1 = ("cam1", "cam0") if SWAP_CAMS else ("cam0", "cam1")
-CAM0_FRAMES = RECORDING_DIR / f"{_c0}_frame.msgpack"
-CAM1_FRAMES = RECORDING_DIR / f"{_c1}_frame.msgpack"
-CAM0_TIMES = RECORDING_DIR / f"{_c0}_timestamp.msgpack"
-CAM1_TIMES = RECORDING_DIR / f"{_c1}_timestamp.msgpack"
+
+
+def stream_paths(stem):
+    """The files making up one recorded stream, in play order.
+
+    The trunk-protocol recorder writes a take as a single <stem>.msgpack. The NOARK
+    game recorder splits a long take into 900-frame chunks, <stem>_0000.msgpack,
+    _0001, ... (chunks.json lists them; the zero-padded names sort into the same
+    order). Returning a list either way keeps every reader below layout-agnostic.
+    """
+    one = RECORDING_DIR / f"{stem}.msgpack"
+    if one.exists():
+        return [one]
+    shards = sorted(RECORDING_DIR.glob(f"{stem}_[0-9][0-9][0-9][0-9].msgpack"))
+    # no shards either: keep the single-file path so the failure names the file the
+    # caller expected rather than an empty list.
+    return shards or [one]
+
+
+CAM0_FRAMES = stream_paths(f"{_c0}_frame")
+CAM1_FRAMES = stream_paths(f"{_c1}_frame")
+CAM0_TIMES = stream_paths(f"{_c0}_timestamp")
+CAM1_TIMES = stream_paths(f"{_c1}_timestamp")
+
+# Use every Nth recorded frame. The validation takes are short and run at full rate;
+# the game takes are ~6 min at 30 Hz, where the trunk moves slowly enough that a
+# stride buys back the geometry pass and the cache it writes. It is applied inside the
+# readers, so frame index i means raw frame i*FRAME_STRIDE for timestamps, the GPIO
+# bit and the geometry pass alike -- nothing downstream has to know.
+FRAME_STRIDE = max(1, int(os.environ.get("TRUNK_FRAME_STRIDE", "1")))
+# First frame of the neutral window (in strided indices). A protocol take opens with
+# the subject sitting neutral, so 0 is right. A game recording rolls for a minute
+# before Motive starts, so the driver moves this to the GPIO rise -- mocap t=0 -- and
+# both systems are then zeroed on the same instant.
+NEUTRAL_START = int(os.environ.get("TRUNK_NEUTRAL_START", "0"))
+# Motive's export for this take. Protocol takes keep it beside the frames as
+# <recording>.csv; the game session keeps one mocap folder for every subject, so the
+# path is given explicitly.
+MOCAP_CSV = Path(os.environ.get("TRUNK_MOCAP_CSV",
+                                str(RECORDING_DIR / f"{RECORDING_NAME}.csv")))
 
 # No default: a stereo calibration belongs to a rig, and picking the wrong rig's is
 # silent (cz30_dual_v2 has T_x < 0, i.e. the cameras the other way round, so the depth
@@ -251,7 +298,7 @@ def _fingerprint(path):
 
 def geom_cache_key():
     """Everything that changes the cached clouds. Mocap/sync/ICP settings stay out."""
-    return {
+    key = {
         "stereo": _fingerprint(STEREO_TOML),
         "charuco": _fingerprint(CHARUCO_TOML),
         "seg_weights": _fingerprint(SEG_WEIGHTS),
@@ -261,6 +308,11 @@ def geom_cache_key():
         "cloud": [CLOUD_VOXEL_M, CLOUD_MAX_PTS],
         "sgbm": [SGBM_MIN_DISP, SGBM_NUM_DISP, SGBM_BLOCK],
     }
+    if FRAME_STRIDE != 1:
+        # only added when it is in play, so the full-rate caches written before the
+        # stride existed still match their key files.
+        key["stride"] = FRAME_STRIDE
+    return key
 
 
 def _key_path(cache):
@@ -368,30 +420,36 @@ def mocap_to_board(p, Rm, tm):
 
 
 # %% Frame / timestamps
+# Every reader here takes either one file or the chunk list from stream_paths(), and
+# every one applies FRAME_STRIDE, so the frame axis is the same in all of them.
+def _records(path):
+    """Records of one stream, concatenated across chunks, strided."""
+    def raw():
+        for q in ([path] if isinstance(path, (str, Path)) else path):
+            with open(q, "rb") as f:
+                yield from msgpack.Unpacker(f, object_hook=mpn.decode)
+    return itertools.islice(raw(), 0, None, FRAME_STRIDE)
+
+
 def iter_frame_pairs(path0, path1):
-    with open(path0, "rb") as f0, open(path1, "rb") as f1:
-        u0 = msgpack.Unpacker(f0, object_hook=mpn.decode)
-        u1 = msgpack.Unpacker(f1, object_hook=mpn.decode)
-        yield from zip(u0, u1)
+    # strided separately, then zipped: both streams have the same frame count, and
+    # striding after the zip would need the pairs materialised.
+    yield from zip(_records(path0), _records(path1))
 
 
 def iter_frames(path0):
-    with open(path0, "rb") as f0:
-        yield from msgpack.Unpacker(f0, object_hook=mpn.decode)
+    yield from _records(path0)
 
 
 def load_frame_times(path):
-    with open(path, "rb") as f:
-        recs = list(msgpack.Unpacker(f, object_hook=mpn.decode))
-    return np.array([datetime.fromisoformat(r[1]) for r in recs], dtype="datetime64[us]")
+    return np.array([datetime.fromisoformat(r[1]) for r in _records(path)],
+                    dtype="datetime64[us]")
 
 
 def load_sync_flags(path):
     """GPIO sync bit per frame (column 0 of the timestamp msgpack). High while the
     mocap system is recording, so the first rising edge marks mocap t=0."""
-    with open(path, "rb") as f:
-        recs = list(msgpack.Unpacker(f, object_hook=mpn.decode))
-    return np.array([int(r[0]) for r in recs])
+    return np.array([int(r[0]) for r in _records(path)])
 
 
 def nearest_index(times, t):
@@ -1062,7 +1120,7 @@ def assemble(frames):
             ls is not None and rs is not None and anterior is not None) else None
         R_t_list.append(R_t)
 
-    valid = [R for R in R_t_list if R is not None]
+    valid = [R for R in R_t_list[NEUTRAL_START:] if R is not None]
     if len(valid) < 3:
         raise SystemExit("Too few valid trunk frames for a neutral pose.")
     R_neu = Rotation.from_matrix(np.array(valid[:N_NEUTRAL])).mean().as_matrix()
@@ -1277,16 +1335,16 @@ def main():
     print("Loading basis + mocap + timestamps...")
     R0_c, t0_c, Rm_c, tm_c = load_charuco_basis(CHARUCO_TOML)
     K0, D0 = load_stereo(STEREO_TOML)[:2]
-    mocap_df, st_time = read_rigid_body_csv(str(RECORDING_DIR / f"{RECORDING_NAME}.csv"))
-    ts0 = load_frame_times(RECORDING_DIR / "cam0_timestamp.msgpack")
-    ts1 = load_frame_times(RECORDING_DIR / "cam1_timestamp.msgpack")
+    mocap_df, st_time = read_rigid_body_csv(str(MOCAP_CSV))
+    ts0 = load_frame_times(stream_paths("cam0_timestamp"))
+    ts1 = load_frame_times(stream_paths("cam1_timestamp"))
     n = min(len(ts0), len(ts1))
     max_frames = int(os.environ.get("TRUNK_MAX_FRAMES", "0"))
     if max_frames:
         n = min(n, max_frames)
     ts0 = ts0[:n]
 
-    sync = load_sync_flags(RECORDING_DIR / "cam0_timestamp.msgpack")[:n]
+    sync = load_sync_flags(stream_paths("cam0_timestamp"))[:n]
     mocap_time, rise = gpio_mocap_time(ts0, mocap_df["seconds"].to_numpy(), sync)
     in_win = (ts0 >= mocap_time[0]) & (ts0 <= mocap_time[-1])
     print(f"GPIO sync: mocap t=0 at camera frame {rise}; Motive header clock "
@@ -1295,7 +1353,7 @@ def main():
 
     # Movement take contains only the trunk rigid body:
     # Marker3=origin, Marker1=+X, Marker4=+Z.
-    mo, mx, mz = load_trunk_rb(str(RECORDING_DIR / f"{RECORDING_NAME}.csv"))
+    mo, mx, mz = load_trunk_rb(str(MOCAP_CSV))
     in_win = teleport_free_window(mo, mocap_time, ts0, in_win)
     print(f"  usable overlap after teleport split: {int(in_win.sum())}/{n} frames")
 

@@ -158,8 +158,7 @@ def load_inputs():
     """Basis + mocap CSV + camera timestamps + the (cached) 06 geometry pass."""
     print("Loading basis + mocap + timestamps...")
     R0_c, t0_c, Rm_c, tm_c = m6.load_charuco_basis(m6.CHARUCO_TOML)
-    mocap_df, st_time = m6.read_rigid_body_csv(
-        str(m6.RECORDING_DIR / f"{m6.RECORDING_NAME}.csv"))
+    mocap_df, st_time = m6.read_rigid_body_csv(str(m6.MOCAP_CSV))
     mocap_time = np.datetime64(st_time) + (
         mocap_df["seconds"].to_numpy() * 1e6).astype("timedelta64[us]")
     # CAM0_TIMES follows the reference camera, which is cam1 on a swapped rig
@@ -191,15 +190,19 @@ def run_icp_pass(frames, R_neu, n):
     Returns the per-frame body rotation Rb (neutral -> current), the raw cur->neutral
     transforms A (kept for rendering), the neutral-zeroed angle series and the pooled
     neutral cloud."""
-    # ---- neutral cloud from first N_NEUTRAL frames with clouds ----
-    neu = [fr["cloud"] for fr in frames[: m6.N_NEUTRAL] if fr["cloud"] is not None]
+    # ---- neutral cloud from the N_NEUTRAL frames of the neutral window ----
+    # NEUTRAL_START is 0 for a protocol take, which opens with the subject neutral,
+    # and the GPIO rise for a game take, which rolls for a minute beforehand.
+    nz = slice(m6.NEUTRAL_START, m6.NEUTRAL_START + m6.N_NEUTRAL)
+    neu = [fr["cloud"] for fr in frames[nz] if fr["cloud"] is not None]
     if not neu:
-        raise SystemExit("No clouds in the first neutral window.")
+        raise SystemExit(f"No clouds in the neutral window (frames {nz.start}-{nz.stop}).")
     neu = m6.voxel_downsample(np.concatenate(neu).astype(np.float64),
                               max_pts=NEUTRAL_MAX_PTS)
     tree = cKDTree(neu)
     neu_normals = estimate_normals(neu)
-    print(f"Neutral cloud: {len(neu)} pts from first {m6.N_NEUTRAL} frames")
+    print(f"Neutral cloud: {len(neu)} pts from {m6.N_NEUTRAL} frames "
+          f"starting at {nz.start}")
 
     # ---- ICP per frame: direct-to-neutral, keyframe odometry as fallback ----
     # Direct registration fails when the trunk has turned far enough that the live
@@ -212,7 +215,7 @@ def run_icp_pass(frames, R_neu, n):
     # neutral shoulder anchors (mean over the neutral window)
     neu_anch = {}
     for nm in ("L_shoulder", "R_shoulder"):
-        pts = [fr["cam_pts"][nm] for fr in frames[: m6.N_NEUTRAL]
+        pts = [fr["cam_pts"][nm] for fr in frames[nz]
                if fr["cam_pts"][nm] is not None]
         if pts:
             neu_anch[nm] = np.mean(pts, axis=0)
@@ -331,8 +334,7 @@ def compare_mocap(inp, Rb_icp, R_neu):
     # CAMERA anatomical axes (R_neu), so marker-frame conventions cancel. The residual
     # frame rotation S (basis rotation error) is fitted on the FIRST half of the
     # segment and validated on the held-out second half.
-    mo, mx, mz = m6.load_trunk_rb(
-        str(m6.RECORDING_DIR / f"{m6.RECORDING_NAME}.csv"))
+    mo, mx, mz = m6.load_trunk_rb(str(m6.MOCAP_CSV))
     mob, mxb, mzb = ((m - tm_c) @ Rm_c for m in (mo, mx, mz))
 
     # hardware sync: the GPIO sync bit in the camera timestamp file is high while
