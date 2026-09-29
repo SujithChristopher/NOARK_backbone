@@ -38,6 +38,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.spatial.transform import Rotation
 import toml
 
 from jitter_model.common import build_tag_rig
@@ -263,6 +264,39 @@ for marker_id, residual, norm in zip(marker_ids, residuals, residual_norms):
     )
 
 
+# %% Direct comparison, no alignment
+# Both frames put the apex tag at the origin, so the solved centres can be laid
+# straight over CAD. This keeps any tilt of the reference tag's frame, which
+# Kabsch above fits away.
+direct_residuals = solved_points - cad_points
+direct_norms = np.linalg.norm(direct_residuals, axis=1)
+direct_rmse_mm = MM * float(np.sqrt(np.mean(direct_norms**2)))
+direct_radial_error = np.hypot(solved_points[:, 0], solved_points[:, 1]) - np.hypot(
+    cad_points[:, 0], cad_points[:, 1]
+)
+direct_depth_error = -solved_points[:, 2] + cad_points[:, 2]
+
+frame_rotation = Rotation.from_matrix(rotation)
+print("\n=== Direct comparison, no alignment (solved - CAD) ===")
+print(f"RMSE: {direct_rmse_mm:.3f} mm   max: {MM * direct_norms.max():.3f} mm")
+print(
+    f"Kabsch rotation the alignment applied: "
+    f"{np.degrees(frame_rotation.magnitude()):.3f} deg about "
+    f"{np.round(frame_rotation.as_rotvec() / max(frame_rotation.magnitude(), 1e-12), 3)}"
+)
+print(
+    f"Kabsch translation the alignment applied: {np.round(MM * translation, 3)} mm"
+)
+print(f"\n{'tag':>4} {'dx':>8} {'dy':>8} {'dz':>8} {'|d|':>8} {'d_rad':>8} {'d_depth':>8}   (mm)")
+for index, marker_id in enumerate(marker_ids):
+    print(
+        f"{marker_id:>4} {MM * direct_residuals[index, 0]:8.2f} "
+        f"{MM * direct_residuals[index, 1]:8.2f} {MM * direct_residuals[index, 2]:8.2f} "
+        f"{MM * direct_norms[index]:8.2f} {MM * direct_radial_error[index]:8.2f} "
+        f"{MM * direct_depth_error[index]:8.2f}"
+    )
+
+
 # %% Depth and radial decomposition
 def depth_radial(points):
     return -points[:, 2], np.hypot(points[:, 0], points[:, 1])
@@ -432,6 +466,15 @@ marker_table = pd.DataFrame(
         "dy_mm": MM * residuals[:, 1],
         "dz_mm": MM * residuals[:, 2],
         "residual_mm": MM * residual_norms,
+        "direct_x_mm": MM * solved_points[:, 0],
+        "direct_y_mm": MM * solved_points[:, 1],
+        "direct_z_mm": MM * solved_points[:, 2],
+        "direct_dx_mm": MM * direct_residuals[:, 0],
+        "direct_dy_mm": MM * direct_residuals[:, 1],
+        "direct_dz_mm": MM * direct_residuals[:, 2],
+        "direct_residual_mm": MM * direct_norms,
+        "direct_radial_error_mm": MM * direct_radial_error,
+        "direct_depth_error_mm": MM * direct_depth_error,
         "depth_cad_mm": MM * cad_depth,
         "depth_rb_mm": MM * solved_depth,
         "depth_error_mm": MM * (solved_depth - cad_depth),
