@@ -1,14 +1,14 @@
 # %% [markdown]
-# # First frame, camera coordinates: tag 1, ring 30 and tags 11/12 vs CAD
+# # First frame, tag 1 basis: tag 1, ring 30 and tags 11/12 vs CAD
 #
-# No rigid body. Tags 1-5, 11 and 12 are posed independently in one frame straight from the
-# cached corner detections (IPPE on the undistorted corners), all in camera
-# coordinates. The hardcoded CAD offsets and orientations, which live in tag 1's
-# frame, are moved into the camera with tag 1's measured pose:
+# No rigid body. Tags 1-5, 11 and 12 are posed independently in one frame straight
+# from the cached corner detections (IPPE on the undistorted corners), in camera
+# coordinates. Each tag's pose is then re-expressed in tag 1's basis,
 #
-#     t_pred = t_1 + R_1 @ cad_offset        R_pred = R_1 @ R_cad
+#     t_1N = R_1.T @ (t_N - t_1)        R_1N = R_1.T @ R_N
 #
-# so position and orientation are compared with nothing fitted or aligned.
+# and compared directly with the hardcoded CAD offsets and orientations, which
+# live in tag 1's frame. Nothing is fitted or aligned.
 #
 # ```powershell
 # uv run python jitter_model/first_frame_ring_compare.py
@@ -153,32 +153,30 @@ orientation_rows = []
 for marker_id in RING_IDS:
     R_meas, t_meas, _ = poses[marker_id]
 
-    cad_offset = np.asarray(CAD_OFFSET_MM[marker_id]) / MM
-    cad_vector_cam = R_ref @ cad_offset
-    measured_vector_cam = t_meas - t_ref
-    position_error = measured_vector_cam - cad_vector_cam
+    cad_vector = np.asarray(CAD_OFFSET_MM[marker_id]) / MM
+    measured_vector = R_ref.T @ (t_meas - t_ref)
+    position_error = measured_vector - cad_vector
     position_rows.append(
         {
             "tag": marker_id,
-            "meas_x": MM * measured_vector_cam[0],
-            "meas_y": MM * measured_vector_cam[1],
-            "meas_z": MM * measured_vector_cam[2],
-            "cad_x": MM * cad_vector_cam[0],
-            "cad_y": MM * cad_vector_cam[1],
-            "cad_z": MM * cad_vector_cam[2],
+            "meas_x": MM * measured_vector[0],
+            "meas_y": MM * measured_vector[1],
+            "meas_z": MM * measured_vector[2],
+            "cad_x": MM * cad_vector[0],
+            "cad_y": MM * cad_vector[1],
+            "cad_z": MM * cad_vector[2],
             "err_x": MM * position_error[0],
             "err_y": MM * position_error[1],
             "err_z": MM * position_error[2],
             "err_norm": MM * float(np.linalg.norm(position_error)),
             "dist_err": MM
-            * float(np.linalg.norm(measured_vector_cam) - np.linalg.norm(cad_vector_cam)),
+            * float(np.linalg.norm(measured_vector) - np.linalg.norm(cad_vector)),
         }
     )
 
     R_cad = Rotation.from_euler(EULER_ORDER, CAD_EULER_DEG[marker_id], degrees=True)
-    R_pred = R_ref @ R_cad.as_matrix()
     measured_rel = Rotation.from_matrix(R_ref.T @ R_meas)
-    error = Rotation.from_matrix(R_pred.T @ R_meas)
+    error = R_cad.inv() * measured_rel
     meas_e = measured_rel.as_euler(EULER_ORDER, degrees=True)
     err_e = error.as_euler(EULER_ORDER, degrees=True)
     orientation_rows.append(
@@ -196,13 +194,19 @@ for marker_id in RING_IDS:
             "err_angle": float(np.degrees(error.magnitude())),
             "normal_err": float(
                 np.degrees(
-                    np.arccos(np.clip(R_meas[:, 2] @ R_pred[:, 2], -1.0, 1.0))
+                    np.arccos(
+                        np.clip(
+                            measured_rel.as_matrix()[:, 2] @ R_cad.as_matrix()[:, 2],
+                            -1.0,
+                            1.0,
+                        )
+                    )
                 )
             ),
         }
     )
 
-print("\nPosition, tag 1 -> tag N in camera coordinates (mm): measured vs CAD")
+print("\nPosition, tag 1 -> tag N in tag 1's basis (mm): measured vs CAD")
 print(pl.DataFrame(position_rows))
 print("\nOrientation, tag N in tag 1's frame, xyz Euler (deg): measured vs CAD")
 print(pl.DataFrame(orientation_rows))
