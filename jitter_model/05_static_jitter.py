@@ -53,7 +53,7 @@ import numpy as np
 import pandas as pd
 import toml
 from cv2 import aruco
-from matplotlib import ticker
+from matplotlib import patheffects, ticker
 from matplotlib.colors import LogNorm
 from scipy.interpolate import griddata
 from tqdm.auto import tqdm
@@ -83,8 +83,12 @@ BURSTS_JSON = RECORDING_DIR / "bursts.json"
 # not on this take.
 SESSION_TOML = RECORDING_DIR.parent / "session.toml"
 
-OUTPUT_DIR = RECORDING_DIR / "static_jitter"
-DETECTION_CACHE = RECORDING_DIR / "jitter_detections.pkl"
+# Second iteration: corners refined by the detector's AprilTag line fit instead of
+# cornerSubPix, which flips between two solutions on some corners (burst 21,
+# tag 4 corner 2 in cam0). Kept in its own folder and cache so the first
+# iteration in static_jitter/ stays as it was.
+OUTPUT_DIR = RECORDING_DIR / "static_jitter_ncr"
+DETECTION_CACHE = RECORDING_DIR / "jitter_detections_ncr.pkl"
 
 SUMMARY_CSV = OUTPUT_DIR / "static_jitter_summary.csv"
 BURST_CSV = OUTPUT_DIR / "static_jitter_bursts.csv"
@@ -95,6 +99,12 @@ AXES_REFERENCE_FIGURE = OUTPUT_DIR / "static_jitter_axes_reference.png"
 AXES_CAMERA_FIGURE = OUTPUT_DIR / "static_jitter_axes_camera.png"
 BURST_FIGURE = OUTPUT_DIR / "static_jitter_bursts.png"
 SPATIAL_FIGURE = OUTPUT_DIR / "static_jitter_spatial.png"
+AREA_FIGURE = OUTPUT_DIR / "static_jitter_tag_area.png"
+AREA_SUM_FIGURE = OUTPUT_DIR / "static_jitter_tag_area_sum_ratio.png"
+FIT_RATIO_FIGURE = OUTPUT_DIR / "static_jitter_tag_fit_ratio.png"
+BURST_MAP_FIGURE = OUTPUT_DIR / "static_jitter_burst_map.png"
+TAG_SELECTION_CSV = OUTPUT_DIR / "static_jitter_tag_selection.csv"
+DISTANCE_TABLE_CSV = OUTPUT_DIR / "jitter_vs_distance_table.csv"
 
 CAMERA_NAMES = ("cam0", "cam1")
 REBUILD_DETECTION_CACHE = False
@@ -112,9 +122,6 @@ TAG_PRESENCE_FRACTION = 0.9
 # A burst is only usable if the dome really was still and enough frames solved.
 MIN_FRAMES_PER_BURST = 10
 MAX_BURST_MOCAP_TRAVEL_M = 0.002
-# Corner sub-pixel refinement, matching 02_rigidbody_calib.py.
-SUBPIX_WINDOW = (5, 5)
-SUBPIX_CRITERIA = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 0.01)
 # Pair the two free-running cameras no further apart than this much of a frame.
 MAX_PAIR_FRACTION_OF_FRAME = 0.55
 # Distance bin edges; the observed range is printed so these can be retuned.
@@ -132,6 +139,8 @@ ERROR_COLORMAP = "turbo"
 # burst at the bottom, matching the table it was recorded on. Display only:
 # it never touches the jitter numbers or the per-axis decomposition.
 SPATIAL_ROTATION_DEG = None
+# Write each burst's index beside its ring in the spatial heatmap.
+SPATIAL_LABEL_BURSTS = True
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 print(f"Recording : {RECORDING_DIR}")
@@ -187,7 +196,9 @@ marker_to_reference = rig.marker_to_reference
 
 dictionary = aruco.getPredefinedDictionary(aruco.DICT_APRILTAG_36h11)
 detector_parameters = aruco.DetectorParameters()
-detector = aruco.ArucoDetector(dictionary, detector_parameters)
+# Line-fit refinement over each tag edge rather than a local corner search.
+detector_parameters.cornerRefinementMethod = aruco.CORNER_REFINE_APRILTAG
+detector =aruco.ArucoDetector(dictionary, detector_parameters)
 
 
 # %% Recording I/O and reusable detection cache
@@ -217,7 +228,7 @@ def load_timestamp_records(path):
 
 
 def detect_camera(camera_name, max_frames=None):
-    """Detect and sub-pixel refine every dome tag in one camera's recording."""
+    """Detect every dome tag in one camera's recording, corners refined by the detector."""
     frame_path = RECORDING_DIR / f"{camera_name}_frame.msgpack"
     metadata = load_timestamp_records(
         RECORDING_DIR / f"{camera_name}_timestamp.msgpack"
@@ -247,15 +258,9 @@ def detect_camera(camera_name, max_frames=None):
                     marker_id = int(marker_id)
                     if marker_id not in DETECT_MARKER_IDS:
                         continue
-                    refined = np.asarray(marker_corners, dtype=np.float32).reshape(
-                        -1, 1, 2
-                    )
-                    cv2.cornerSubPix(
-                        gray, refined, SUBPIX_WINDOW, (-1, -1), SUBPIX_CRITERIA
-                    )
-                    frame_detections[marker_id] = refined.reshape(4, 2).astype(
-                        np.float64
-                    )
+                    frame_detections[marker_id] = np.asarray(
+                        marker_corners, dtype=np.float64
+                    ).reshape(4, 2)
             detections.append(frame_detections)
 
     for key in metadata:
@@ -279,6 +284,7 @@ if detection_cache is None:
         "recording_dir": str(RECORDING_DIR.resolve()),
         "calibration_toml": str(STEREO_TOML.resolve()),
         "dictionary": "DICT_APRILTAG_36h11",
+        "corner_refinement": "CORNER_REFINE_APRILTAG",
         "marker_ids": DETECT_MARKER_IDS,
         "tag_size_m": TAG_SIZE_M,
         "cameras": {name: detect_camera(name, MAX_FRAMES) for name in CAMERA_NAMES},
@@ -725,6 +731,110 @@ burst_table["common"] = burst_table["burst"].isin(common_bursts)
 burst_table = burst_table.sort_values(["cameras", "tags", "burst"]).reset_index(
     drop=True
 )
+
+
+def tag_area_stats(burst, marker_ids, camera_count):
+    """Smallest chosen-tag area [px^2] and biggest/smallest area ratio for a burst.
+
+    Areas are per-tag medians over the burst. The ratio is taken inside each
+    camera, since the two cameras sit at different distances and pooling them
+    would mix that in, and the larger of the cameras' ratios is reported. A
+    ratio of 1 means the chosen tags look equally large; higher means the set
+    has to lean on a much smaller tag. The minimum area is the weakest tag in
+    whichever camera sees it smaller.
+    """
+    indices = burst_frames[burst]
+    if camera_count == 2:
+        indices = np.asarray([i for i in indices if cam1_pair[i] >= 0])
+    per_view = [[cam0["detections"][i] for i in indices]]
+    if camera_count == 2:
+        per_view.append([cam1["detections"][int(cam1_pair[i])] for i in indices])
+    view_areas = [
+        [np.median([quad_area(f[m]) for f in frames if m in f]) for m in marker_ids]
+        for frames in per_view
+    ]
+    smallest = min(min(areas) for areas in view_areas)
+    ratio = max(max(areas) / min(areas) for areas in view_areas)
+    # Total area over the smallest tag's area, again per camera and worst kept.
+    # It equals the tag count when every chosen tag looks the same size and
+    # grows as the set gets more lopsided.
+    sum_ratio = max(sum(areas) / min(areas) for areas in view_areas)
+    return float(smallest), float(ratio), float(sum_ratio)
+
+
+_area_stats = [
+    tag_area_stats(
+        int(row.burst), [int(m) for m in row.marker_ids.split("+")], row.cameras
+    )
+    for row in burst_table.itertuples()
+]
+burst_table["min_tag_area_px"] = [stats[0] for stats in _area_stats]
+burst_table["tag_area_ratio"] = [stats[1] for stats in _area_stats]
+burst_table["tag_area_sum_ratio"] = [stats[2] for stats in _area_stats]
+
+
+def tag_fit_rmse(name):
+    """Per-(burst, tag) corner reprojection RMSE [px] of one condition's board fit.
+
+    The board pose is one joint fit, so its single rmse hides which tag it fits
+    badly. Here every solved frame's pose is projected back and each chosen
+    tag's own corners are compared with what was detected, in every camera the
+    condition uses. A tag the rest of the board cannot agree with -- bad rig
+    geometry, edge-of-image distortion, a poor detection -- shows up with a
+    larger residual than its neighbours.
+    """
+    stereo = CONDITIONS[name]["camera_count"] == 2
+    squared = collections.defaultdict(list)
+    for row in condition_tables[name].itertuples():
+        tags = [int(m) for m in row.marker_ids.split("+")]
+        rvec = np.array([row.rvec_x, row.rvec_y, row.rvec_z]).reshape(3, 1)
+        tvec = np.array([row.cam_x, row.cam_y, row.cam_z]).reshape(3, 1)
+        views = [("cam0", rvec, tvec, cam0["detections"][row.frame])]
+        if stereo:
+            rvec1, tvec1 = cv2.composeRT(
+                rvec, tvec, solver._stereo_rvec, solver._stereo_translation
+            )[:2]
+            views.append(
+                ("cam1", rvec1, tvec1, cam1["detections"][int(cam1_pair[row.frame])])
+            )
+        for tag in tags:
+            errors = []
+            for camera, view_rvec, view_tvec, detections in views:
+                projected, _ = cv2.fisheye.projectPoints(
+                    rig.corners_reference[tag].reshape(-1, 1, 3),
+                    view_rvec,
+                    view_tvec,
+                    camera_models[camera].K,
+                    camera_models[camera].D,
+                )
+                errors.extend(
+                    np.sum((projected.reshape(-1, 2) - detections[tag]) ** 2, axis=1)
+                )
+            squared[(row.burst, tag)].append(np.mean(errors))
+    return {key: float(np.sqrt(np.mean(values))) for key, values in squared.items()}
+
+
+_fit_stats = {}
+for _name, _spec in CONDITIONS.items():
+    if _spec["tag_count"] < 2:
+        continue
+    _by_tag = tag_fit_rmse(_name)
+    _bursts = {burst for burst, _tag in _by_tag}
+    for _burst in _bursts:
+        _rmse = {tag: v for (b, tag), v in _by_tag.items() if b == _burst}
+        _worst = max(_rmse, key=_rmse.get)
+        _fit_stats[(_name, _burst)] = (
+            _worst,
+            _rmse[_worst],
+            _rmse[_worst] / min(_rmse.values()),
+        )
+
+_keys = list(zip(burst_table["condition"], burst_table["burst"].astype(int)))
+burst_table["worst_fit_tag"] = [_fit_stats.get(k, (np.nan,) * 3)[0] for k in _keys]
+burst_table["worst_fit_px"] = [_fit_stats.get(k, (np.nan,) * 3)[1] for k in _keys]
+# Worst tag's residual over the best tag's: 1 means every chosen tag fits the
+# board equally well, large means one tag disagrees with the rest.
+burst_table["tag_fit_ratio"] = [_fit_stats.get(k, (np.nan,) * 3)[2] for k in _keys]
 burst_table.to_csv(BURST_CSV, index=False)
 
 common_table = burst_table.loc[burst_table["common"]]
@@ -1137,6 +1247,19 @@ for row, camera_count in enumerate(CAMERA_COUNTS):
             linewidth=0.7,
             zorder=3,
         )
+        if SPATIAL_LABEL_BURSTS:
+            # White halo so the number reads on any part of the colormap.
+            for (x, z), burst in zip(sample_points, subset["burst"]):
+                axis.annotate(
+                    str(int(burst)),
+                    (x, z),
+                    xytext=(3, 3),
+                    textcoords="offset points",
+                    fontsize=6.5,
+                    color="black",
+                    path_effects=[patheffects.withStroke(linewidth=1.5, foreground="white")],
+                    zorder=5,
+                )
         axis.scatter(
             [0],
             [0],
@@ -1272,6 +1395,212 @@ axes[2].legend(loc="lower left", fontsize=9)
 fig.suptitle(f"Burst sampling and per-burst jitter — {RECORDING_DIR.name}")
 fig.savefig(BURST_FIGURE, dpi=180, bbox_inches="tight")
 print(f"Saved {BURST_FIGURE}")
+
+
+# %% Figure 7: biggest / smallest chosen-tag area per burst
+# The single-tag conditions are left out: one tag has a ratio of exactly 1. From
+# two tags on, each burst's subset is the best-visible tags, so the ratio shows
+# how much smaller the last tag added is than the biggest one at every position.
+fig, ax = plt.subplots(figsize=(11, 5.5), constrained_layout=True)
+for name in ordered_conditions():
+    spec = CONDITIONS[name]
+    if spec["tag_count"] < 2:
+        continue
+    subset = burst_table.loc[burst_table["condition"] == name].sort_values("burst")
+    ax.plot(
+        subset["burst"],
+        subset["tag_area_ratio"],
+        linestyle=CONDITION_STYLE[spec["camera_count"]],
+        marker=CONDITION_MARKER[spec["camera_count"]],
+        markersize=3.5,
+        linewidth=1.2,
+        color=CONDITION_COLOURS[name],
+        label=condition_label(name),
+    )
+ax.axhline(1.0, color="0.4", linestyle=":", linewidth=1.0)
+ax.set_xlabel("Burst index (position)")
+ax.set_ylabel("Biggest / smallest chosen tag area")
+ax.set_title(
+    f"Tag area ratio per burst — {RECORDING_DIR.name}\n"
+    "median quad area over the burst; two cameras use the larger of the two ratios"
+)
+ax.grid(True, alpha=0.25, which="both")
+ax.legend(loc="best", ncols=2, fontsize=9)
+fig.savefig(AREA_FIGURE, dpi=180, bbox_inches="tight")
+print(f"Saved {AREA_FIGURE}")
+
+
+# %% Figure 7b: total chosen-tag area over the smallest tag's area
+# (A1 + A2 + ...) / min(A). The dotted lines mark the value every condition
+# would sit at if its chosen tags were all the same size (the tag count), so
+# the distance above them is how lopsided the set is.
+fig, ax = plt.subplots(figsize=(11, 5.5), constrained_layout=True)
+for name in ordered_conditions():
+    spec = CONDITIONS[name]
+    if spec["tag_count"] < 2:
+        continue
+    subset = burst_table.loc[burst_table["condition"] == name].sort_values("burst")
+    ax.plot(
+        subset["burst"],
+        subset["tag_area_sum_ratio"],
+        linestyle=CONDITION_STYLE[spec["camera_count"]],
+        marker=CONDITION_MARKER[spec["camera_count"]],
+        markersize=3.5,
+        linewidth=1.2,
+        color=CONDITION_COLOURS[name],
+        label=condition_label(name),
+    )
+for tag_count in TAG_COUNTS[1:]:
+    ax.axhline(tag_count, color="0.6", linestyle=":", linewidth=0.9)
+ax.set_xlabel("Burst index (position)")
+ax.set_ylabel("Sum of chosen tag areas / smallest tag area")
+ax.set_title(
+    f"Total-to-smallest tag area per burst — {RECORDING_DIR.name}\n"
+    "dotted lines: equal-size tags (= tag count); two cameras use the larger of the two"
+)
+ax.grid(True, alpha=0.25)
+ax.legend(loc="best", ncols=2, fontsize=9)
+fig.savefig(AREA_SUM_FIGURE, dpi=180, bbox_inches="tight")
+print(f"Saved {AREA_SUM_FIGURE}")
+
+
+# %% Figure 7c: worst / best per-tag reprojection residual per burst
+# Ratio of the largest to the smallest per-tag corner residual after the joint
+# board fit. Near 1 the tags all fit the board alike; a spike means one tag
+# disagrees with the others in that burst, and worst_fit_tag in the burst CSV
+# names it.
+fig, ax = plt.subplots(figsize=(11, 5.5), constrained_layout=True)
+for name in ordered_conditions():
+    spec = CONDITIONS[name]
+    if spec["tag_count"] < 2:
+        continue
+    subset = burst_table.loc[burst_table["condition"] == name].sort_values("burst")
+    ax.plot(
+        subset["burst"],
+        subset["tag_fit_ratio"],
+        linestyle=CONDITION_STYLE[spec["camera_count"]],
+        marker=CONDITION_MARKER[spec["camera_count"]],
+        markersize=3.5,
+        linewidth=1.2,
+        color=CONDITION_COLOURS[name],
+        label=condition_label(name),
+    )
+ax.axhline(1.0, color="0.4", linestyle=":", linewidth=1.0)
+ax.set_yscale("log")
+plain_log_ticks(ax.yaxis)
+ax.set_xlabel("Burst index (position)")
+ax.set_ylabel("Worst / best per-tag reprojection residual")
+ax.set_title(
+    f"Per-tag fit ratio per burst — {RECORDING_DIR.name}\n"
+    "corner residual of each chosen tag after the joint board fit"
+)
+ax.grid(True, alpha=0.25, which="both")
+ax.legend(loc="best", ncols=2, fontsize=9)
+fig.savefig(FIT_RATIO_FIGURE, dpi=180, bbox_inches="tight")
+print(f"Saved {FIT_RATIO_FIGURE}")
+
+
+# %% Figure 8: which burst sits where on the table
+# Same squared-up x-z view as the spatial maps, with each burst labelled by its
+# index so the per-burst lines in the other figures can be located on the table.
+# Only bursts some condition solved have a position; the rest are listed in the
+# title rather than drawn.
+fig, ax = plt.subplots(figsize=(9, 8), constrained_layout=True)
+ax.scatter(
+    solved_plot[:, 0],
+    solved_plot[:, 1],
+    c=solved["distance_m"],
+    cmap="plasma",
+    s=260,
+    edgecolor="0.2",
+    linewidth=0.6,
+    zorder=2,
+)
+for (x, z), burst in zip(solved_plot, solved.index):
+    ax.annotate(
+        str(int(burst)),
+        (x, z),
+        ha="center",
+        va="center",
+        fontsize=7,
+        color="white",
+        fontweight="bold",
+        zorder=3,
+    )
+ax.scatter(
+    [0],
+    [0],
+    marker="*",
+    s=420,
+    facecolor="none",
+    edgecolor="black",
+    linewidth=1.2,
+    zorder=4,
+    label=f"reference burst ({REFERENCE_BURST})",
+)
+colorbar = fig.colorbar(ax.collections[0], ax=ax, label="Distance [m]")
+ax.set_xlabel("Table across [mm]")
+ax.set_ylabel("Table away from reference [mm]")
+ax.set_aspect("equal", adjustable="datalim")
+ax.grid(True, alpha=0.25)
+ax.legend(loc="best", fontsize=9)
+unsolved_note = (
+    f"; no position for burst {', '.join(map(str, unsolved))}" if len(unsolved) else ""
+)
+ax.set_title(f"Burst index by table position — {RECORDING_DIR.name}{unsolved_note}")
+fig.savefig(BURST_MAP_FIGURE, dpi=180, bbox_inches="tight")
+print(f"Saved {BURST_MAP_FIGURE}")
+
+
+# %% Table: position and chosen tags per burst
+# One row per burst, positioned in the same squared-up table view as Figures 5,
+# 6 and 8, with the tag ids each condition used in that burst ("4+8+12" is one
+# board of those three tags). A blank means the condition solved nothing there.
+tag_selection = burst_table.pivot(
+    index="burst", columns="condition", values="marker_ids"
+)[ordered_conditions()]
+tag_selection.insert(0, "distance_m", solved["distance_m"].round(3))
+tag_selection.insert(
+    0, "table_away_mm", pd.Series(solved_plot[:, 1], index=solved.index).round(1)
+)
+tag_selection.insert(
+    0, "table_across_mm", pd.Series(solved_plot[:, 0], index=solved.index).round(1)
+)
+tag_selection = tag_selection.reindex(burst_indices)
+tag_selection.index.name = "burst"
+tag_selection.to_csv(TAG_SELECTION_CSV)
+print("\nTags chosen per burst and condition:")
+print(tag_selection.fillna("-").to_string())
+print(f"Saved {TAG_SELECTION_CSV}")
+
+
+# %% Table: jitter versus distance, one row per condition
+# The compact form of Figure 2: geometric-mean 3D jitter [mm] in each distance
+# bin, plus the exponent n of a power law jitter ~ distance^n fitted in log-log
+# over the condition's own bursts. Unlike the figure this uses every burst a
+# condition solved rather than only those common to all eight, so `bursts`
+# differs by row.
+TABLE_EDGES_M = (0.20, 0.30, 0.40, 0.50, 0.60, 0.75)
+table_rows = []
+for name in ordered_conditions():
+    group = burst_table.loc[burst_table["condition"] == name]
+    row = {"condition": name}
+    for low, high in itertools.pairwise(TABLE_EDGES_M):
+        in_bin = group.loc[(group["distance_m"] >= low) & (group["distance_m"] < high)]
+        row[f"{0.5 * (low + high):.2f} m"] = round(
+            geometric_mean(in_bin["jitter_3d_mm"]), 4
+        )
+    row["exponent n"] = round(
+        float(np.polyfit(np.log(group["distance_m"]), np.log(group["jitter_3d_mm"]), 1)[0]),
+        4,
+    )
+    row["bursts"] = len(group)
+    table_rows.append(row)
+distance_table = pd.DataFrame(table_rows)
+distance_table.to_csv(DISTANCE_TABLE_CSV, index=False)
+print("\nJitter [mm] by distance bin and power-law exponent:")
+print(distance_table.to_string(index=False))
+print(f"Saved {DISTANCE_TABLE_CSV}")
 
 print(f"\nSaved {SUMMARY_CSV}")
 print(f"Saved {BURST_CSV}")
