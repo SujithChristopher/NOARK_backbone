@@ -41,6 +41,7 @@
 import collections
 import itertools
 import json
+import os
 import pickle
 import warnings
 from pathlib import Path
@@ -87,8 +88,21 @@ SESSION_TOML = RECORDING_DIR.parent / "session.toml"
 # cornerSubPix, which flips between two solutions on some corners (burst 21,
 # tag 4 corner 2 in cam0). Kept in its own folder and cache so the first
 # iteration in static_jitter/ stays as it was.
-OUTPUT_DIR = RECORDING_DIR / "static_jitter_ncr"
-DETECTION_CACHE = RECORDING_DIR / "jitter_detections_ncr.pkl"
+# Corner refinement: "NONE" keeps the detector's raw quad corners, "APRILTAG"
+# uses its edge line fit. Each choice has its own folder and detection cache, so
+# results from different refinements never overwrite one another.
+# The CORNER_REFINEMENT environment variable overrides the default, so several
+# modes can be run in a row without editing the file.
+CORNER_REFINEMENT = os.environ.get("CORNER_REFINEMENT", "NONE")
+REFINEMENT_TAGS = {
+    "NONE": "no_refine",
+    "CONTOUR": "contour_refine",
+    "SUBPIX": "subpix_refine",
+    "APRILTAG": "april_refine",
+}
+REFINEMENT_TAG = REFINEMENT_TAGS[CORNER_REFINEMENT]
+OUTPUT_DIR = RECORDING_DIR / "static_jitter_{}".format(REFINEMENT_TAG)
+DETECTION_CACHE = RECORDING_DIR / f"jitter_detections_{REFINEMENT_TAG}.pkl"
 
 SUMMARY_CSV = OUTPUT_DIR / "static_jitter_summary.csv"
 BURST_CSV = OUTPUT_DIR / "static_jitter_bursts.csv"
@@ -196,8 +210,10 @@ marker_to_reference = rig.marker_to_reference
 
 dictionary = aruco.getPredefinedDictionary(aruco.DICT_APRILTAG_36h11)
 detector_parameters = aruco.DetectorParameters()
-# Line-fit refinement over each tag edge rather than a local corner search.
-detector_parameters.cornerRefinementMethod = aruco.CORNER_REFINE_APRILTAG
+# Refinement method set by CORNER_REFINEMENT above.
+detector_parameters.cornerRefinementMethod = getattr(
+    aruco, f"CORNER_REFINE_{CORNER_REFINEMENT}"
+)
 detector =aruco.ArucoDetector(dictionary, detector_parameters)
 
 
@@ -284,7 +300,7 @@ if detection_cache is None:
         "recording_dir": str(RECORDING_DIR.resolve()),
         "calibration_toml": str(STEREO_TOML.resolve()),
         "dictionary": "DICT_APRILTAG_36h11",
-        "corner_refinement": "CORNER_REFINE_APRILTAG",
+        "corner_refinement": CORNER_REFINEMENT,
         "marker_ids": DETECT_MARKER_IDS,
         "tag_size_m": TAG_SIZE_M,
         "cameras": {name: detect_camera(name, MAX_FRAMES) for name in CAMERA_NAMES},
