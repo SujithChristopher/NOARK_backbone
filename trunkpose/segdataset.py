@@ -34,11 +34,12 @@ from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 
 ROOT = Path(__file__).parent
-DATA_DIR = ROOT / "data"
+DATA_ROOT = ROOT.parent / "data" / "trunkpose"
+DATA_DIR = DATA_ROOT / "data"
 IMG_DIR = DATA_DIR / "images"
 ANNOT_PATH = DATA_DIR / "densepose_coco_2014_train.json"
 
-DATASET_DIR = ROOT / "dataset_seg"
+DATASET_DIR = DATA_ROOT / "dataset_seg"
 VAL_FRACTION = 0.2
 POLY_EPS_FRAC = 0.005  # approxPolyDP epsilon as fraction of contour arc length
 

@@ -25,7 +25,7 @@ zeroes all three angles (axial rotation has no absolute zero vs gravity).
 
 Run
 ---
-    uv run python notebooks/calibration/dual_notebooks/trunk_angle.py
+    uv run python trunkpose/calibration/dual_notebooks/trunk_angle.py
 """
 
 import csv

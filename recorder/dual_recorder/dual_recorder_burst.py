@@ -44,8 +44,8 @@ row belongs to whichever burst's mono_start_ns/mono_end_ns bracket its
 monotonic_ns - and `nudged` is always 0, since nothing nudges mid-session.
 
 Usage:
-    uv run python dual_recorder/dual_recorder_burst.py -f static -n trial1 -c True
-    uv run python dual_recorder/dual_recorder_burst.py -f static -n trial1 -c True \
+    uv run python recorder/dual_recorder/dual_recorder_burst.py -f static -n trial1 -c True
+    uv run python recorder/dual_recorder/dual_recorder_burst.py -f static -n trial1 -c True \
         --frames 100 --settle-ms 300
 """
 

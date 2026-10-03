@@ -1,8 +1,8 @@
 """Sample a small labelled subset of dataset_seg for INT8 / post-training calibration on export.
 
 Usage:
-    python make_calib_set.py                 # 50 images from val -> dataset_calib/
-    yolo export model=runs/trunk_seg/weights/best.pt format=tflite int8=True data=dataset_calib/data.yaml
+    python make_calib_set.py                 # 50 images from val -> data/trunkpose/dataset_calib/
+    yolo export model=trunkpose/runs/trunk_seg/weights/best.pt format=tflite int8=True data=data/trunkpose/dataset_calib/data.yaml
 """
 
 import argparse
@@ -13,12 +13,13 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).parent
+DATA_ROOT = ROOT.parent / "data" / "trunkpose"
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--src", default=str(ROOT / "dataset_seg"))
-    parser.add_argument("--dst", default=str(ROOT / "dataset_calib"))
+    parser.add_argument("--src", default=str(DATA_ROOT / "dataset_seg"))
+    parser.add_argument("--dst", default=str(DATA_ROOT / "dataset_calib"))
     parser.add_argument("--split", default="val", help="source split to sample from")
     parser.add_argument("-n", type=int, default=50)
     parser.add_argument("--seed", type=int, default=9)

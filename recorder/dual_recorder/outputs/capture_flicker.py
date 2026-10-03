@@ -16,7 +16,7 @@ Writes into this directory:
 The sensors are left free-running (no phase align, no mid-take resync) so the
 timestamps carry the real crystal skew that plot_delay.py fits.
 
-    uv run python dual_recorder/outputs/capture_flicker.py
+    uv run python recorder/dual_recorder/outputs/capture_flicker.py
 """
 
 from __future__ import annotations

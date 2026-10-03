@@ -6,6 +6,7 @@ from pathlib import Path
 from ultralytics import YOLO
 
 ROOT = Path(__file__).parent
+DATA_ROOT = ROOT.parent / "data" / "trunkpose"
 
 
 def main():
@@ -18,7 +19,7 @@ def main():
 
     model = YOLO(args.model)
     model.train(
-        data=str(ROOT / "dataset" / "data.yaml"),
+        data=str(DATA_ROOT / "dataset" / "data.yaml"),
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,

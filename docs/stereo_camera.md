@@ -43,7 +43,7 @@ stereo_calibration.toml         K0/D0, K1/D1, stereo R/T, epipolar error
 
 ## 2. Stereo calibration
 
-Scripts: `notebooks/calibration/dual_notebooks/01_corner_detection.py` →
+Scripts: `trunkpose/calibration/dual_notebooks/01_corner_detection.py` →
 `02_dual_calibration.py`.
 
 ### Why not `cv2.fisheye.stereoCalibrate`
@@ -80,7 +80,7 @@ equivalent decomposed pipeline (`02_dual_calibration.py`):
 
 ## 3. Verification methodology
 
-Script: `notebooks/calibration/dual_notebooks/verification_dual_camera.py`.
+Script: `trunkpose/calibration/dual_notebooks/verification_dual_camera.py`.
 Compares camera pose estimates against OptiTrack on every synced frame.
 
 ### Pose estimators (per frame)
@@ -368,11 +368,11 @@ The 78 mm baseline caps the depth gain. Bigger wins, roughly in order:
 
 | File | Purpose |
 |---|---|
-| `notebooks/calibration/dual_notebooks/01_corner_detection.py` | Detect chessboard corners in both cameras → `.pkl` |
-| `notebooks/calibration/dual_notebooks/02_dual_calibration.py` | Decomposed fisheye stereo calibration → `stereo_calibration.toml` |
-| `notebooks/calibration/dual_notebooks/verification_dual_camera.py` | 4-estimator stereo verification vs mocap (main) |
-| `notebooks/calibration/dual_notebooks/verification_dual_undistort_compare.py` | corner vs full-image undistort comparison |
-| `notebooks/calibration/dual_notebooks/verification_single_camera.py` | original single-camera mocap verification |
+| `trunkpose/calibration/dual_notebooks/01_corner_detection.py` | Detect chessboard corners in both cameras → `.pkl` |
+| `trunkpose/calibration/dual_notebooks/02_dual_calibration.py` | Decomposed fisheye stereo calibration → `stereo_calibration.toml` |
+| `trunkpose/calibration/dual_notebooks/verification_dual_camera.py` | 4-estimator stereo verification vs mocap (main) |
+| `trunkpose/calibration/dual_notebooks/verification_dual_undistort_compare.py` | corner vs full-image undistort comparison |
+| `trunkpose/calibration/dual_notebooks/verification_single_camera.py` | original single-camera mocap verification |
 
 Output plots are written next to the verified recording:
 `verify_trajectories.png`, `verify_jitter_rms.png`, `verify_jitter_vs_depth.png`,

@@ -22,7 +22,7 @@ ANNOT_FILES = {
 IMG_BASE_URL = "http://images.cocodataset.org"
 
 ROOT = Path(__file__).parent
-DATA_DIR = ROOT / "data"
+DATA_DIR = ROOT.parent / "data" / "trunkpose" / "data"
 IMG_DIR = DATA_DIR / "images"
 PLOT_DIR = ROOT / "plots"
 

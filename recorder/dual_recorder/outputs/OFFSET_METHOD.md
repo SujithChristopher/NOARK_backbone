@@ -224,8 +224,8 @@ in, the worst case simply *is* the offset.
 ## Reproducing
 
 ```bash
-uv run python dual_recorder/outputs/capture_flicker.py     # 10 s, free-running
-uv run python dual_recorder/outputs/plot_delay.py          # both figures
-uv run python dual_recorder/outputs/capture_flicker.py --duration 60
-uv run python dual_recorder/outputs/plot_delay.py --duration 60   # skew resolves
+uv run python recorder/dual_recorder/outputs/capture_flicker.py     # 10 s, free-running
+uv run python recorder/dual_recorder/outputs/plot_delay.py          # both figures
+uv run python recorder/dual_recorder/outputs/capture_flicker.py --duration 60
+uv run python recorder/dual_recorder/outputs/plot_delay.py --duration 60   # skew resolves
 ```

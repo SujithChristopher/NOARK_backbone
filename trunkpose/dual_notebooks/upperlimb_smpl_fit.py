@@ -20,7 +20,7 @@ SMPL model file (register at https://smpl.is.tue.mpg.de):
     Default SMPL_MODEL_DIR below = PROJECT_ROOT/data/body_models
 
 Run:
-    python notebooks/calibration/dual_notebooks/upperlimb_smpl_fit.py
+    python trunkpose/calibration/dual_notebooks/upperlimb_smpl_fit.py
 """
 
 import os

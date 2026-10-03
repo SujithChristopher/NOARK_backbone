@@ -171,26 +171,20 @@ recordings_160fov
 cache
 dual_data1
 dual_data2
-notebooks/calibration/dual_notebooks/upperlimb_3d.mp4
-notebooks/calibration/dual_notebooks/upperlimb_combined.mp4
+trunkpose/calibration/dual_notebooks/upperlimb_3d.mp4
+trunkpose/calibration/dual_notebooks/upperlimb_combined.mp4
 /smpl/
 /smplx/
 /trunkpose/runs/
-/trunkpose/dataset/
 /trunkpose/plots/
-/runs/
 yolo26n.pt
 yolov8n-pose.pt
 trunkpose/dual_notebooks/selfie_segmenter.tflite
 trunkpose/dual_notebooks/pose_landmarker_full.task
-trunkpose/dataset_seg_v1/
-trunkpose/dataset_seg/
-trunkpose/data_1_5k
-trunkpose/dataset_calib
-dual_recorder/outputs/flicker_50hz_timestamps.npz
-dual_recorder/outputs/flicker_50hz.mp4
-dual_recorder/outputs/flicker_compensated_timestamps.npz
-dual_recorder/outputs/flicker_compensated.mp4
+recorder/dual_recorder/outputs/flicker_50hz_timestamps.npz
+recorder/dual_recorder/outputs/flicker_50hz.mp4
+recorder/dual_recorder/outputs/flicker_compensated_timestamps.npz
+recorder/dual_recorder/outputs/flicker_compensated.mp4
 
 # graphify: generated graph, dated snapshots and machine-local caches
 # (.graphify_root / .graphify_python hold absolute paths to one workstation).

@@ -10,16 +10,21 @@ This is a Raspberry Pi Python project for camera calibration and computer vision
 
 ```
 NOARK_backbone/
-├── GameStream/              # Real-time ArUco tracking applications (stream_*.py)
-├── recorder/                # Data capture with GPIO sync (15+ variants)
-├── notebooks/               # Jupyter notebooks + support libraries (ar_support.py, pd_support.py)
-├── calibration_programs/    # Camera calibration tools
-├── calibration_toml/        # TOML configuration files (current/ and old/)
-├── helper_programs/         # Testing utilities (GPIO, distance, integrity checks)
-├── example_dataset/         # Sample data for testing without RPi
-├── data/                    # Local recordings (gitignored)
-└── UDP_PROTOCOL.md          # Detailed UDP communication specification
+├── trunkpose/               # Trunk compensation, model training, and analysis
+│   ├── calibration/         # Camera calibration and accuracy notebooks, tools, configs
+│   ├── dual_notebooks/      # Trunk compensation analysis
+│   └── runs/                # Trunk model runs and weights
+├── jitter_model/            # Jitter model and accuracy analysis
+├── recorder/                # Recording programs; dual_recorder/ is grouped inside
+├── data/                    # Existing recordings plus data/trunkpose training datasets
+├── notebooks/               # General notebooks and support utilities
+├── support/                 # Shared Python support modules
+├── helper_programs/         # Hardware and integrity utilities
+├── docs/                    # Project documentation
+└── external/                # Vendored external projects
 ```
+
+Calibration capture scripts remain in `recorder/`. Trunkpose training datasets and raw source images live under `data/trunkpose/`; training outputs and weights live under `trunkpose/runs/`.
 
 ## Key Commands
 
@@ -34,10 +39,10 @@ ruff format --extend-include="*.ipynb"  # Format code
 #### Production Tracking (Recommended)
 ```bash
 # Main production tracking system with state machine and UDP control
-python GameStream/stream_optimize_v2.py --calib calibration_toml/current/settings.toml --udp
+python GameStream/stream_optimize_v2.py --calib trunkpose/calibration/configs/current/settings.toml --udp
 
 # Desktop testing with webcam
-python GameStream/webcamera3.py --calib calibration_toml/current/settings_webcam.toml --udp
+python GameStream/webcamera3.py --calib trunkpose/calibration/configs/current/settings_webcam.toml --udp
 ```
 
 #### Other Stream Variants
@@ -87,8 +92,8 @@ python helper_programs/file_integrity.py
 
 The project uses TOML files for camera calibration and settings:
 
-- **Current calibrations**: `calibration_toml/current/` - Active production configurations
-- **Archived calibrations**: `calibration_toml/old/` - Previous calibration attempts
+- **Current calibrations**: `trunkpose/calibration/configs/current/` - Active production configurations
+- **Archived calibrations**: `trunkpose/calibration/configs/old/` - Previous calibration attempts
 - **Settings files**: `settings.toml` (RPi camera), `settings_webcam.toml` (USB webcam)
 
 ### TOML Structure
@@ -117,7 +122,7 @@ port = 8000                 # Default UDP port for Godot communication
 **Loading calibration in code:**
 ```python
 import toml
-calib_data = toml.load("calibration_toml/current/settings.toml")
+calib_data = toml.load("trunkpose/calibration/configs/current/settings.toml")
 camera_matrix = np.array(calib_data["calibration"]["camera_matrix"])
 dist_coeffs = np.array(calib_data["calibration"]["dist_coeffs"])
 ```
@@ -144,7 +149,7 @@ dist_coeffs = np.array(calib_data["calibration"]["dist_coeffs"])
   - `ar_support.py` - Rotation matrix calculations (`calculate_rotmat`, `calculate_rotmat_from_xyo`)
   - `pd_support.py` - Pandas data processing utilities
   - `calibration/` - 20+ calibration workflow notebooks
-- **calibration_programs/** - Calibration tools (`calibration_manager.py`, `simplified_fisheye_calibration.py`)
+- **trunkpose/calibration/programs/** - Calibration tools (`calibration_manager.py`, `simplified_fisheye_calibration.py`)
 - **helper_programs/** - Testing utilities (GPIO, distance, file integrity)
 
 ### UDP State Machine (stream_optimize_v2.py)
@@ -191,7 +196,7 @@ See [UDP_PROTOCOL.md](UDP_PROTOCOL.md) for complete specification.
 
 **Calibration configurations** (checked into git):
 ```
-./calibration_toml/
+./trunkpose/calibration/configs/
 ├── current/                         # Active production configs
 │   ├── settings.toml               # RPi camera calibration
 │   └── settings_webcam.toml        # USB webcam calibration
@@ -209,21 +214,21 @@ See [UDP_PROTOCOL.md](UDP_PROTOCOL.md) for complete specification.
    - Captures chessboard pattern frames → stored as msgpack binary data in `./data/calibration/`
 
 2. **Process calibration** using notebooks:
-   - Open notebooks in `notebooks/calibration/camera_calibration_*.ipynb`
+   - Open notebooks in `trunkpose/calibration/camera_calibration_*.ipynb`
    - Detects chessboard corners with `cv2.findChessboardCorners()`
    - Runs `cv2.fisheye.calibrate()` or standard calibration
    - Outputs: camera_matrix (3×3), dist_coeffs (k1-k5)
 
 3. **Export to TOML**:
-   - Save calibration to `calibration_toml/current/`
+   - Save calibration to `trunkpose/calibration/configs/current/`
    - Different configurations for various FOV settings (120fov, 160fov)
 
 4. **Use in stream applications**:
    ```bash
-   python GameStream/stream_optimize_v2.py --calib calibration_toml/current/settings.toml
+   python GameStream/stream_optimize_v2.py --calib trunkpose/calibration/configs/current/settings.toml
    ```
 
-**Alternative**: Use `calibration_programs/simplified_fisheye_calibration.py` for automated fisheye calibration
+**Alternative**: Use `trunkpose/calibration/programs/simplified_fisheye_calibration.py` for automated fisheye calibration
 
 ## Marker Configuration and Offsets
 
@@ -263,7 +268,7 @@ ls example_dataset/calibration/
 ls example_dataset/recordings/
 
 # Load and process in Jupyter notebooks
-# See notebooks in notebooks/calibration/ and notebooks/analysis_*.ipynb
+# See notebooks in trunkpose/calibration/ and notebooks/analysis_*.ipynb
 ```
 
 ## Dependencies

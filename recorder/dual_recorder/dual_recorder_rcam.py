@@ -47,7 +47,7 @@ rcam/ov9281/scripts/deploy_efi_dtb.sh, and the kernel-install hook at
 /etc/kernel/install.d/99-zz-ov9281-overlay.install that re-applies it.
 
 Usage:
-    uv run python dual_recorder/dual_recorder_rcam.py -f recordings -n test -c True
+    uv run python recorder/dual_recorder/dual_recorder_rcam.py -f recordings -n test -c True
     # then 's' to start recording, 'q' to stop and exit
 """
 

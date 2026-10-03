@@ -20,7 +20,7 @@ They are separate figures on purpose. The offset here is ~14 ms against a ~0.1 m
 residual, so putting all three on one axis would flatten both corrected series
 onto the zero line and show nothing.
 
-    uv run python dual_recorder/outputs/plot_delay.py
+    uv run python recorder/dual_recorder/outputs/plot_delay.py
 """
 
 from __future__ import annotations
