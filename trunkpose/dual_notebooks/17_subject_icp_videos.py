@@ -73,7 +73,6 @@ def main():
         env = {**os.environ,
                "TRUNK_RECORDING_NAME": s,
                "TRUNK_RECORDING_DIR": str(rec_dir),
-               "TRUNK_GEOM_CACHE": str(rec_dir / "geom_cache.pkl"),
                "TRUNK_ANGLE_PLOT_MODE": a.mode,
                "TRUNK_WORKERS": str(a.workers)}
         if a.frames:

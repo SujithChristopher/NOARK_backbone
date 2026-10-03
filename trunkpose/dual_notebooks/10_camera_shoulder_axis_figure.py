@@ -13,7 +13,7 @@
 #   uv run python trunkpose/dual_notebooks/10_camera_shoulder_axis_figure.py
 #
 # Env:
-#   TRUNK_GEOM_CACHE   path to geom_cache.pkl (default: RECORDING_DIR/geom_cache.pkl)
+#   TRUNK_GEOM_CACHE   path to geom_cache.pkl (default: 06.default_geom_cache())
 #   TRUNK_FIG_FRAME    force a specific frame index (default: middle of valid frames)
 
 import importlib
@@ -41,7 +41,7 @@ if "ipykernel" not in sys.modules:
 OUT_PNG = m6.RECORDING_DIR / "camera_shoulder_axis_figure.png"
 
 # %% Load geometry cache + basis/stereo calib
-cache = Path(os.environ.get("TRUNK_GEOM_CACHE", str(m6.RECORDING_DIR / "geom_cache.pkl")))
+cache = Path(os.environ.get("TRUNK_GEOM_CACHE", str(m6.default_geom_cache())))
 with open(cache, "rb") as f:
     frames = pickle.load(f)
 print(f"Loaded {len(frames)} cached frames from {cache}")

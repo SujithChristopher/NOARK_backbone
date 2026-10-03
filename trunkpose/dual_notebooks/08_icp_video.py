@@ -47,6 +47,8 @@ from tqdm.auto import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 m6 = importlib.import_module("06_trunk_axis")
 m7 = importlib.import_module("07_icp_trunk")
+# 17 leaves the cache to us so it follows the shell method (06.default_geom_cache)
+os.environ.setdefault("TRUNK_GEOM_CACHE", str(m6.default_geom_cache()))
 
 ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "icp_only").lower()
 if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):

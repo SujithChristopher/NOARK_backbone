@@ -81,7 +81,7 @@ m7 = importlib.import_module("07_icp_trunk")
 
 if not os.environ.get("TRUNK_GEOM_CACHE"):
     for cand in (m6.RECORDING_DIR / "geom_cache_v2.pkl",
-                 m6.RECORDING_DIR / "geom_cache.pkl"):
+                 m6.default_geom_cache()):   # follows the shell method
         if cand.exists():
             os.environ["TRUNK_GEOM_CACHE"] = str(cand)
             break

@@ -20,22 +20,25 @@ dependencies = [
     "tqdm>=4.67.3",
     # No manylinux aarch64 wheels on PyPI; only the analysis scripts in
     # trunkpose/ use it, and those run on the workstation.
-    "mediapipe>=0.10.35; platform_machine == 'x86_64'",
-    # Training / dataset / 3D-rendering stack: x86_64 workstations only.
+    "mediapipe>=0.10.35; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
+    # Training / dataset / 3D-rendering stack: x86_64 workstations only
+    # (Linux reports x86_64, Windows AMD64). pyrender/smplx/trimesh/maturin/
+    # fiftyone stay Linux-only: fiftyone pulls opencv-python-headless, which
+    # overwrites the cv2 of opencv-contrib-python on the Windows workstation.
     # The aarch64 boards (Radxa Q6A, RPi) only run capture + tracking, and
     # several of these have no aarch64 wheels.
-    "torch>=2.11.0; platform_machine == 'x86_64'",
-    "torchvision>=0.26.0; platform_machine == 'x86_64'",
+    "torch>=2.11.0; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
+    "torchvision>=0.26.0; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     "pyrender>=0.1.45; platform_machine == 'x86_64'",
     "smplx>=0.1.28; platform_machine == 'x86_64'",
     "trimesh>=4.12.2; platform_machine == 'x86_64'",
     "maturin>=1.14.1; platform_machine == 'x86_64'",
     "fiftyone>=1.19.0; platform_machine == 'x86_64'",
-    "requests>=2.34.2; platform_machine == 'x86_64'",
-    "pycocotools>=2.0.11; platform_machine == 'x86_64'",
+    "requests>=2.34.2; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
+    "pycocotools>=2.0.11; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     "gpiod>=2.5.0 ; sys_platform == 'linux'",
     "rapidtag>=0.1.4",
-    "ultralytics>=8.4.102; platform_machine == 'x86_64'",
+    "ultralytics>=8.4.172; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     "mediapipe>=0.10.35",
 ]
 

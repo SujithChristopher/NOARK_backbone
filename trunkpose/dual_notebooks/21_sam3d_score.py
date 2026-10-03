@@ -18,7 +18,7 @@
 #   uv run python trunkpose/dual_notebooks/21_sam3d_score.py --subject gokul --game
 #   uv run python trunkpose/dual_notebooks/21_sam3d_score.py --subject gokul_woc
 #
-# Needs <recording>/sam3d/{meta,sam3d_out}.npz (19, 20) and icp_vs_mocap.npz (15).
+# Needs <recording>/sam3d/{meta,sam3d_out}.npz (19, 20) and icp_vs_mocap<sfx>.npz (15).
 # Writes <recording>/sam3d/sam3d_vs_mocap.npz.
 
 import argparse
@@ -68,10 +68,10 @@ def main():
     rec, csv, _ = m15.resolve_recording(session, a.subject, a.game)
     stride = a.stride or (3 if a.game else 1)
     os.environ.update(TRUNK_RECORDING_NAME=a.subject, TRUNK_RECORDING_DIR=str(rec),
-                      TRUNK_MOCAP_CSV=str(csv), TRUNK_FRAME_STRIDE=str(stride),
-                      TRUNK_GEOM_CACHE=str(rec / "geom_cache.pkl"))
+                      TRUNK_MOCAP_CSV=str(csv), TRUNK_FRAME_STRIDE=str(stride))
     m6 = importlib.import_module("06_trunk_axis")
     m7 = importlib.import_module("07_icp_trunk")
+    os.environ.setdefault("TRUNK_GEOM_CACHE", str(m6.default_geom_cache()))
     if a.game:
         m6.NEUTRAL_START = int(np.argmax(m6.load_sync_flags(m6.CAM0_TIMES) == 1))
 
@@ -115,7 +115,7 @@ def main():
     val = {ax: np.isfinite(cmp_[k]) & in_win for ax, k in zip(AX, KEYS)}
     moc = {ax: cmp_[k] for ax, k in zip(AX, MKEYS)}
 
-    icp = np.load(rec / "icp_vs_mocap.npz", allow_pickle=True)
+    icp = np.load(rec / f"icp_vs_mocap{m6.RESULT_SUFFIX}.npz", allow_pickle=True)
     icp_ok = {ax: icp["valid_" + ax] & np.isfinite(icp["icp_" + ax]) & in_win
               for ax in AX}
     npts = np.array([0 if fr["cloud"] is None else len(fr["cloud"]) for fr in frames])

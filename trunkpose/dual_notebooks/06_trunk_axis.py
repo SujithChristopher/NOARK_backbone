@@ -196,8 +196,32 @@ def _geom_cfg(key, default, cast=float):
 
 MASK_ERODE_FRAC = _geom_cfg("mask_erode_frac", 0.06)  # erode mask by this * sqrt(area) px
 ARM_EXCLUDE_DILATE_PX = _geom_cfg("arm_exclude_dilate_px", 9, int)
-FRONT_PCTL = _geom_cfg("front_pctl", 5.0)   # frontmost-depth percentile for the shell
-SHELL_M = _geom_cfg("shell_m", 0.10)        # keep points within this depth of the cap
+# Which depth layer of the torso mask becomes the shell.
+#   "mode"  (default) the dominant depth layer: histogram peak +/- MODE_HALF_M.
+#   "front" the pre-Oct-2026 rule: within SHELL_M behind the FRONT_PCTL-th percentile.
+# "front" anchors on whatever is nearest the camera, so in the NOARK game takes the cube
+# or a hand leaking into the torso mask became "the front" and the chest was cut away
+# (failed frames kept 49% of their torso points, solved ones 97%). On the frames both
+# solve, "mode" is as accurate or better in all 10 sep23 takes and game-take ICP
+# coverage rises 16-62% -> 48-72% (23_shell_icp.py, mode0 variant). "front" is kept so
+# the caches and results built with it stay reproducible.
+SHELL_METHOD = _geom_cfg("shell", "mode", str).lower()
+if SHELL_METHOD not in ("mode", "front"):
+    raise SystemExit(f"[geometry] shell must be 'mode' or 'front', not {SHELL_METHOD!r}")
+FRONT_PCTL = _geom_cfg("front_pctl", 5.0)   # front: frontmost-depth percentile for the shell
+SHELL_M = _geom_cfg("shell_m", 0.10)        # front: keep points within this depth of the cap
+MODE_BIN_M = _geom_cfg("mode_bin_m", 0.01)  # mode: depth histogram bin
+MODE_HALF_M = _geom_cfg("mode_half_m", 0.10)  # mode: keep points within this of the peak
+# Files built with "front" keep their original names; any other method gets a suffix,
+# so the two never overwrite each other (21 reads 15's icp_vs_mocap.npz as its ICP
+# baseline, and a silent swap would change those numbers).
+RESULT_SUFFIX = "" if SHELL_METHOD == "front" else f"_{SHELL_METHOD}"
+
+
+def default_geom_cache():
+    """Per-recording geometry cache for this shell method (callers may override it
+    with TRUNK_GEOM_CACHE)."""
+    return RECORDING_DIR / f"geom_cache{RESULT_SUFFIX}.pkl"
 MAX_POSES = _geom_cfg("max_poses", 3, int)  # people MediaPipe may detect per frame
 # Where YOLO runs: "auto" takes the GPU when torch reports one. Each geometry worker is
 # a separate process and so holds its own CUDA context (~0.5 GB), so keep TRUNK_WORKERS
@@ -312,6 +336,9 @@ def geom_cache_key():
         # only added when it is in play, so the full-rate caches written before the
         # stride existed still match their key files.
         key["stride"] = FRAME_STRIDE
+    if SHELL_METHOD != "front":
+        # same trick: "front" caches written before the method existed keep matching
+        key["shell_method"] = [SHELL_METHOD, MODE_BIN_M, MODE_HALF_M]
     return key
 
 
@@ -508,19 +535,32 @@ def stereo_step(gray0, gray1, mask0, sgbm, maps0, maps1, R1, Q):
     depth_full[depth_ok] = 1 + (253 * norm[depth_ok]).astype(np.uint8)
     depth_u8 = cv2.resize(depth_full, (DEPTH_W, DEPTH_H), interpolation=cv2.INTER_NEAREST)
 
-    # front-shell torso: erode the mask to drop the curved flanks, then keep only the
-    # frontmost depth layer (convex torso -> front cap ~ the tangent plane we want).
+    # front-shell torso: erode the mask to drop the curved flanks, then keep one depth
+    # layer of it (convex torso -> front cap ~ the tangent plane we want).
     mrect = cv2.remap(mask0, *maps0, cv2.INTER_NEAREST)
     area = int((mrect > 0).sum())
     if area > 0:
         ksz = max(3, int(round(np.sqrt(area) * MASK_ERODE_FRAC))) | 1
         mrect = cv2.erode(mrect, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksz, ksz)))
     torso_ok = valid & (mrect > 0) & (z > DEPTH_MIN_M) & (z < DEPTH_MAX_M)
-    tp = pts[torso_ok]
-    if len(tp):
-        zc = np.percentile(tp[:, 2], FRONT_PCTL)
-        tp = tp[tp[:, 2] <= zc + SHELL_M]
-    return tp @ R1, depth_u8
+    return shell_points(pts[torso_ok]) @ R1, depth_u8
+
+
+def shell_points(tp):
+    """The torso depth layer kept as the shell (see SHELL_METHOD). Per frame and
+    stateless, so the chunk-parallel geometry pass can run it."""
+    if not len(tp):
+        return tp
+    z = tp[:, 2]
+    if SHELL_METHOD == "front":
+        return tp[z <= np.percentile(z, FRONT_PCTL) + SHELL_M]
+    # >= 3 bins: np.convolve(mode="same") returns max(len(h), 3) values
+    edges = np.arange(z.min(), max(z.max() + 2 * MODE_BIN_M, z.min() + 3.5 * MODE_BIN_M),
+                      MODE_BIN_M)
+    h, _ = np.histogram(z, edges)
+    h = np.convolve(h, np.ones(3) / 3, mode="same")
+    zp = (edges[:-1] + edges[1:])[int(np.argmax(h))] / 2
+    return tp[np.abs(z - zp) <= MODE_HALF_M]
 
 
 def voxel_downsample(pts, voxel=CLOUD_VOXEL_M, max_pts=CLOUD_MAX_PTS, rng=None):

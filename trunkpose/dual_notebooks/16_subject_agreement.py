@@ -50,7 +50,7 @@ MAX_SCATTER = 1500      # points drawn per subject per axis (all points are stil
 AXIS_COLORS = ("#0072B2", "#009E73", "#D55E00")
 
 
-def load_subjects(session_dir, subjects, condition="wc", game=False):
+def load_subjects(session_dir, subjects, condition="wc", game=False, result=""):
     """(name, npz) per subject that actually has results, in the given order.
 
     The game takes keep their npz beside their frames, five levels down in the
@@ -69,10 +69,10 @@ def load_subjects(session_dir, subjects, condition="wc", game=False):
             if not subjects:
                 subjects = sorted(
                     p.parent.name
-                    for p in session_dir.glob(f"*_{condition}/icp_vs_mocap.npz"))
+                    for p in session_dir.glob(f"*_{condition}/icp_vs_mocap{result}.npz"))
     out = []
     for s in subjects:
-        f = m15.resolve_recording(session_dir, s, game)[0] / "icp_vs_mocap.npz"
+        f = m15.resolve_recording(session_dir, s, game)[0] / f"icp_vs_mocap{result}.npz"
         if not f.exists():
             print(f"skip {s}: no {f.name} (run 15_subject_icp.py"
                   + (" --game" if game else "") + f" --subject {s})")
@@ -210,18 +210,23 @@ def main():
                     help="subjects to drop (e.g. a take whose mocap frame is unusable)")
     ap.add_argument("--game", action="store_true",
                     help="pool the NOARK game takes under <session>/noark_game")
+    ap.add_argument("--shell", default="mode", choices=("mode", "front"),
+                    help="which 15 results to pool: the default 'mode' shell "
+                         "(icp_vs_mocap_mode.npz) or the original 'front' one")
     a = ap.parse_args()
+    # mirrors 06.RESULT_SUFFIX; outputs carry it too, so the two never overwrite
+    result = "" if a.shell == "front" else f"_{a.shell}"
     session_dir = Path(a.session).resolve()
     out_dir = (session_dir / "noark_game" / "output") if a.game else (session_dir / "output")
     out_dir.mkdir(parents=True, exist_ok=True)
     suffix = a.suffix if a.suffix is not None else (
-        "_game" if a.game else "" if a.condition == "wc" else f"_{a.condition}")
+        "_game" if a.game else "" if a.condition == "wc" else f"_{a.condition}") + result
     cond = "game" if a.game else a.condition
 
     m12 = importlib.import_module("12_poster_figures")
     m12.poster_style()
 
-    data = load_subjects(session_dir, a.subjects, a.condition, a.game)
+    data = load_subjects(session_dir, a.subjects, a.condition, a.game, result)
     dropped = [s_ for s_, _ in data if s_ in a.exclude]
     if dropped:
         print(f"excluded: {', '.join(dropped)}")
@@ -308,10 +313,10 @@ def main():
                    f"({session_dir.name}, {cond})")
     if a.vs:
         error_boxplots(data, anon,
-                       out_dir / f"error_distribution_{a.condition}_vs_{a.vs}{ex_tag}.png",
+                       out_dir / f"error_distribution_{a.condition}_vs_{a.vs}{ex_tag}{result}.png",
                        f"Trunk-angle error distribution - {a.condition} vs {a.vs} "
                        f"({session_dir.name})",
-                       other=load_subjects(session_dir, None, a.vs, a.game),
+                       other=load_subjects(session_dir, None, a.vs, a.game, result),
                        cond_names=(a.condition, a.vs))
 
     # ---- figure: scatter (top) + Bland-Altman (bottom), one column per axis ----

@@ -43,7 +43,7 @@ OUT_PNG = m6.RECORDING_DIR / "angle_check.png"
 if not os.environ.get("TRUNK_GEOM_CACHE"):
     for candidate in (
         m6.RECORDING_DIR / "geom_cache_v2.pkl",
-        m6.RECORDING_DIR / "geom_cache.pkl",
+        m6.default_geom_cache(),   # follows the shell method
     ):
         if candidate.exists():
             os.environ["TRUNK_GEOM_CACHE"] = str(candidate)

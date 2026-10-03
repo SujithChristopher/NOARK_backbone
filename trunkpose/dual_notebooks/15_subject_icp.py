@@ -5,9 +5,12 @@
 # recording) -> ICP to the neutral cloud -> GPIO sync -> teleport-split mocap ->
 # residual frame rotation S -> per-axis agreement -- and writes:
 #
-#   <subject>/geom_cache.pkl            cached geometry pass (clouds + shoulders)
-#   <subject>/icp_vs_mocap.npz          the two angle series + agreement stats
-#   <output>/<subject>_icp_vs_mocap.png 3-row ICP vs mocap trace
+#   <subject>/geom_cache<sfx>.pkl            cached geometry pass (clouds + shoulders)
+#   <subject>/icp_vs_mocap<sfx>.npz          the two angle series + agreement stats
+#   <output>/<subject>_icp_vs_mocap<sfx>.png 3-row ICP vs mocap trace
+#
+# <sfx> is 06.RESULT_SUFFIX: empty for the original "front" shell, "_mode" for the
+# default "mode" shell, so results of the two never overwrite each other.
 #
 # 16_subject_agreement.py then pools the npz files into the group figure.
 #
@@ -110,7 +113,6 @@ def run_subject(session_dir, subject, game=False, stride=None):
     os.environ["TRUNK_MOCAP_CSV"] = str(mocap_csv)
     if stride:
         os.environ["TRUNK_FRAME_STRIDE"] = str(stride)
-    os.environ.setdefault("TRUNK_GEOM_CACHE", str(rec_dir / "geom_cache.pkl"))
 
     import importlib
 
@@ -124,11 +126,12 @@ def run_subject(session_dir, subject, game=False, stride=None):
     m6 = importlib.import_module("06_trunk_axis")
     m7 = importlib.import_module("07_icp_trunk")
     m12 = importlib.import_module("12_poster_figures")
+    os.environ.setdefault("TRUNK_GEOM_CACHE", str(m6.default_geom_cache()))
 
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[{subject}] session={m6.SESSION_TOML} cam={m6.CAM_SIZE} "
           f"swap={m6.SWAP_CAMS} rot180={m6.ROT180} seg={m6.SEG_WEIGHTS.parent.parent.name} "
-          f"stride={m6.FRAME_STRIDE} chunks={len(m6.CAM0_FRAMES)}")
+          f"stride={m6.FRAME_STRIDE} chunks={len(m6.CAM0_FRAMES)} shell={m6.SHELL_METHOD}")
 
     if game:
         # The camera rolls for ~40-70 s before Motive starts, so the opening frames are
@@ -196,12 +199,15 @@ def run_subject(session_dir, subject, game=False, stride=None):
               f"{s['bias'] + 1.96 * s['sd']:+.1f}]d  ROM {s['rom_icp']:.0f}/"
               f"{s['rom_moc']:.0f}d  slope={s['slope']:.2f}  n={s['n']}")
 
-    npz = rec_dir / "icp_vs_mocap.npz"
+    npz = rec_dir / f"icp_vs_mocap{m6.RESULT_SUFFIX}.npz"
     np.savez_compressed(
         npz, subject=subject, t_s=t_s, in_win=in_win,
         **{f"icp_{nm}": series_icp[k] for k, nm in enumerate(names)},
         **{f"moc_{nm}": series_moc[k] for k, nm in enumerate(names)},
         **{f"valid_{nm}": valid_icp[k] for k, nm in enumerate(names)},
+        # per-frame confidence: torso shell points ICP registered. Across the sep23
+        # takes >=800 pts gave median 0.1-2.4 deg / p95 <=5.5 deg; <600 is unreliable.
+        shell_pts=icp["npts_f"],
         n_frames=n, n_icp_valid=int(np.isfinite(icp["flex"]).sum()),
         n_gated=int(icp["gated"].sum()), S_diff_deg=S_diff,
         S_deg=float(np.degrees(np.linalg.norm(
@@ -230,7 +236,7 @@ def run_subject(session_dir, subject, game=False, stride=None):
     axes[-1].set_xlim(lo, hi)
     fig.suptitle(f"Trunk angles, ICP rigid registration vs mocap - {subject}", y=0.98)
     fig.tight_layout()
-    png = out_dir / f"{subject}_icp_vs_mocap.png"
+    png = out_dir / f"{subject}_icp_vs_mocap{m6.RESULT_SUFFIX}.png"
     fig.savefig(png)
     print(f"[{subject}] -> {png}")
     return 0

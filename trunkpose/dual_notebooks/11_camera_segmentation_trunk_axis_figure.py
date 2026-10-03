@@ -163,7 +163,7 @@ def angle_text(value):
 
 def main():
     cache_path = Path(
-        os.environ.get("TRUNK_GEOM_CACHE", str(m6.RECORDING_DIR / "geom_cache.pkl"))
+        os.environ.get("TRUNK_GEOM_CACHE", str(m6.default_geom_cache()))
     )
     output_path = Path(
         os.environ.get(
