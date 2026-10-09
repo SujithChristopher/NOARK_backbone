@@ -191,3 +191,4 @@ recorder/dual_recorder/outputs/flicker_compensated.mp4
 # Only the human-readable query notes under memory/ are tracked.
 graphify-out/*
 !graphify-out/memory/
+diwakar_validation/out/
