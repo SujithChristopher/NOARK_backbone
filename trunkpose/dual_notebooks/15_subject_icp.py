@@ -51,6 +51,19 @@ def resolve_recording(session_dir, subject, game):
     A game take lives in the recorder's own tree and shares the session's mocap
     folder, so the CSV has to be named separately -- 06 reads it from TRUNK_MOCAP_CSV.
     """
+    # oct9/oct10 layout: std_movement/<subject>/ and game/<subject>/, one shared mocap/
+    if (session_dir / "std_movement").is_dir() or (session_dir / "game").is_dir():
+        if not game:
+            rec = session_dir / "std_movement" / subject
+            return rec, rec / f"{subject}.csv", session_dir / "std_movement" / "output"
+        vids = sorted((session_dir / "game" / subject).glob("Session-*/Video/rec_*"))
+        if not vids:
+            raise SystemExit(f"{subject}: no rec_* folder under {session_dir / 'game' / subject}")
+        # a false start leaves a short extra rec_* (s3_ram oct9): take the one with most chunks
+        rec = max(vids, key=lambda v: len(list(v.glob("cam0_frame_*.msgpack"))))
+        if len(vids) > 1:
+            print(f"[{subject}] {len(vids)} rec_* folders, using {rec.name} (most chunks)")
+        return rec, session_dir / "mocap" / f"{subject}_game.csv", session_dir / "game" / "output"
     if not game:
         rec = session_dir / subject
         return rec, rec / f"{subject}.csv", session_dir / "output"
@@ -133,17 +146,17 @@ def run_subject(session_dir, subject, game=False, stride=None):
           f"swap={m6.SWAP_CAMS} rot180={m6.ROT180} seg={m6.SEG_WEIGHTS.parent.parent.name} "
           f"stride={m6.FRAME_STRIDE} chunks={len(m6.CAM0_FRAMES)} shell={m6.SHELL_METHOD}")
 
-    if game:
-        # The camera rolls for ~40-70 s before Motive starts, so the opening frames are
-        # setup, not a neutral pose. Anchor the neutral window on the GPIO rise, which
-        # IS mocap t=0 -- the same instant 18_game_mocap_rom.py zeroes the mocap on, so
-        # the two sides are zeroed together and the angles are comparable to it.
-        sync = m6.load_sync_flags(m6.CAM0_TIMES)
-        if not (sync == 1).any():
-            raise SystemExit(f"{subject}: no GPIO pulse in the camera timestamps")
-        m6.NEUTRAL_START = int(np.argmax(sync == 1))
-        print(f"[{subject}] neutral window starts at frame {m6.NEUTRAL_START} "
-              f"(GPIO rise, {m6.NEUTRAL_START * m6.FRAME_STRIDE / 30:.0f}s into the take)")
+    # The camera rolls before Motive starts (~1-3 s on a protocol take, ~40-70 s on a
+    # game take), so the opening frames are setup, not a neutral pose. The subject is
+    # told to sit in their correct posture when mocap starts, so anchor the neutral
+    # window on the GPIO rise, which IS mocap t=0 -- the same instant 07 zeroes both
+    # sides on and 18_game_mocap_rom.py zeroes the game mocap on.
+    sync = m6.load_sync_flags(m6.CAM0_TIMES)
+    if not (sync == 1).any():
+        raise SystemExit(f"{subject}: no GPIO pulse in the camera timestamps")
+    m6.NEUTRAL_START = int(np.argmax(sync == 1))
+    print(f"[{subject}] neutral window starts at frame {m6.NEUTRAL_START} "
+          f"(GPIO rise, {m6.NEUTRAL_START * m6.FRAME_STRIDE / 30:.1f}s into the take)")
 
     inp = m7.load_inputs()
     frames, n, ts0 = inp["frames"], inp["n"], inp["ts0"]

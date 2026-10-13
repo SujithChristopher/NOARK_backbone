@@ -191,8 +191,8 @@ def run_icp_pass(frames, R_neu, n):
     transforms A (kept for rendering), the neutral-zeroed angle series and the pooled
     neutral cloud."""
     # ---- neutral cloud from the N_NEUTRAL frames of the neutral window ----
-    # NEUTRAL_START is 0 for a protocol take, which opens with the subject neutral,
-    # and the GPIO rise for a game take, which rolls for a minute beforehand.
+    # 15_subject_icp sets NEUTRAL_START to the GPIO rise (mocap t=0, when the subject
+    # is told to sit in their correct posture); run standalone it stays 0.
     nz = slice(m6.NEUTRAL_START, m6.NEUTRAL_START + m6.N_NEUTRAL)
     neu = [fr["cloud"] for fr in frames[nz] if fr["cloud"] is not None]
     if not neu:

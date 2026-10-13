@@ -192,3 +192,4 @@ recorder/dual_recorder/outputs/flicker_compensated.mp4
 graphify-out/*
 !graphify-out/memory/
 diwakar_validation/out/
+trunkpose/dual_notebooks/outputs

@@ -102,6 +102,13 @@ def _session_path(key, cfg, default):
 # Sensor resolution of THIS recording. The stereo calibration may have been shot at a
 # different resolution; load_stereo rescales the intrinsics to match.
 CAM_SIZE = tuple(int(v) for v in _cam_cfg.get("size", (1280, 800)))
+# Optional software binning (TRUNK_DOWNSAMPLE=2): area-average the recorded frames by
+# this factor before anything else sees them, so a full-res take can be run exactly as
+# if the sensor had been binned (sep23 recorded 640x400). CAM_SIZE becomes the binned
+# size, so the calibration rescale, caches and keys all follow.
+DOWNSAMPLE = max(1, int(os.environ.get("TRUNK_DOWNSAMPLE", _cam_cfg.get("downsample", 1))))
+if DOWNSAMPLE > 1:
+    CAM_SIZE = (CAM_SIZE[0] // DOWNSAMPLE, CAM_SIZE[1] // DOWNSAMPLE)
 # The pair is recorded cam0/cam1, but the calibration's stereo T tells you which one is
 # physically on the left, and SGBM needs the left image first. When the rig is plugged
 # in the other way round (sep23: T_x > 0 => cam1 is left) set swap = true and the whole
@@ -216,6 +223,11 @@ MODE_HALF_M = _geom_cfg("mode_half_m", 0.10)  # mode: keep points within this of
 # so the two never overwrite each other (21 reads 15's icp_vs_mocap.npz as its ICP
 # baseline, and a silent swap would change those numbers).
 RESULT_SUFFIX = "" if SHELL_METHOD == "front" else f"_{SHELL_METHOD}"
+# Optional run tag (TRUNK_VARIANT=fs082_b9 ...): a depth-settings experiment writes its
+# own cache and results beside the defaults instead of over them.
+VARIANT = os.environ.get("TRUNK_VARIANT", "").strip()
+if VARIANT:
+    RESULT_SUFFIX += f"_{VARIANT}"
 
 
 def default_geom_cache():
@@ -252,7 +264,13 @@ QUAD_W, QUAD_H = 800, 600                # each of the 2x2 panels -> final 1600x
 RANSAC_ITERS = 200
 RANSAC_THRESH_M = 0.012
 FIT_MAX_PTS = 8000
-SGBM_MIN_DISP, SGBM_NUM_DISP, SGBM_BLOCK = 0, 160, 5
+SGBM_MIN_DISP = 0
+SGBM_NUM_DISP = _geom_cfg("sgbm_num_disp", 160, int)
+SGBM_BLOCK = _geom_cfg("sgbm_block", 5, int)
+# fisheye.stereoRectify fov_scale. 1.0 (balance=0) shrinks the rectified focal to ~0.82x
+# the source focal for these 160 deg lenses, i.e. it throws away resolution at the image
+# centre where the torso sits; ~0.82 keeps the centre 1:1 (24_rig_orientation_sim.py).
+RECT_FOV_SCALE = _geom_cfg("rect_fov_scale", 1.0)
 # Edge-preserving smoothing on raw disparity before reprojection (cuts SGBM
 # speckle/quantization noise without blurring across depth discontinuities).
 # cv2.ximgproc's WLS disparity filter would be the sharper tool here, but this
@@ -339,6 +357,8 @@ def geom_cache_key():
     if SHELL_METHOD != "front":
         # same trick: "front" caches written before the method existed keep matching
         key["shell_method"] = [SHELL_METHOD, MODE_BIN_M, MODE_HALF_M]
+    if RECT_FOV_SCALE != 1.0:
+        key["rect_fov_scale"] = RECT_FOV_SCALE
     return key
 
 
@@ -458,14 +478,22 @@ def _records(path):
     return itertools.islice(raw(), 0, None, FRAME_STRIDE)
 
 
+def _binned(frame):
+    if DOWNSAMPLE == 1:
+        return frame
+    return cv2.resize(frame, CAM_SIZE, interpolation=cv2.INTER_AREA)
+
+
 def iter_frame_pairs(path0, path1):
     # strided separately, then zipped: both streams have the same frame count, and
     # striding after the zip would need the pairs materialised.
-    yield from zip(_records(path0), _records(path1))
+    for f0, f1 in zip(_records(path0), _records(path1)):
+        yield _binned(f0), _binned(f1)
 
 
 def iter_frames(path0):
-    yield from _records(path0)
+    for f in _records(path0):
+        yield _binned(f)
 
 
 def load_frame_times(path):
@@ -489,7 +517,7 @@ def nearest_index(times, t):
 def build_rectification(K0, D0, K1, D1, R, T_mm, size):
     R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(
         K0, D0, K1, D1, size, R, T_mm,
-        flags=cv2.CALIB_ZERO_DISPARITY, balance=0.0, fov_scale=1.0)
+        flags=cv2.CALIB_ZERO_DISPARITY, balance=0.0, fov_scale=RECT_FOV_SCALE)
     m0 = cv2.fisheye.initUndistortRectifyMap(K0, D0, R1, P1, size, cv2.CV_16SC2)
     m1 = cv2.fisheye.initUndistortRectifyMap(K1, D1, R2, P2, size, cv2.CV_16SC2)
     return R1, Q, m0, m1
@@ -773,7 +801,15 @@ def load_trunk_rb(
 
     Marker indices describe the physical rigid-body mounting and are independent of
     the T-frame marker indices used to create ``charuco_basis.toml``.
+
+    Always returned in METRES. Motive writes the export's unit into the header
+    ("Length Units,Millimeters" in oct9, "Meters" before); SEG_JUMP_M and every other
+    distance threshold downstream assume metres.
     """
+    with open(path, encoding="utf-8-sig") as f:
+        head = f.readline().strip().split(",")
+    units = head[head.index("Length Units") + 1].lower() if "Length Units" in head else "meters"
+    scale = {"meters": 1.0, "centimeters": 0.01, "millimeters": 0.001}[units]
     raw = pd.read_csv(path, skiprows=2, header=None, dtype=str)
     types, names, poslab, xyz = raw.iloc[0], raw.iloc[1], raw.iloc[3], raw.iloc[4]
     data = raw.iloc[5:].reset_index(drop=True)
@@ -785,8 +821,8 @@ def load_trunk_rb(
                     and str(names[j]).lower() == f"{rb_name.lower()}:marker{marker}"
                     and str(poslab[j]) == "Position"):
                 cols[str(xyz[j]).strip().upper()] = j
-        return np.stack([pd.to_numeric(data[cols[a]], errors="coerce").to_numpy()
-                         for a in ("X", "Y", "Z")], axis=1)
+        return scale * np.stack([pd.to_numeric(data[cols[a]], errors="coerce").to_numpy()
+                                 for a in ("X", "Y", "Z")], axis=1)
 
     return vec(origin_marker), vec(x_marker), vec(z_marker)
 
