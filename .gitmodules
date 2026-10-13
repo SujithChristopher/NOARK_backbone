@@ -1,3 +1,6 @@
 [submodule "external/rapidtag"]
 	path = external/rapidtag
 	url = https://github.com/SujithChristopher/rapidtag.git
+[submodule "external/minisam3d"]
+	path = external/minisam3d
+	url = https://github.com/SujithChristopher/minisam3d.git
