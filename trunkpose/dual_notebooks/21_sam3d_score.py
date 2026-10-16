@@ -17,9 +17,11 @@
 #
 #   uv run python trunkpose/dual_notebooks/21_sam3d_score.py --subject gokul --game
 #   uv run python trunkpose/dual_notebooks/21_sam3d_score.py --subject gokul_woc
+#   ... --session data/trunk_take_oct/oct10_26 --subject s3_arjun_game_wtc --stride 6
 #
 # Needs <recording>/sam3d/{meta,sam3d_out}.npz (19, 20) and icp_vs_mocap<sfx>.npz (15).
-# Writes <recording>/sam3d/sam3d_vs_mocap.npz.
+# Writes <recording>/sam3d/sam3d_vs_mocap.npz -- with _<take> for a take-qualified game
+# name (15.game_take), since one export/inference covers every take of the recording.
 
 import argparse
 import importlib
@@ -68,12 +70,13 @@ def main():
     rec, csv, _ = m15.resolve_recording(session, a.subject, a.game)
     stride = a.stride or (3 if a.game else 1)
     os.environ.update(TRUNK_RECORDING_NAME=a.subject, TRUNK_RECORDING_DIR=str(rec),
-                      TRUNK_MOCAP_CSV=str(csv), TRUNK_FRAME_STRIDE=str(stride))
+                      TRUNK_MOCAP_CSV=str(csv), TRUNK_FRAME_STRIDE=str(stride),
+                      **m15.take_env(session, a.subject))
     m6 = importlib.import_module("06_trunk_axis")
     m7 = importlib.import_module("07_icp_trunk")
     os.environ.setdefault("TRUNK_GEOM_CACHE", str(m6.default_geom_cache()))
-    if a.game:
-        m6.NEUTRAL_START = int(np.argmax(m6.load_sync_flags(m6.CAM0_TIMES) == 1))
+    if a.game or m15.game_take(session, a.subject):
+        m6.NEUTRAL_START = m6.sync_rise(m6.load_sync_flags(m6.CAM0_TIMES))
 
     meta = np.load(rec / "sam3d" / "meta.npz")
     out = np.load(rec / "sam3d" / "sam3d_out.npz")
@@ -115,7 +118,11 @@ def main():
     val = {ax: np.isfinite(cmp_[k]) & in_win for ax, k in zip(AX, KEYS)}
     moc = {ax: cmp_[k] for ax, k in zip(AX, MKEYS)}
 
-    icp = np.load(rec / f"icp_vs_mocap{m6.RESULT_SUFFIX}.npz", allow_pickle=True)
+    icp = np.load(rec / f"icp_vs_mocap{m6.RESULT_SUFFIX}{m6.TAKE_SUFFIX}.npz",
+                  allow_pickle=True)
+    if len(icp["in_win"]) != n:
+        raise SystemExit(f"ICP result has {len(icp['in_win'])} frames, this run {n}: "
+                         f"run 15 at --stride {stride} too")
     icp_ok = {ax: icp["valid_" + ax] & np.isfinite(icp["icp_" + ax]) & in_win
               for ax in AX}
     npts = np.array([0 if fr["cloud"] is None else len(fr["cloud"]) for fr in frames])
@@ -145,7 +152,7 @@ def main():
         lab = f"{lo}-{hi if hi < 10 ** 8 else '+'}"
         print(f"    {lab:<10}{stat(sam['magnitude'], moc['magnitude'], ms):>30}{icp_cell:>30}")
 
-    dst = rec / "sam3d" / "sam3d_vs_mocap.npz"
+    dst = rec / "sam3d" / f"sam3d_vs_mocap{m6.TAKE_SUFFIX}.npz"
     np.savez_compressed(dst, subject=a.subject, joint=a.joint, rotflip=a.rotflip,
                         in_win=in_win, npts=npts, S_diff=S_diff,
                         **{f"sam_{ax}": sam[ax] for ax in AX},

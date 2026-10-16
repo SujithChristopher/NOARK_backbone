@@ -60,8 +60,7 @@ OUT_VIDEO = m6.RECORDING_DIR / f"icp_trunk_video{_video_suffix}.mp4"
 QUAD_W, QUAD_H = m6.QUAD_W, m6.QUAD_H
 N_WORKERS = m6.N_WORKERS
 ALIGN_MATCH_M = 0.03         # nn distance counted as "matched" in the live rms readout
-COV_M = 0.02                 # neutral point counted as "still seen" within this
-COV_GATE = 0.65              # below this the frame is self-occluded (see 16's analysis)
+COV_M, COV_GATE = m7.COV_M, m7.COV_GATE   # self-occlusion measure, defined with the ICP pass
 CLOUD_PT_SIZE = 1.5
 AXIS_LEN_M = m6.AXIS_LEN_M
 

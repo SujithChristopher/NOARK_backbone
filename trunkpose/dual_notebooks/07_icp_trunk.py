@@ -62,6 +62,12 @@ SEG_JUMP_M = 0.10            # mocap displacement across a gap that flags a re-l
 # exceeds ~45 deg from neutral -> gate on physical plausibility instead.
 ROT_MAX_DEG = _icp_cfg_val("rot_max_deg", 45.0)
 ODO_MAX_RUN = _icp_cfg_val("odo_max_run", 30, int)   # consecutive odometry frames allowed
+# Self-occlusion: the fraction of the NEUTRAL shell that the registered live cloud still
+# covers (a neutral point counts as seen within COV_M). As the trunk turns away or the
+# arms come across, the surface ICP is matching stops being visible and the angle is
+# read off what is left; below COV_GATE such a frame is treated as occluded.
+COV_M = 0.02
+COV_GATE = 0.65
 ANGLE_PLOT_MODE = os.environ.get("TRUNK_ANGLE_PLOT_MODE", "all").lower()
 if ANGLE_PLOT_MODE not in ("all", "icp_only", "mocap_only"):
     raise ValueError("TRUNK_ANGLE_PLOT_MODE must be all, icp_only, or mocap_only")
@@ -318,6 +324,19 @@ def run_icp_pass(frames, R_neu, n):
                 flex=flex_i, lat=lat_i, axi=axi_i)
 
 
+def shell_coverage(frames, icp):
+    """Per-frame fraction of the neutral shell covered by the registered live cloud
+    (NaN where no pose was accepted). Low coverage = self-occluded; see COV_GATE."""
+    neu = icp["neutral"]
+    cov = np.full(len(frames), np.nan)
+    for i, (fr, A) in enumerate(zip(frames, icp["A_list"])):
+        if A is None or fr["cloud"] is None:
+            continue
+        moved = fr["cloud"].astype(np.float64) @ A[0].T + A[1]
+        cov[i] = (cKDTree(moved).query(neu, k=1)[0] < COV_M).mean()
+    return cov
+
+
 # %% Mocap comparison
 def compare_mocap(inp, Rb_icp, R_neu):
     """GPIO-synced, teleport-split, convention-free comparison against mocap.
@@ -338,12 +357,11 @@ def compare_mocap(inp, Rb_icp, R_neu):
     mob, mxb, mzb = ((m - tm_c) @ Rm_c for m in (mo, mx, mz))
 
     # hardware sync: the GPIO sync bit in the camera timestamp file is high while
-    # mocap records, so mocap t=0 is the camera frame at the first rising edge.
+    # mocap records, so mocap t=0 is the camera frame at the rising edge (of pulse
+    # m6.SYNC_PULSE when one recording holds several takes).
     # No xcorr guessing -- the two timelines share a wire.
     sync = m6.load_sync_flags(m6.CAM0_TIMES)[:n]
-    if not (sync == 1).any():
-        raise SystemExit(f"No GPIO sync pulse in {m6.CAM0_TIMES.name}.")
-    rise = int(np.argmax(sync == 1))
+    rise = m6.sync_rise(sync)
     mt = ts0[rise] + (mocap_df["seconds"].to_numpy() * 1e6).astype("timedelta64[us]")
     lag_s = float((mocap_time[0] - mt[0]) / np.timedelta64(1, "s"))
     print(f"GPIO sync: mocap t=0 at camera frame {rise} "

@@ -81,12 +81,12 @@ def setup(a):
     os.environ["TRUNK_RECORDING_DIR"] = str(rec_dir)
     os.environ["TRUNK_MOCAP_CSV"] = str(mocap_csv)
     os.environ["TRUNK_FRAME_STRIDE"] = str(stride)
+    os.environ.update(m15.take_env(Path(a.session), a.subject))
     m6 = importlib.import_module("06_trunk_axis")
     m7 = importlib.import_module("07_icp_trunk")
     os.environ.setdefault("TRUNK_GEOM_CACHE", str(m6.default_geom_cache()))
-    if a.game:
-        sync = m6.load_sync_flags(m6.CAM0_TIMES)
-        m6.NEUTRAL_START = int(np.argmax(sync == 1))
+    if a.game or m15.game_take(Path(a.session), a.subject):
+        m6.NEUTRAL_START = m6.sync_rise(m6.load_sync_flags(m6.CAM0_TIMES))
     return m6, m7, rec_dir, out_dir
 
 

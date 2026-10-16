@@ -37,7 +37,7 @@ dependencies = [
     "requests>=2.34.2; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     "pycocotools>=2.0.11; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     "gpiod>=2.5.0 ; sys_platform == 'linux'",
-    "rapidtag>=0.1.4",
+    "rapidtag>=0.1.12",
     "ultralytics>=8.4.172; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     "mediapipe>=0.10.35",
     "zstandard>=0.25.0",

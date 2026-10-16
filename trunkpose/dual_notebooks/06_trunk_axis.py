@@ -160,6 +160,13 @@ NEUTRAL_START = int(os.environ.get("TRUNK_NEUTRAL_START", "0"))
 # path is given explicitly.
 MOCAP_CSV = Path(os.environ.get("TRUNK_MOCAP_CSV",
                                 str(RECORDING_DIR / f"{RECORDING_NAME}.csv")))
+# Which GPIO pulse is this take's mocap t=0 (1-based). The oct game recordings roll once
+# while Motive starts and stops twice (session.toml [game] takes), so one camera stream
+# holds two takes; 15.take_env sets both of these from the take name. TAKE_SUFFIX goes on
+# every per-take result written beside the shared recording, never on the geometry cache.
+SYNC_PULSE = int(os.environ.get("TRUNK_SYNC_PULSE", "1"))
+_take = os.environ.get("TRUNK_TAKE", "").strip()
+TAKE_SUFFIX = f"_{_take}" if _take else ""
 
 # No default: a stereo calibration belongs to a rig, and picking the wrong rig's is
 # silent (cz30_dual_v2 has T_x < 0, i.e. the cameras the other way round, so the depth
@@ -505,6 +512,22 @@ def load_sync_flags(path):
     """GPIO sync bit per frame (column 0 of the timestamp msgpack). High while the
     mocap system is recording, so the first rising edge marks mocap t=0."""
     return np.array([int(r[0]) for r in _records(path)])
+
+
+def sync_pulses(sync):
+    """[(rise, fall)] frame index of every GPIO-high run; fall is one past the last high."""
+    d = np.diff(np.concatenate(([0], (np.asarray(sync) == 1).astype(int), [0])))
+    return list(zip(np.where(d == 1)[0].tolist(), np.where(d == -1)[0].tolist()))
+
+
+def sync_rise(sync, pulse=None):
+    """Frame of this take's mocap t=0: the rising edge of GPIO pulse SYNC_PULSE."""
+    pulse = pulse or SYNC_PULSE
+    p = sync_pulses(sync)
+    if len(p) < pulse:
+        raise SystemExit(f"Take needs GPIO pulse {pulse}, the camera timestamps hold "
+                         f"{len(p)}.")
+    return p[pulse - 1][0]
 
 
 def nearest_index(times, t):
@@ -860,13 +883,11 @@ def kabsch(A, B):
 
 def gpio_mocap_time(ts0, seconds, sync):
     """Mocap timeline on the CAMERA clock. The GPIO pin-17 bit is HIGH while Motive
-    records, so its first rising edge IS mocap seconds=0 -- the two systems share a
-    wire. Motive's own 'Capture Start Time' header is seconds off (this take: -2.38 s),
+    records, so its rising edge IS mocap seconds=0 -- the two systems share a wire (the
+    edge of pulse SYNC_PULSE, when one recording holds several takes). Motive's own 'Capture Start Time' header is seconds off (this take: -2.38 s),
     and best_lag() xcorr is worse still (+3.03 s at r=0.20, i.e. 5.4 s / 162 frames from
     truth), so neither is used for sync. best_lag is kept only for 08_basis_check."""
-    if not (sync == 1).any():
-        raise SystemExit("No GPIO sync pulse in cam0_timestamp.msgpack.")
-    rise = int(np.argmax(sync == 1))
+    rise = sync_rise(sync)
     return ts0[rise] + (seconds * 1e6).astype("timedelta64[us]"), rise
 
 

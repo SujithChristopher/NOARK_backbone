@@ -22,9 +22,15 @@ VARIANTS = {
     "april": ("april", OUT / "jig_T0_april.json"),
     "tag12only": ("logged", OUT / "jig_tag12_only.json"),
     "april_tag12only": ("april", OUT / "jig_tag12_only.json"),
+    "none_tag12only": ("none", OUT / "jig_tag12_only.json"),
     "shipped": ("logged", shipped_jig_path()),
     "T0all": ("logged", OUT / "jig_T0.json"),
 }
+# undistort-image ("ud") vs undistort-corners ("raw") study, corners from detect_paths.py
+for _p in ("ud", "raw"):
+    for _r in ("none", "contour", "edge", "april"):
+        VARIANTS[f"{_p}_{_r}"] = (f"{_p}_{_r}", OUT / f"jig_T0_{_p}_{_r}.json")
+        VARIANTS[f"{_p}_{_r}_tag12"] = (f"{_p}_{_r}", OUT / "jig_tag12_only.json")
 
 
 def run(args):

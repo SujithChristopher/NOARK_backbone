@@ -28,6 +28,14 @@
 #
 #   uv run python trunkpose/dual_notebooks/15_subject_icp.py --game --all
 #
+# oct9/oct10 hold two Motive takes in each game recording (session.toml [game] takes).
+# Name the take like a protocol take -- the GPIO pulse, the mocap CSV and the _<take>
+# result suffix follow from it, and both takes share one geometry cache. Those sessions
+# run at --stride 6 to match the SAM 3D export (19), which 21 scores frame for frame:
+#
+#   uv run python trunkpose/dual_notebooks/15_subject_icp.py \
+#       --session data/trunk_take_oct/oct10_26 --subject s3_arjun_game_wtc --stride 6
+#
 # --all spawns one subprocess per subject: 06's configuration is resolved at import
 # time from the recording directory, so a single interpreter cannot switch subjects.
 
@@ -44,6 +52,32 @@ DEFAULT_SESSION = PROJECT_ROOT / "data" / "sep23_26"
 
 
 # %% Recording layout
+def game_take(session_dir, subject):
+    """(person, take, pulse) when `subject` names one take of a multi-take game recording.
+
+    oct9/oct10 roll the camera once per subject while Motive starts and stops twice, so
+    one rec_* holds two takes. session.toml [game] takes maps each take name to its GPIO
+    pulse, and a take is addressed like a protocol take: s3_arjun_game_wtc is person
+    s3_arjun, take game_wtc, pulse 2, mocap mocap/s3_arjun_game_wtc.csv. None when the
+    session has no such table or the name carries no take.
+    """
+    import toml
+
+    cfg_path = Path(session_dir) / "session.toml"
+    takes = (toml.load(cfg_path).get("game", {}).get("takes", {})
+             if cfg_path.exists() else {})
+    for take in sorted(takes, key=len, reverse=True):   # game_wtc before game
+        if subject.endswith(f"_{take}"):
+            return subject[: -len(take) - 1], take, int(takes[take])
+    return None
+
+
+def take_env(session_dir, subject):
+    """06's take settings for this subject (pulse + result suffix); {} for a plain take."""
+    t = game_take(session_dir, subject)
+    return {"TRUNK_SYNC_PULSE": str(t[2]), "TRUNK_TAKE": t[1]} if t else {}
+
+
 def resolve_recording(session_dir, subject, game):
     """(recording dir, mocap CSV, output dir) for this subject under either layout.
 
@@ -53,17 +87,21 @@ def resolve_recording(session_dir, subject, game):
     """
     # oct9/oct10 layout: std_movement/<subject>/ and game/<subject>/, one shared mocap/
     if (session_dir / "std_movement").is_dir() or (session_dir / "game").is_dir():
-        if not game:
+        # a take-qualified name (s3_arjun_game_wtc) is a game take with or without --game
+        take = game_take(session_dir, subject)
+        if not game and take is None:
             rec = session_dir / "std_movement" / subject
             return rec, rec / f"{subject}.csv", session_dir / "std_movement" / "output"
-        vids = sorted((session_dir / "game" / subject).glob("Session-*/Video/rec_*"))
+        person = take[0] if take else subject
+        vids = sorted((session_dir / "game" / person).glob("Session-*/Video/rec_*"))
         if not vids:
-            raise SystemExit(f"{subject}: no rec_* folder under {session_dir / 'game' / subject}")
+            raise SystemExit(f"{subject}: no rec_* folder under {session_dir / 'game' / person}")
         # a false start leaves a short extra rec_* (s3_ram oct9): take the one with most chunks
         rec = max(vids, key=lambda v: len(list(v.glob("cam0_frame_*.msgpack"))))
         if len(vids) > 1:
             print(f"[{subject}] {len(vids)} rec_* folders, using {rec.name} (most chunks)")
-        return rec, session_dir / "mocap" / f"{subject}_game.csv", session_dir / "game" / "output"
+        csv = f"{subject}.csv" if take else f"{subject}_game.csv"
+        return rec, session_dir / "mocap" / csv, session_dir / "game" / "output"
     if not game:
         rec = session_dir / subject
         return rec, rec / f"{subject}.csv", session_dir / "output"
@@ -77,7 +115,17 @@ def resolve_recording(session_dir, subject, game):
 
 
 def game_subjects(session_dir):
-    """Subjects with both a game recording and a game mocap export."""
+    """Subjects with both a game recording and a game mocap export. A session with a
+    [game] takes table lists every take (s3_arjun_game, s3_arjun_game_wtc, ...)."""
+    import toml
+
+    cfg_path = session_dir / "session.toml"
+    takes = (toml.load(cfg_path).get("game", {}).get("takes", {})
+             if cfg_path.exists() else {})
+    if takes:
+        return sorted(f"{p.name}_{t}" for p in (session_dir / "game").iterdir()
+                      if p.is_dir() for t in takes
+                      if (session_dir / "mocap" / f"{p.name}_{t}.csv").exists())
     root = session_dir / "noark_game"
     return sorted(q.stem[: -len("_game")] for q in (root / "mocap").glob("*_game.csv")
                   if (root / "data" / q.stem[: -len("_game")]).is_dir())
@@ -124,6 +172,7 @@ def run_subject(session_dir, subject, game=False, stride=None):
     os.environ["TRUNK_RECORDING_NAME"] = subject
     os.environ["TRUNK_RECORDING_DIR"] = str(rec_dir)
     os.environ["TRUNK_MOCAP_CSV"] = str(mocap_csv)
+    os.environ.update(take_env(session_dir, subject))
     if stride:
         os.environ["TRUNK_FRAME_STRIDE"] = str(stride)
 
@@ -152,11 +201,10 @@ def run_subject(session_dir, subject, game=False, stride=None):
     # window on the GPIO rise, which IS mocap t=0 -- the same instant 07 zeroes both
     # sides on and 18_game_mocap_rom.py zeroes the game mocap on.
     sync = m6.load_sync_flags(m6.CAM0_TIMES)
-    if not (sync == 1).any():
-        raise SystemExit(f"{subject}: no GPIO pulse in the camera timestamps")
-    m6.NEUTRAL_START = int(np.argmax(sync == 1))
+    m6.NEUTRAL_START = m6.sync_rise(sync)
     print(f"[{subject}] neutral window starts at frame {m6.NEUTRAL_START} "
-          f"(GPIO rise, {m6.NEUTRAL_START * m6.FRAME_STRIDE / 30:.1f}s into the take)")
+          f"(GPIO pulse {m6.SYNC_PULSE} rise, "
+          f"{m6.NEUTRAL_START * m6.FRAME_STRIDE / 30:.1f}s into the recording)")
 
     inp = m7.load_inputs()
     frames, n, ts0 = inp["frames"], inp["n"], inp["ts0"]
@@ -212,7 +260,7 @@ def run_subject(session_dir, subject, game=False, stride=None):
               f"{s['bias'] + 1.96 * s['sd']:+.1f}]d  ROM {s['rom_icp']:.0f}/"
               f"{s['rom_moc']:.0f}d  slope={s['slope']:.2f}  n={s['n']}")
 
-    npz = rec_dir / f"icp_vs_mocap{m6.RESULT_SUFFIX}.npz"
+    npz = rec_dir / f"icp_vs_mocap{m6.RESULT_SUFFIX}{m6.TAKE_SUFFIX}.npz"
     np.savez_compressed(
         npz, subject=subject, t_s=t_s, in_win=in_win,
         **{f"icp_{nm}": series_icp[k] for k, nm in enumerate(names)},
@@ -221,6 +269,8 @@ def run_subject(session_dir, subject, game=False, stride=None):
         # per-frame confidence: torso shell points ICP registered. Across the sep23
         # takes >=800 pts gave median 0.1-2.4 deg / p95 <=5.5 deg; <600 is unreliable.
         shell_pts=icp["npts_f"],
+        # per-frame self-occlusion measure (07.shell_coverage); < cov_gate = occluded
+        shell_cov=m7.shell_coverage(frames, icp), cov_gate=m7.COV_GATE,
         n_frames=n, n_icp_valid=int(np.isfinite(icp["flex"]).sum()),
         n_gated=int(icp["gated"].sum()), S_diff_deg=S_diff,
         S_deg=float(np.degrees(np.linalg.norm(

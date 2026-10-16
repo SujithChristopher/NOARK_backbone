@@ -23,6 +23,7 @@
 import argparse
 import csv
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -48,6 +49,34 @@ SUBJ_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00",
 MAX_SCATTER = 1500      # points drawn per subject per axis (all points are still scored)
 # flexion / lateral / axial, used by both the bar chart and the boxplots
 AXIS_COLORS = ("#0072B2", "#009E73", "#D55E00")
+# Which camera method is scored against mocap (--method). "sam3d" reads the teacher's
+# <rec>/sam3d/sam3d_vs_mocap.npz and "student" reads <student_dir>/<take>/student/
+# sam3d_vs_mocap.npz (both written by 21_sam3d_score.py); their sam_* series are renamed
+# to icp_* so every figure below runs unchanged. Set in main().
+SOURCE = {"method": "icp", "student_dir": None}
+METHOD_LABEL = {"icp": "camera ICP", "sam3d": "SAM 3D Body", "student": "miniSAM3D student"}
+
+
+def load_scored(rec, subject, result, take=""):
+    """The per-take result npz for SOURCE["method"], with the camera series as icp_*.
+    None when that method has no result for this take. `take` is the _<take> suffix of a
+    game take that shares its recording with another (15.game_take)."""
+    method = SOURCE["method"]
+    if method == "icp":
+        f = rec / f"icp_vs_mocap{result}{take}.npz"
+    elif method == "sam3d":
+        f = rec / "sam3d" / f"sam3d_vs_mocap{take}.npz"
+    else:
+        f = Path(SOURCE["student_dir"]) / subject / "student" / f"sam3d_vs_mocap{take}.npz"
+    if not f.exists():
+        return None
+    d = np.load(f, allow_pickle=True)
+    if method == "icp":
+        return d
+    out = {k.replace("sam_", "icp_", 1) if k.startswith("sam_") else k: d[k] for k in d.files}
+    # 21 stores the S disagreement as S_diff and no fitted-S angle or frame count
+    out.update(S_diff_deg=float(d["S_diff"]), S_deg=float("nan"), n_frames=len(d["in_win"]))
+    return out
 
 
 def load_subjects(session_dir, subjects, condition="wc", game=False, result=""):
@@ -62,24 +91,50 @@ def load_subjects(session_dir, subjects, condition="wc", game=False, result=""):
     if not subjects:
         if game:
             subjects = m15.game_subjects(session_dir)
+        elif m15.game_take(session_dir, f"_{condition}"):
+            # condition names a game take (oct9/oct10 [game] takes: game, game_wtc)
+            subjects = [s for s in m15.game_subjects(session_dir)
+                        if m15.game_take(session_dir, s)[1] == condition]
         else:
             cfg_path = session_dir / "session.toml"
             cfg = toml.load(cfg_path) if cfg_path.exists() else {}
-            subjects = cfg.get("subjects", {}).get(condition, [])
+            # oct9/oct10 keep [subjects] as one display string, not wc/woc lists
+            listed = cfg.get("subjects", {})
+            subjects = listed.get(condition, []) if isinstance(listed, dict) else []
             if not subjects:
+                take_root = (session_dir / "std_movement"
+                             if (session_dir / "std_movement").is_dir() else session_dir)
                 subjects = sorted(
                     p.parent.name
-                    for p in session_dir.glob(f"*_{condition}/icp_vs_mocap{result}.npz"))
+                    for p in take_root.glob(f"*_{condition}/icp_vs_mocap{result}.npz"))
     out = []
     for s in subjects:
-        f = m15.resolve_recording(session_dir, s, game)[0] / f"icp_vs_mocap{result}.npz"
-        if not f.exists():
-            print(f"skip {s}: no {f.name} (run 15_subject_icp.py"
-                  + (" --game" if game else "") + f" --subject {s})")
+        take = m15.game_take(session_dir, s)
+        d = load_scored(m15.resolve_recording(session_dir, s, game)[0], s, result,
+                        f"_{take[1]}" if take else "")
+        if d is None:
+            print(f"skip {s}: no {SOURCE['method']} result")
             continue
-        out.append((s, np.load(f, allow_pickle=True)))
+        out.append((s, d))
+    return out
+
+
+def load_sessions(session_dirs, subjects, condition="wc", game=False, result=""):
+    """load_subjects over several sessions (oct9 + oct10 are one protocol split
+    across two days), concatenated in the order the sessions are given."""
+    out = []
+    for sd in session_dirs:
+        names = subjects
+        if subjects:
+            # an explicit list spans every session: keep the ones recorded in this one
+            m15 = importlib.import_module("15_subject_icp")
+            names = [s for s in subjects if m15.resolve_recording(sd, s, game)[0].is_dir()]
+            if not names:
+                continue
+        out += load_subjects(sd, names, condition, game, result)
     if not out:
-        raise SystemExit(f"No per-subject results under {session_dir}")
+        raise SystemExit("No per-subject results under "
+                         + ", ".join(str(sd) for sd in session_dirs))
     return out
 
 
@@ -114,7 +169,17 @@ def abs_errors(d, axis):
     return np.abs(icp - moc) if len(moc) >= 50 else None
 
 
-def error_boxplots(data, anon, out_png, title, other=None, cond_names=None):
+def short_name(subject):
+    """3-letter tick label from a take name: s3_jerome_wc -> Jer, s3_js_woc -> JS."""
+    stem = subject.removeprefix("s3_")
+    for take in ("_game_wtc", "_game", "_woc", "_wc"):   # longest first
+        if stem.endswith(take):
+            stem = stem[: -len(take)]
+            break
+    return stem.upper() if len(stem) <= 2 else stem[:3].capitalize()
+
+
+def error_boxplots(data, anon, out_png, title, other=None, cond_names=None, ymax=None):
     """|error| per subject, with the anatomical axes side by side inside each subject.
 
     Box = IQR, line = median (printed), whiskers = 5th/95th percentile. Fliers are left
@@ -188,7 +253,8 @@ def error_boxplots(data, anon, out_png, title, other=None, cond_names=None):
                           label=cond_names[1])]
     ax.legend(handles=handles, frameon=False, ncol=len(handles), loc="upper left",
               fontsize=9)
-    ax.set_ylim(0, ax.get_ylim()[1] * 1.08)
+    # a fixed ymax keeps figures from different sessions/conditions comparable
+    ax.set_ylim(0, ymax if ymax else ax.get_ylim()[1] * 1.08)
     ax.set_title(title)
     fig.tight_layout()
     fig.savefig(out_png)
@@ -198,7 +264,9 @@ def error_boxplots(data, anon, out_png, title, other=None, cond_names=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--session", default=str(PROJECT_ROOT / "data" / "sep23_26"))
+    ap.add_argument("--session", nargs="+", default=[str(PROJECT_ROOT / "data" / "sep23_26")],
+                    help="one or more session dirs; several are pooled as one cohort "
+                         "and written to <their common parent>/output")
     ap.add_argument("--subjects", nargs="*", default=None)
     ap.add_argument("--condition", default="wc",
                     help="which [subjects] list in session.toml to pool (wc / woc)")
@@ -213,20 +281,36 @@ def main():
     ap.add_argument("--shell", default="mode", choices=("mode", "front"),
                     help="which 15 results to pool: the default 'mode' shell "
                          "(icp_vs_mocap_mode.npz) or the original 'front' one")
+    ap.add_argument("--ymax", type=float, default=25.0,
+                    help="error-distribution y-axis limit in degrees (0 = auto)")
+    ap.add_argument("--names", action="store_true",
+                    help="label subjects by 3-letter name (Jer, Lee, JS) instead of Sub1..")
+    ap.add_argument("--method", default="icp", choices=tuple(METHOD_LABEL),
+                    help="camera method scored against mocap")
+    ap.add_argument("--student-dir",
+                    default=str(PROJECT_ROOT / "trunkpose" / "runs" / "minisam3d"
+                                / "r18_v2_all_octtest"),
+                    help="--method student: run folder holding <take>/student/sam3d_vs_mocap.npz")
     a = ap.parse_args()
+    SOURCE.update(method=a.method, student_dir=a.student_dir)
+    mlabel = METHOD_LABEL[a.method]
     # mirrors 06.RESULT_SUFFIX; outputs carry it too, so the two never overwrite
     result = "" if a.shell == "front" else f"_{a.shell}"
-    session_dir = Path(a.session).resolve()
+    session_dirs = [Path(s_).resolve() for s_ in a.session]
+    session_dir = (session_dirs[0] if len(session_dirs) == 1
+                   else Path(os.path.commonpath(session_dirs)))
     out_dir = (session_dir / "noark_game" / "output") if a.game else (session_dir / "output")
+    session_name = "+".join(sd.name for sd in session_dirs)
     out_dir.mkdir(parents=True, exist_ok=True)
     suffix = a.suffix if a.suffix is not None else (
-        "_game" if a.game else "" if a.condition == "wc" else f"_{a.condition}") + result
+        "_game" if a.game else "" if a.condition == "wc" else f"_{a.condition}") + (
+        result if a.method == "icp" else f"_{a.method}")
     cond = "game" if a.game else a.condition
 
     m12 = importlib.import_module("12_poster_figures")
     m12.poster_style()
 
-    data = load_subjects(session_dir, a.subjects, a.condition, a.game, result)
+    data = load_sessions(session_dirs, a.subjects, a.condition, a.game, result)
     dropped = [s_ for s_, _ in data if s_ in a.exclude]
     if dropped:
         print(f"excluded: {', '.join(dropped)}")
@@ -275,11 +359,11 @@ def main():
               "holds -- it does not depend on S.")
     print(f"-> {csv_path}")
 
-    # ---- anonymized figure: per-subject RMSE for the anatomical axes ----
-    # Preserve the configured subject order, but keep identifying labels out of the
-    # figure. The console mapping makes the output reproducible without embedding names.
-    anon = {s: f"Sub{j + 1}" for j, (s, _) in enumerate(data)}
-    print("anonymous labels: " + ", ".join(f"{anon[s]}={s}" for s, _ in data))
+    # ---- per-subject RMSE for the anatomical axes ----
+    # Preserve the configured subject order. Ticks are anonymous (Sub1..) unless
+    # --names; the console mapping makes either output reproducible.
+    anon = {s: (short_name(s) if a.names else f"Sub{j + 1}") for j, (s, _) in enumerate(data)}
+    print("tick labels: " + ", ".join(f"{anon[s]}={s}" for s, _ in data))
     bar_axes = ("flexion", "lateral", "axial")
     row_by_key = {(r["subject"], r["axis"]): r for r in rows}
     x = np.arange(len(data), dtype=float)
@@ -296,7 +380,7 @@ def main():
     ax_bar.set_xticks(x, [anon[s] for s, _ in data])
     ax_bar.set_ylabel("RMSE (degrees)")
     ax_bar.set_xlabel("Subject")
-    ax_bar.set_title("Per-subject trunk-angle error")
+    ax_bar.set_title(f"Per-subject trunk-angle error, {mlabel} vs mocap")
     ax_bar.legend(frameon=False, ncol=len(bar_axes), loc="upper left")
     ax_bar.grid(axis="y", alpha=0.25)
     ax_bar.spines[["top", "right"]].set_visible(False)
@@ -309,15 +393,15 @@ def main():
 
     # ---- figure: |error| distributions, all subjects together ----
     error_boxplots(data, anon, out_dir / f"error_distribution{suffix}.png",
-                   f"Trunk-angle error distribution - {len(data)} subjects "
-                   f"({session_dir.name}, {cond})")
+                   f"{mlabel} vs mocap: trunk-angle error - {len(data)} subjects "
+                   f"({session_name}, {cond})", ymax=a.ymax)
     if a.vs:
         error_boxplots(data, anon,
                        out_dir / f"error_distribution_{a.condition}_vs_{a.vs}{ex_tag}{result}.png",
                        f"Trunk-angle error distribution - {a.condition} vs {a.vs} "
-                       f"({session_dir.name})",
-                       other=load_subjects(session_dir, None, a.vs, a.game, result),
-                       cond_names=(a.condition, a.vs))
+                       f"({session_name})",
+                       other=load_sessions(session_dirs, None, a.vs, a.game, result),
+                       cond_names=(a.condition, a.vs), ymax=a.ymax)
 
     # ---- figure: scatter (top) + Bland-Altman (bottom), one column per axis ----
     fig, axes = plt.subplots(2, len(AXES), figsize=(4.8 * len(AXES), 9))
@@ -353,7 +437,7 @@ def main():
         sc.set_xlabel(f"mocap {ax_name} (deg)"
                       + ("\n(frame-invariant: no S)" if ax_name == "magnitude" else ""))
         if k == 0:
-            sc.set_ylabel("camera ICP (deg)")
+            sc.set_ylabel(f"{mlabel} (deg)")
         sc.set_title("rotation magnitude" if ax_name == "magnitude" else ax_name,
                      pad=8)
         sc.text(0.04, 0.96, f"r = {st['r']:+.2f}\nRMSE = {st['rmse']:.1f}$\\degree$\n"
@@ -379,8 +463,8 @@ def main():
                       markersize=7, label=label[s]) for j, (s, _) in enumerate(data)]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False,
                bbox_to_anchor=(0.5, 0.0))
-    fig.suptitle(f"Trunk angle agreement, camera ICP vs mocap - "
-                 f"{len(data)} subjects ({session_dir.name}, {cond})", y=0.99)
+    fig.suptitle(f"Trunk angle agreement, {mlabel} vs mocap - "
+                 f"{len(data)} subjects ({session_name}, {cond})", y=0.99)
     fig.tight_layout(rect=(0, 0.045, 1, 1))
     png = out_dir / f"icp_vs_mocap_agreement{suffix}.png"
     fig.savefig(png)
