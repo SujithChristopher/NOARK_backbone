@@ -52,6 +52,22 @@ def stat(x, y, m):
     return f"{np.median(e):5.1f}/{np.percentile(e, 95):5.1f} r{r:+.2f} n{int(m.sum()):>5}"
 
 
+def board_rotations(out, M, n, joint=C_SPINE3, rotflip=True):
+    """Trunk rotation per frame index (None where unsolved) from one 20 output.
+
+    M is 19's R_model_to_board. Cr G Cr^T: joint rotation in OpenCV camera axes. 07 only
+    ever uses Rb(i) Rb(z)^T, so M (.) is the conjugation into the board frame."""
+    Cr = np.diag([1., -1., -1.]) if rotflip else np.eye(3)
+    # read each array once: indexing an NpzFile decompresses the whole array every time
+    G_all, ok = out["pred_global_rots"][:, joint], out["ok"]
+    Rb = [None] * n
+    for j, i in enumerate(out["idx"]):
+        G = G_all[j]
+        if i < n and ok[j] and np.isfinite(G).all():
+            Rb[i] = M @ Cr @ G @ Cr.T
+    return Rb
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--session", default=str(DEFAULT_SESSION))
@@ -100,15 +116,7 @@ def main():
     inp = m7.load_inputs()
     frames, n = inp["frames"], inp["n"]
     R_neu = m6.assemble(frames)[1]
-    M = meta["R_model_to_board"]
-    Cr = np.diag([1., -1., -1.]) if a.rotflip else np.eye(3)
-    Rb = [None] * n
-    for j, i in enumerate(out["idx"]):
-        G = out["pred_global_rots"][j, a.joint]
-        if i < n and good[j] and np.isfinite(G).all():
-            # Cr G Cr^T: joint rotation in OpenCV camera axes. 07 only ever uses
-            # Rb(i) Rb(z)^T, so M (.) is the conjugation into the board frame.
-            Rb[i] = M @ Cr @ G @ Cr.T
+    Rb = board_rotations(out, meta["R_model_to_board"], n, a.joint, a.rotflip)
     cmp_ = m7.compare_mocap(inp, Rb, R_neu)
     S_diff = float(np.degrees(np.linalg.norm(m6.Rotation.from_matrix(
         cmp_["S"] @ (R_neu @ cmp_["Rz_m"].T).T).as_rotvec())))

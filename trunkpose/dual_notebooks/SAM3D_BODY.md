@@ -208,3 +208,41 @@ Held-out correlations, with S fitted on the first half and scored on the second,
 3. Revisit InstantHMR v2 when the weights ship: run it through the same 20/21 path.
 4. Fix the occlusion wording in `noark_game/output/README.md` (the cube, not only the
    arms).
+
+## 8. Second camera (2026-10-16): no gain
+
+Question: can the teacher get closer to mocap if it also runs on the second camera
+of the stereo pair and the two answers are fused? Spike on one unseen-subject take,
+oct9 `s3_lee_wc` (1486 frames). Commands:
+
+    19_sam3d_export.py --session data/trunk_take_oct/oct9_26 --subject s3_lee_wc --cam 1
+    minisam3d scripts/det_boxes.py <rec>/sam3d_cam1 --apply
+    20_sam3d_infer.py  ... --cam 1        (sam-3d-body env)
+    30_sam3d_dualcam.py --session data/trunk_take_oct/oct9_26 --subject s3_lee_wc
+
+`--cam 1` exports the other camera with its own intrinsics and folds the stereo
+rotation into `R_model_to_board`, so both answers land in the same board frame.
+Fused = chordal mean of the cam0 rotation and the offset-aligned cam1 rotation.
+
+Each cell is median |err| / bias ± SD in degrees, over the 1371 frames where ICP and
+every source solved. The cam0 column reproduces the teacher numbers in
+`runs/minisam3d/r18_v2_all_octtest`.
+
+| axis | cam0 | cam1 | fused | ICP | r(err cam0, err cam1) |
+|---|---|---|---|---|---|
+| flexion | 1.8 / +0.2±2.7 | 2.0 / −0.0±3.0 | 1.9 / +0.1±2.8 | 1.8 / +1.3±4.0 | +0.98 |
+| lateral | 2.7 / +1.1±3.9 | 2.8 / +1.3±3.9 | 2.7 / +1.2±3.9 | 2.0 / +1.7±2.6 | +0.96 |
+| axial | 2.5 / +1.8±3.7 | 2.9 / +2.7±3.7 | 2.6 / +2.2±3.6 | 2.6 / −2.3±3.1 | +0.96 |
+| magnitude | 3.1 / −0.5±4.3 | 3.0 / −0.9±4.3 | 3.1 / −0.7±4.3 | 1.7 / −0.3±2.6 | +0.98 |
+
+- The two views agree to 1.5° median (3.5° p95) per frame. The constant offset
+  between them is only 0.6°.
+- Errors vs mocap correlate 0.96–0.98 between cameras, so the error is view-invariant.
+  Fusing removes none of it.
+- The shared error is not on the mocap side: teacher and ICP errors are uncorrelated
+  (r 0.02–0.19). It is the teacher's own bias. It over-reads lateral peaks by about
+  20% (`dualcam_vs_mocap.png`) and misses parts of axial.
+- The 77 mm baseline is about 4° of parallax at 1 m, too little for two monocular HMR
+  passes to disagree. Stereo only adds real information through geometry (SGBM/ICP).
+- A plain teacher+ICP average on magnitude scores 1.8 / −0.4±2.7, no better than ICP
+  alone (1.7) on this take. ICP remains the more accurate source where it solves.

@@ -61,11 +61,11 @@ def game_take(session_dir, subject):
     s3_arjun, take game_wtc, pulse 2, mocap mocap/s3_arjun_game_wtc.csv. None when the
     session has no such table or the name carries no take.
     """
-    import toml
+    import tomllib  # stdlib: 20 resolves recordings from the sam-3d-body env (no toml)
 
     cfg_path = Path(session_dir) / "session.toml"
-    takes = (toml.load(cfg_path).get("game", {}).get("takes", {})
-             if cfg_path.exists() else {})
+    takes = (tomllib.loads(cfg_path.read_text(encoding="utf-8")).get("game", {})
+             .get("takes", {}) if cfg_path.exists() else {})
     for take in sorted(takes, key=len, reverse=True):   # game_wtc before game
         if subject.endswith(f"_{take}"):
             return subject[: -len(take) - 1], take, int(takes[take])

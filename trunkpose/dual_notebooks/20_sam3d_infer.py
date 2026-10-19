@@ -14,7 +14,8 @@
 #   .venv/Scripts/python <repo>/trunkpose/dual_notebooks/20_sam3d_infer.py \
 #       --subject gokul --game
 #
-# Writes <recording>/sam3d/sam3d_out.npz.
+# Writes <recording>/sam3d/sam3d_out.npz (--cam 1: 19's sam3d_cam1/ export instead;
+# --dir <folder>: <folder>/sam3d_out.npz).
 
 import argparse
 import importlib
@@ -47,17 +48,26 @@ def stack(lst):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--session", default=str(DEFAULT_SESSION))
-    ap.add_argument("--subject", required=True)
+    ap.add_argument("--subject")
     ap.add_argument("--game", action="store_true", help="NOARK game take")
     ap.add_argument("--overlay", type=int, default=6,
                     help="write keypoint overlays for the first N frames")
+    ap.add_argument("--cam", type=int, choices=(0, 1), default=0,
+                    help="1 = 19's second-camera export (sam3d_cam1/)")
+    ap.add_argument("--dir", help="any folder in 19's layout (meta.npz + img_*.png) instead of "
+                    "--subject, e.g. minisam3d synth/export_sam3d.py's synthetic frames")
     a = ap.parse_args()
+    if not (a.subject or a.dir):
+        ap.error("give --subject or --dir")
 
-    # 15 has no heavy top-level imports, so its layout resolver works in this env too
-    sys.path.insert(0, str(SCRIPT_DIR))
-    m15 = importlib.import_module("15_subject_icp")
-    rec = m15.resolve_recording(Path(a.session).resolve(), a.subject, a.game)[0]
-    d = rec / "sam3d"
+    if a.dir:
+        d = Path(a.dir)
+    else:
+        # 15 has no heavy top-level imports, so its layout resolver works in this env too
+        sys.path.insert(0, str(SCRIPT_DIR))
+        m15 = importlib.import_module("15_subject_icp")
+        rec = m15.resolve_recording(Path(a.session).resolve(), a.subject, a.game)[0]
+        d = rec / ("sam3d_cam1" if a.cam else "sam3d")
     meta = np.load(d / "meta.npz")
     K = torch.tensor(meta["K"], dtype=torch.float32)[None]
 

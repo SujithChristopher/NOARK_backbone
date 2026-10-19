@@ -16,6 +16,10 @@
 #
 # Only frames inside the GPIO-high window (mocap recording) are exported.
 #
+# --cam 1 exports the OTHER camera of the pair instead (its own intrinsics; the stereo
+# rotation folded into R_model_to_board, so its answers land in the same board frame)
+# into <recording>/sam3d_cam1/ -- the input of 30_sam3d_dualcam.py.
+#
 #   uv run python trunkpose/dual_notebooks/19_sam3d_export.py --subject gokul --game
 #   uv run python trunkpose/dual_notebooks/19_sam3d_export.py --subject gokul_woc
 #   ... --n 20      20 evenly spaced frames, for a smoke test
@@ -47,6 +51,8 @@ def main():
                     help="frame stride (default 3 for --game, 1 otherwise)")
     ap.add_argument("--n", type=int, default=0,
                     help="export only N evenly spaced in-window frames (0 = all)")
+    ap.add_argument("--cam", type=int, choices=(0, 1), default=0,
+                    help="1 = the second camera of the pair (writes sam3d_cam1/)")
     a = ap.parse_args()
 
     m15 = importlib.import_module("15_subject_icp")
@@ -58,19 +64,21 @@ def main():
     m6 = importlib.import_module("06_trunk_axis")
 
     W, H = m6.CAM_SIZE
-    K0, D0, *_ = m6.load_stereo(m6.STEREO_TOML)
+    K0, D0, K1, D1, R_st, _ = m6.load_stereo(m6.STEREO_TOML)
+    Kc, Dc = (K1, D1) if a.cam else (K0, D0)
     R0_c, _, _, _ = m6.load_charuco_basis(m6.CHARUCO_TOML)
     Kp = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
-        K0, D0, (W, H), np.eye(3), balance=0.0)
-    map1, map2 = cv2.fisheye.initUndistortRectifyMap(K0, D0, np.eye(3), Kp, (W, H),
+        Kc, Dc, (W, H), np.eye(3), balance=0.0)
+    map1, map2 = cv2.fisheye.initUndistortRectifyMap(Kc, Dc, np.eye(3), Kp, (W, H),
                                                      cv2.CV_16SC2)
     # a 180 deg image rotation is the camera rotated 180 about its optical axis
     Kr = Kp.copy()
     if m6.ROT180:
         Kr[0, 2], Kr[1, 2] = W - 1 - Kp[0, 2], H - 1 - Kp[1, 2]
     Rz = np.diag([-1.0, -1.0, 1.0]) if m6.ROT180 else np.eye(3)
-    # model camera frame -> board frame:  v_board = R0_c.T @ Rz @ v_model
-    R_model_to_board = R0_c.T @ Rz
+    # model camera frame -> board frame:  v_board = R0_c.T @ Rz @ v_model. The stereo
+    # pair is p_cam1 = R_st p_cam0 + T, so the second camera goes through R_st.T first.
+    R_model_to_board = R0_c.T @ (R_st.T if a.cam else np.eye(3)) @ Rz
 
     def upright(img, interp):
         u = cv2.remap(img, map1, map2, interp)
@@ -87,10 +95,10 @@ def main():
     want_set = set(want.tolist())
 
     seg = m6.load_seg_model()
-    out = rec / "sam3d"
+    out = rec / ("sam3d_cam1" if a.cam else "sam3d")
     out.mkdir(exist_ok=True)
     idx_l, box_l = [], []
-    for i, f0 in enumerate(m6.iter_frames(m6.CAM0_FRAMES)):
+    for i, f0 in enumerate(m6.iter_frames(m6.CAM1_FRAMES if a.cam else m6.CAM0_FRAMES)):
         if i >= hi_i:
             break
         if i not in want_set:
@@ -135,7 +143,7 @@ def main():
     np.savez(out / "meta.npz", idx=np.array(idx_l),
              boxes=np.tile(fixed, (len(idx_l), 1)), boxes_frame=fb, K=Kr,
              R_model_to_board=R_model_to_board, size=np.array([W, H]),
-             gpio=np.array([lo_i, hi_i]), stride=stride)
+             gpio=np.array([lo_i, hi_i]), stride=stride, cam=a.cam)
     print(f"{a.subject}: {len(idx_l)} frames -> {out}  "
           f"(fx={Kr[0, 0]:.0f} cx={Kr[0, 2]:.0f} cy={Kr[1, 2]:.0f}; "
           f"no head/torso on {int(np.isnan(fb[:, 0]).sum())})")
