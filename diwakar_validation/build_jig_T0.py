@@ -7,7 +7,11 @@ Writes out/jig_T0.json in board_geometry.json format.
 
 Usage: python build_jig_T0.py [SOURCE]   SOURCE = logged (default, all 3 T0 takes -> out/jig_T0.json)
        or logged10_03 | none | contour (10-03 T0 takes only, which have images -> out/jig_T0_<SOURCE>.json)
+Env JIG_TAKES (comma list) fits on other takes instead, writing out/jig_<JIG_NAME>_<SOURCE>.json;
+JIG_STEP overrides STEP (long takes need a sparser sample).
 """
+
+import os
 
 import sys
 
@@ -25,8 +29,11 @@ SRC = sys.argv[1] if len(sys.argv) > 1 else "logged"
 T0 = ["2026-10-03_T0_test_r1", "2026-10-03_T0_test_r2"] + ([] if SRC != "logged" else ["2026-10-05_T0_test_r1"])
 CORNERS = "logged" if SRC.startswith("logged") else SRC
 JIG_OUT = OUT / ("jig_T0.json" if SRC == "logged" else f"jig_T0_{SRC}.json")
+if "JIG_TAKES" in os.environ:
+    T0 = os.environ["JIG_TAKES"].split(",")
+    JIG_OUT = OUT / f"jig_{os.environ['JIG_NAME']}_{SRC}.json"
 REF = 12
-STEP = 5  # every 5th sample (20 Hz) of fit blocks
+STEP = int(os.environ.get("JIG_STEP", "5"))  # every 5th sample (20 Hz) of fit blocks
 BLOCK_S = 5.0
 
 shipped = load_jig(shipped_jig_path())

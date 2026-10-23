@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dual-Camera Jig Validation</title>
+<meta name="description" content="Diwakar's Radxa dual-camera tag jig against Motive mocap: pipeline check, static accuracy, jitter, corner refinement and dynamic tasks. Results log, 3-19 Oct 2026.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --code: #f0efec;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #c98a00;
+  --neutral-fill: #c3c2b7;
+  --band: rgba(42, 120, 214, 0.12);
+  --zone: rgba(42, 120, 214, 0.07);
+  --good: #006300;
+  --bad: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --code: #232321;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #d9a21a;
+    --neutral-fill: #52514e;
+    --band: rgba(57, 135, 229, 0.18);
+    --zone: rgba(57, 135, 229, 0.10);
+    --good: #0ca30c;
+    --bad: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --code: #232321;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #d9a21a;
+  --neutral-fill: #52514e;
+  --band: rgba(57, 135, 229, 0.18);
+  --zone: rgba(57, 135, 229, 0.10);
+  --good: #0ca30c;
+  --bad: #e66767;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.layout { display: grid; grid-template-columns: 240px minmax(0, 860px); gap: 48px; justify-content: center; padding: 40px 24px 96px; }
+nav.toc { position: sticky; top: 24px; align-self: start; font-size: 14px; max-height: calc(100vh - 48px); overflow: auto; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li { margin: 2px 0; }
+nav.toc ol ol { padding-left: 14px; }
+nav.toc a { color: var(--ink-2); text-decoration: none; display: block; padding: 2px 0; }
+nav.toc a:hover { color: var(--ink); }
+nav.toc .toc-title { font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+.theme-btn { margin-top: 16px; font: inherit; font-size: 13px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+article { min-width: 0; }
+header.doc { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 28px; }
+header.doc .kicker { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: 34px; line-height: 1.2; margin: 6px 0 10px; letter-spacing: -0.01em; }
+h2 { font-size: 24px; line-height: 1.3; margin: 56px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+h3 { font-size: 18px; margin: 32px 0 8px; }
+h4 { font-size: 15px; margin: 22px 0 6px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .03em; }
+.lede { font-size: 18px; color: var(--ink-2); margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 14px; color: var(--ink-2); margin-top: 14px; }
+.meta b { color: var(--ink); font-weight: 600; }
+code, .mono { font: 13.5px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 8px; overflow: auto; font-size: 13px; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+a { color: var(--s1); }
+.key { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin: 20px 0; }
+.key h3 { margin-top: 0; }
+.key ol { padding-left: 22px; margin: 8px 0 0; }
+.key li { margin: 8px 0; }
+.callout { border-left: 3px solid var(--s1); background: var(--surface); padding: 10px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+.callout.warn { border-left-color: var(--s2); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.stat .v { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 13px; color: var(--ink-2); line-height: 1.35; }
+
+figure { margin: 24px 0 28px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 12px; }
+figcaption { font-size: 14px; color: var(--ink-2); margin-top: 10px; line-height: 1.5; }
+figcaption b { color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.sw.ln { width: 16px; height: 2px; border-radius: 1px; }
+.sw.k-a { background: var(--s1); } .sw.k-b { background: var(--s2); } .sw.k-c { background: var(--s3); } .sw.k-d { background: var(--s4); }
+.sw.k-n { background: var(--neutral-fill); } .sw.k-bad { background: var(--bad); }
+.sw.band { background: var(--band); border-radius: 2px; width: 16px; }
+.seg-btns { display: inline-flex; gap: 0; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin-bottom: 10px; }
+.seg-btns button { font: inherit; font-size: 13px; padding: 4px 12px; background: var(--surface); color: var(--ink-2); border: 0; border-right: 1px solid var(--border); cursor: pointer; }
+.seg-btns button:last-child { border-right: 0; }
+.seg-btns button[aria-pressed="true"] { background: var(--ink); color: var(--page); }
+.sm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.chart svg, .sm svg { width: 100%; height: auto; display: block; overflow: visible; }
+svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.tk { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.tk.strong { fill: var(--ink-2); font-weight: 600; }
+.ptitle { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+.rlabel { font-size: 11.5px; fill: var(--ink-2); }
+.grid { stroke: var(--grid); stroke-width: 1; }
+.axisline { stroke: var(--axis); stroke-width: 1; }
+.refline { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.band { fill: var(--band); }
+.zone { fill: var(--zone); }
+.c-a { fill: var(--s1); stroke: var(--s1); } .c-b { fill: var(--s2); stroke: var(--s2); }
+.c-c { fill: var(--s3); stroke: var(--s3); } .c-d { fill: var(--s4); stroke: var(--s4); }
+.c-n { fill: var(--neutral-fill); stroke: var(--neutral-fill); } .c-bad { fill: var(--bad); stroke: var(--bad); }
+.dot { stroke: var(--surface); stroke-width: 1.5; }
+.line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.thin { fill: none; stroke-width: 1.2; }
+.rng { stroke-width: 3; stroke-linecap: round; opacity: .35; }
+.arrow { stroke-width: 1.4; fill: none; }
+.mark { outline: none; cursor: default; }
+.mark.hot .dot, .mark:focus .dot { stroke: var(--ink); stroke-width: 1.5; }
+.hit { fill: transparent; }
+.tagface { fill: var(--code); stroke: var(--ink-2); stroke-width: 1.2; }
+.tagface.ref { stroke: var(--s1); stroke-width: 2; }
+#tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; max-width: 320px; }
+.tip-row { display: flex; align-items: baseline; gap: 8px; }
+.tip-row strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.tip-label { color: var(--ink-2); }
+
+.tblwrap { overflow-x: auto; }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 10px 0; font-variant-numeric: tabular-nums; }
+table.tbl caption { text-align: left; color: var(--ink-2); font-size: 13px; padding-bottom: 6px; }
+table.tbl th, table.tbl td { border-bottom: 1px solid var(--grid); padding: 6px 8px; text-align: right; vertical-align: top; }
+table.tbl th:first-child, table.tbl td:first-child { text-align: left; }
+table.tbl thead th { color: var(--ink-2); font-weight: 600; border-bottom: 1px solid var(--axis); }
+table.tbl.text td, table.tbl.text th { text-align: left; }
+table.tbl td.best { font-weight: 700; }
+
+.imgs { display: grid; gap: 10px; }
+.imgs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.imgs img { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--border); }
+.imgs .cap { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; text-align: center; }
+.wide img { width: 100%; height: auto; display: block; border-radius: 6px; background: #fff; }
+.diagram svg { width: 100%; height: auto; display: block; }
+.dg-box { fill: var(--page); stroke: var(--axis); stroke-width: 1; }
+.dg-box.accent { stroke: var(--s1); stroke-width: 1.5; }
+.dg-box.accent3 { stroke: var(--s3); stroke-width: 1.5; }
+.dg-t { font-size: 12.5px; fill: var(--ink); font-weight: 600; }
+.dg-s { font-size: 11px; fill: var(--ink-2); }
+.dg-lane { font-size: 11px; fill: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.dg-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+#nodata { background: var(--surface); border: 1px solid var(--s2); padding: 12px; border-radius: 8px; }
+
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 24px 16px 64px; }
+  nav.toc { position: static; max-height: none; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 24px; background: var(--surface); }
+}
+@media (max-width: 640px) {
+  h1 { font-size: 27px; }
+  .sm-grid, .imgs.two { grid-template-columns: minmax(0, 1fr); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  figure { padding: 12px 10px 10px; }
+}
+@media print {
+  nav.toc, .theme-btn, .seg-btns { display: none; }
+  .layout { display: block; padding: 0; }
+  figure { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li><a href="#summary">1. Summary</a></li>
+    <li><a href="#background">2. Background</a></li>
+    <li><a href="#setup">3. Setup and data</a></li>
+    <li><a href="#pipeline">4. Pipeline and its verification</a></li>
+    <li><a href="#method">5. Evaluation method</a></li>
+    <li><a href="#results">6. Results</a>
+      <ol>
+        <li><a href="#res-still">Was the jig still?</a></li>
+        <li><a href="#res-static">Static accuracy</a></li>
+        <li><a href="#res-his">His metric vs ours</a></li>
+        <li><a href="#res-corners">Corner refinement</a></li>
+        <li><a href="#res-jig">Rigid jig vs one tag</a></li>
+        <li><a href="#res-jitter">Static jitter</a></li>
+        <li><a href="#res-paths">Undistort image or corners</a></li>
+        <li><a href="#res-dyn">Moving tasks</a></li>
+      </ol>
+    </li>
+    <li><a href="#discussion">7. Discussion and limits</a></li>
+    <li><a href="#next">8. Next steps</a></li>
+    <li><a href="#appendix">Appendix</a></li>
+  </ol>
+  <button class="theme-btn" type="button" id="themeBtn">Toggle dark / light</button>
+</nav>
+
+<article>
+<header class="doc">
+  <div class="kicker">NOARK device tracking &middot; validation log</div>
+  <h1>Dual-camera tag jig against motion capture</h1>
+  <p class="lede">How well does Diwakar's two-camera, eight-tag tracker locate the NOARK device on the table? Two runs
+  of a 96-point grid, twelve moving takes and three jig-calibration takes, scored against an OptiTrack Motive rigid body.</p>
+  <div class="meta">
+    <span><b>Recorded</b> 3 and 5 Oct 2026</span>
+    <span><b>Analysed</b> 8&ndash;19 Oct 2026</span>
+    <span><b>Code</b> <code>diwakar_validation/</code> (branch diwakar_val)</span>
+    <span><b>Data</b> <code>data/diwakar/validaton_data</code></span>
+  </div>
+</header>
+
+<p id="nodata" hidden>The figure data did not load. Keep this page next to its folder
+<code>diwakar_validation/</code> (it holds <code>data.js</code> and the images), or rebuild it with
+<code>build_data.py</code>.</p>
+
+<!-- ============================================================ 1 -->
+<section id="summary">
+<h2>1. Summary</h2>
+<div class="stats">
+  <div class="stat"><div class="v">1.1&ndash;1.4 mm</div><div class="l">static error on the table plane (XZ RMSE, held out across runs, no scale fitted)</div></div>
+  <div class="stat"><div class="v">0.05 mm</div><div class="l">static jitter, stereo + jig (median 50-frame SD); mocap's own floor is 0.049 mm</div></div>
+  <div class="stat"><div class="v">1.2&ndash;2.8 mm</div><div class="l">error while moving (T2/T3, mean by speed; single takes 1.1&ndash;3.4 mm)</div></div>
+  <div class="stat"><div class="v">0.7 %</div><div class="l">camera range reads too long; Diwakar's fit absorbs it with a free scale</div></div>
+</div>
+<div class="key">
+<h3>Key findings</h3>
+<ol>
+  <li><b>The recorded pipeline is reproduced exactly.</b> Re-running Diwakar's public tracker on the recorded fisheye crops
+  gives his logged corners to a median of 0.004 px. His stereo solver on those corners gives his logged poses to 0.5 &micro;m,
+  and his mocap fit gives his published numbers exactly (0.309 / 0.629 / 0.330 mm across / depth / height, run 1).</li>
+  <li><b>His published numbers are optimistic, for two reasons.</b> They are in-sample, and the fit includes a free scale
+  on the camera translation (0.992). Fitted on one run and tested on the other, they stay close (0.34&ndash;0.39 / 0.63&ndash;0.77 mm).
+  With the scale fixed at 1 they become 0.73&ndash;0.80 / 0.72&ndash;1.0 mm. The scale is the same in both runs, so it is a
+  real camera range error of about 0.7 %, not fitting noise.</li>
+  <li><b>The mocap reference was steady.</b> In 176 of 193 grid holds the mocap rigid body moved less than its own noise
+  (median 3D SD 0.05 mm). Seventeen holds settled or were nudged, by at most 1.3 mm. That is too small to explain the
+  1&ndash;1.5 mm hold errors.</li>
+  <li><b>The rigid jig is what makes the tracker accurate.</b> Solving all visible tags as one rigid body, instead of tag 12
+  alone, halves the static error (T1, stereo: 1.1 vs 2.7 mm). It also cuts jitter 2&ndash;5&times; and raises coverage from
+  87 % to 100 %.</li>
+  <li><b>Corner refinement matters as much as the jig.</b> Diwakar's edge refinement and rapidtag's AprilTag refinement
+  are tied (T1 stereo 1.48 / 1.51 mm). Plain OpenCV corners (2.16 mm) and OpenCV CONTOUR refinement (2.32 mm) are clearly
+  worse, and CONTOUR is worse than no refinement.</li>
+  <li><b>Jitter is at the mocap floor.</b> With edge-refined corners, the jig and both cameras, the hold-still jitter is
+  0.053 mm, against 0.049 mm for the mocap itself. Unrefined corners give 0.31 mm.</li>
+  <li><b>Undistorting the image or only the corners gives the same accuracy.</b> Undistorting first lowers jitter by 5&ndash;20 %
+  for threshold-based refiners and makes no difference for edge refinement.</li>
+  <li><b>Moving error is 1.2&ndash;2.8 mm and grows with speed.</b> The registration is frozen from the grid. Comfortable
+  reaching gives 1.2 mm, slow shapes 1.5 mm and fast shapes 2.8 mm; peaks come at direction changes. The GPIO sync shows zero lag in every take.</li>
+</ol>
+</div>
+<p><b>Recommended configuration:</b> both cameras solved jointly, all tags as one rigid jig, and edge-refined or
+AprilTag-refined corners. This is the configuration Diwakar shipped. When reporting accuracy, use a registration fitted on
+one run and tested on the other, with no free scale. On that basis the device is accurate to about 1.1&ndash;1.4 mm on the table plane
+when still and 1.2&ndash;2.8 mm when moving.</p>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="background">
+<h2>2. Background</h2>
+<p>The NOARK game reads the position of a hand-held device on the table. Diwakar built a tracker for it: two global-shutter
+cameras on a Radxa board look at an eight-tag AprilTag jig mounted on the device, at 100 fps. He recorded a validation set
+against an OptiTrack Motive system and reported sub-millimetre agreement on a grid of static positions.</p>
+<p>This log answers four questions about that set:</p>
+<ol>
+  <li>Can his result be reproduced from the raw recordings, and what exactly does it measure?</li>
+  <li>What is the accuracy under an honest protocol: held-out registration and no free scale?</li>
+  <li>Which parts of the pipeline matter: stereo vs one camera, rigid jig vs one tag, corner refinement, and the undistortion path?</li>
+  <li>How large is the error when the device moves?</li>
+</ol>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="setup">
+<h2>3. Setup and data</h2>
+<h3>Hardware</h3>
+<p>Two OV9281-class global-shutter cameras (1280&times;800, fisheye lenses, 5 ms exposure, gain 4) sit on a stereo bar on
+the table and face the player. The <span id="baseline">77 mm</span> baseline cameras are calibrated with a 12&times;8
+checkerboard (fisheye model, 0.12 px reprojection). Their stereo extrinsics are stored as
+<code>p_cam0 = Rx&middot;p_cam1 + tx</code>. The device carries eight 50 mm AprilTag 36h11 tags (ids 4, 8, 12, 14, 20, 24,
+28, 32) on a 3D-printed jig. Tag 12 faces the cameras and defines the jig frame. Four Motive markers on the device form
+the mocap rigid body <code>noark</code>, recorded at 100 Hz.</p>
+
+<figure>
+  <div class="imgs two">
+    <div class="cell"><img id="img-c0" alt="Camera 0 crop of the device with detected tag outlines"><div class="cap">camera 0, grid hold 40</div></div>
+    <div class="cell"><img id="img-c1" alt="Camera 1 crop of the device with detected tag outlines"><div class="cap">camera 1, grid hold 40</div></div>
+    <div class="cell"><img id="img-c2" alt="Camera 0 crop near the left edge of the grid"><div class="cap">camera 0, grid hold 0 (near corner)</div></div>
+    <div class="cell"><img id="img-c3" alt="Camera 1 crop near the left edge of the grid"><div class="cap">camera 1, grid hold 0</div></div>
+  </div>
+  <figcaption><b>Figure 1. What the cameras see.</b> Raw fisheye crops saved by the tracker (it records only the box
+  around the device). The blue outlines are the tracker's logged, edge-refined corners, mapped from the undistorted image
+  back onto the fisheye image. The orange dot marks each tag's first corner. Near the grid edge (bottom row) fewer tags
+  are visible and they are seen at a steep angle, which is why a single tag is fragile and the rigid jig helps.</figcaption>
+</figure>
+
+<figure>
+  <div class="sm-grid">
+    <div class="sm" id="fig-jig-top"></div>
+    <div class="sm" id="fig-jig-front"></div>
+  </div>
+  <figcaption><b>Figure 2. The tag jig (shipped geometry).</b> Tag centres and faces in the tag-12 frame; tag 12 is
+  outlined in blue. Left: from above (x across, z toward the camera); the tick on each tag is its face normal. Right: from
+  the camera. The &#9670; is the grip point, the point the game uses. Tags 4/8 are turned 60&deg; and 28/32 30&deg; from the forward direction, and 20/24 face sideways, so
+  some tag always faces each camera as the device turns. Rebuilding the jig from the T0 takes moved the rear four tags by
+  1.5&ndash;1.8 mm and tilted 4/14/32 by 0.8&ndash;1.6&deg;, without improving accuracy (&sect;6.5).</figcaption>
+</figure>
+
+<h3>Takes</h3>
+<div class="tblwrap"><table class="tbl" id="tbl-takes"></table></div>
+<ul>
+  <li><b>T0</b>: free hand-held motion with no mocap, used to calibrate the jig by bundle adjustment. Only the 10-03 T0 takes have images.</li>
+  <li><b>T1</b>: the grid. The device is placed on 96 table points (12 across &times; 8 deep, about 96 &times; 83 mm spacing) and
+  held for about 3 s each. The operator marks <code>hold_start</code>/<code>hold_end</code> in <code>marks.csv</code>. In run 2
+  one point was held twice (holds 50/51); the redo is kept.</li>
+  <li><b>T2</b>: circles and figure-eights at slow, comfortable and fast speed, two runs each.</li>
+  <li><b>T3</b>: free reaching at comfortable and fast speed, three runs each.</li>
+</ul>
+<p>Images are stored for every sample in T1, but only every second sample in T2/T3.</p>
+
+<h3>Conventions</h3>
+<ul>
+  <li><b>Corners</b> (<code>corners.csv</code>) are in the <em>undistorted pinhole</em> image of each camera: intrinsics
+  <code>meta['undistorted']</code>, zero distortion, corner order TL, TR, BR, BL. This was checked against the poses in
+  <code>samples.csv</code> (0.47 px reprojection).</li>
+  <li><b>Poses</b> in <code>samples.csv</code> are the jig pose in cam0's frame from the joint stereo solve only. Single-camera
+  poses had to be recomputed.</li>
+  <li><b>Mocap</b> is Motive Y-up: X across the table, Y height, Z depth (toward or away from the cameras). The table plane is X&ndash;Z.</li>
+  <li><b>Sync</b>: Motive emits one GPIO pulse per frame. The <i>k</i>-th rising edge in <code>sync.csv</code> is mocap
+  frame <i>k</i> (10 ms, no gaps). Camera samples carry monotonic timestamps on the same clock as the edges.</li>
+</ul>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="pipeline">
+<h2>4. Pipeline and its verification</h2>
+<figure class="diagram">
+<svg viewBox="0 0 820 300" role="img" aria-label="Tracker and evaluation pipeline">
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+  <text class="dg-lane" x="10" y="22">Device tracker (Radxa, 100 fps, per camera)</text>
+  <rect class="dg-box" x="10" y="34" width="140" height="58" rx="8"/><text class="dg-t" x="22" y="56">Raw fisheye</text><text class="dg-s" x="22" y="74">1280&times;800, 2 cameras</text>
+  <rect class="dg-box" x="175" y="34" width="140" height="58" rx="8"/><text class="dg-t" x="187" y="56">Undistort image</text><text class="dg-s" x="187" y="74">fisheye remap &rarr; pinhole</text>
+  <rect class="dg-box" x="340" y="34" width="140" height="58" rx="8"/><text class="dg-t" x="352" y="56">Detect tags</text><text class="dg-s" x="352" y="74">ArUco CONTOUR, win 15</text>
+  <rect class="dg-box accent" x="505" y="34" width="140" height="58" rx="8"/><text class="dg-t" x="517" y="56">Edge refine</text><text class="dg-s" x="517" y="74">grey-level edge lines</text>
+  <rect class="dg-box accent" x="670" y="34" width="140" height="58" rx="8"/><text class="dg-t" x="682" y="56">Joint stereo solve</text><text class="dg-s" x="682" y="74">8-tag jig, Huber 1 px</text>
+  <path class="dg-arrow" d="M150,63 H172"/><path class="dg-arrow" d="M315,63 H337"/><path class="dg-arrow" d="M480,63 H502"/><path class="dg-arrow" d="M645,63 H667"/>
+  <text class="dg-lane" x="10" y="132">Recorded</text>
+  <rect class="dg-box" x="10" y="144" width="190" height="52" rx="8"/><text class="dg-t" x="22" y="166">images_cam*.bin</text><text class="dg-s" x="22" y="183">raw crops round the device</text>
+  <rect class="dg-box" x="215" y="144" width="190" height="52" rx="8"/><text class="dg-t" x="227" y="166">corners.csv</text><text class="dg-s" x="227" y="183">refined corners, pinhole px</text>
+  <rect class="dg-box" x="420" y="144" width="190" height="52" rx="8"/><text class="dg-t" x="432" y="166">samples.csv</text><text class="dg-s" x="432" y="183">jig pose in cam0</text>
+  <rect class="dg-box" x="625" y="144" width="185" height="52" rx="8"/><text class="dg-t" x="637" y="166">sync.csv + mocap.csv</text><text class="dg-s" x="637" y="183">GPIO edge k = frame k</text>
+  <text class="dg-lane" x="10" y="232">This analysis</text>
+  <rect class="dg-box accent3" x="10" y="244" width="250" height="48" rx="8"/><text class="dg-t" x="22" y="264">Re-detect: none / contour / edge / april</text><text class="dg-s" x="22" y="281">on fisheye (raw) or undistorted (ud)</text>
+  <rect class="dg-box accent3" x="280" y="244" width="250" height="48" rx="8"/><text class="dg-t" x="292" y="264">Solve: cam0 / cam1 / joint</text><text class="dg-s" x="292" y="281">jig: shipped, T0 rebuilt, or tag 12 only</text>
+  <rect class="dg-box accent3" x="550" y="244" width="260" height="48" rx="8"/><text class="dg-t" x="562" y="264">Register to mocap, score</text><text class="dg-s" x="562" y="281">fit on one run, test on the other</text>
+  <path class="dg-arrow" d="M105,196 V241"/><path class="dg-arrow" d="M260,268 H277"/><path class="dg-arrow" d="M530,268 H547"/><path class="dg-arrow" d="M717,196 V241"/>
+</svg>
+<figcaption><b>Figure 3. Tracker and evaluation.</b> Top: the tracker as recorded (meta.json settings, git
+<code>94dae53</code>). Middle: what each take stores. Bottom: this analysis re-detects corners from the saved crops,
+re-solves the pose several ways, and scores each variant against mocap.</figcaption>
+</figure>
+
+<h3>Reproducing what was recorded</h3>
+<div class="tblwrap"><table class="tbl text">
+<thead><tr><th>Step</th><th>How it was checked</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Corners</td><td><code>rerun_tracker.py</code>: his public tracker (NOARKGames_BKD, HEAD d85b2ea) on the saved crops. The crop is pasted into a blank frame, remapped, detected and edge-refined.</td><td>median 0.004 px, max 0.03 px from <code>corners.csv</code> (OpenCV 5.0 vs his 4.13). Without edge refine: 0.8 px off.</td></tr>
+<tr><td>Pose</td><td><code>board.estimate_board_pose_dual_gn</code> (Huber 1 px) on the logged corners, shipped jig</td><td>matches <code>samples.csv</code> to 0.5 &micro;m</td></tr>
+<tr><td>Mocap fit</td><td><code>reproduce_diwakar.py</code>: his 13-parameter fit, rotation weight 200 mm/rad, device mean over the whole hold, mocap trimmed 0.5 s</td><td>run 1: 0.309 / 0.629 / 0.330 mm, identical to his <code>compare_T1.csv</code></td></tr>
+<tr><td>Sync</td><td>lag scan &plusmn;300 ms on every moving take</td><td>best lag 0 ms in all takes</td></tr>
+</tbody></table></div>
+<p class="callout warn">The recording commit <code>94dae53</code> is not in the public repository, but the public HEAD
+reproduces the logged corners and poses. The one open sync issue: T1 has about 20 more GPIO edges than mocap frames (67,422 vs 67,402 in run 1).
+At 100 Hz this is 0.2 s over 11 minutes. It cannot matter for 3 s still holds and shows no lag in the moving takes.</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="method">
+<h2>5. Evaluation method</h2>
+<h3>Holds</h3>
+<p>Each T1 hold is the span from <code>hold_start</code> to <code>hold_end</code> (about 3 s). Both ends are trimmed by 0.5 s
+to drop settling. The device value per hold is the median grip point over the camera samples inside it. The mocap value is
+the mean rigid-body position and orientation over the GPIO-synced frames inside it.</p>
+
+<h3>Registration (ours)</h3>
+<p>The camera and mocap frames are unrelated, and the mocap rigid body's origin is not the grip point. Per solver and corner
+source we fit a rigid transform plus an offset on the body:</p>
+<pre><code>p_mocap,i + R_body,i · g_body  =  R_wc · g_cam,i + t_wc        (9 parameters: R_wc, t_wc, g_body)</code></pre>
+<p>The fit uses one T1 run and is scored on the other (<b>held out</b>), both ways. There is <b>no scale parameter</b>. Errors are in
+mocap X (across) and Z (depth). Y (height) is nearly constant on the table and is not scored. For the moving takes, the
+registration fitted on both T1 runs is frozen and applied to each per-sample pose. Mocap is interpolated to the camera
+timestamps through the GPIO edges, and frames where the mocap jumps more than 20 mm in 10 ms (Motive re-acquisition) are dropped.</p>
+
+<h3>Registration (Diwakar's)</h3>
+<p>His fit has 13 parameters: camera&rarr;mocap rotation and translation, board&rarr;body rotation, the body origin in the
+board frame, and a <b>free scale on the camera translation</b>. It is fitted and scored on the same run, with position residuals in mm
+and rotation residuals weighted 200 mm/rad. Errors are expressed in his table frame: across &asymp; &minus;X, depth &asymp;
+&minus;Z, height &asymp; Y.</p>
+
+<h3>Jitter</h3>
+<p>A still hold is a free jitter test. Each trimmed hold is cut into 50-frame windows (0.5 s, matching the dome burst
+protocol in <code>jitter_model/</code>). Hold jitter is the median window SD of the grip point, as a 3D norm in mocap
+axes. The mocap rigid body's SD over the same windows is the floor. All conditions are compared on the same frames: a frame
+counts only if every variant for that solver produced a pose.</p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="results">
+<h2>6. Results</h2>
+
+<h3 id="res-still">6.1 Was the jig still during the grid holds?</h3>
+<p>Every T1 number assumes the device did not move during a hold. Mocap can test this directly. For each hold (untrimmed),
+we computed the 3D SD of the rigid body about its hold mean, the frame-to-frame noise (SD of successive differences
+/ &radic;2), the largest deviation, the linear drift over the hold, and the largest rotation from the mean orientation.</p>
+<figure>
+  <div class="chart" id="fig-timeline"></div>
+  <figcaption><b>Figure 4. T1 run 1 as mocap saw it.</b> Rigid-body X (across) and Z (depth) at 10 Hz; shaded bands are
+  the 96 marked holds. The device steps across a row, moves one row deeper and comes back, a serpentine over 12 &times; 8 points.</figcaption>
+</figure>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>still (drift &lt; 0.2 mm, max dev &lt; 0.5 mm, rotation &lt; 0.5&deg;)</span><span><i class="sw k-bad"></i>moved slightly</span></div>
+  <div class="sm-grid">
+    <div class="sm" id="fig-still-map"></div>
+    <div class="sm" id="fig-still-noise"></div>
+  </div>
+  <figcaption><b>Figure 5. Mocap stillness per hold.</b> Left: hold positions on the table (both runs), red = flagged.
+  Right: the hold's 3D SD against its frame-to-frame noise. Points on the diagonal hold no motion beyond white noise.
+  The median ratio is 1.09. Hover for details.</figcaption>
+</figure>
+<div class="tblwrap"><table class="tbl" id="tbl-still"></table></div>
+<p><b>Verdict:</b> the jig was still in <span id="n-still">176 of 193</span> holds. The median SD is 0.05 mm, the same as
+Motive's noise. The flagged holds moved by at most 1.3 mm. The worst are run 1 holds 6&ndash;7 (the first row, where the jig
+apparently was still settling) and the first attempt at run 2 hold 50, which was redone. These shifts are much smaller than the 1&ndash;1.5 mm
+hold errors in &sect;6.2. They are also partly removed by the 0.5 s trim, so the reference is not the limiting factor.</p>
+
+<h3 id="res-static">6.2 Static accuracy on the grid</h3>
+<div class="tblwrap"><table class="tbl" id="tbl-t1"></table></div>
+<p>The table uses <code>analyze_T1.py</code>: corners re-solved with the T0-rebuilt jig, and <code>joint (logged)</code> = Diwakar's own
+poses with the shipped jig. All four land at 1.2&ndash;1.7 mm held out. Stereo is best in depth (Z), and his shipped solve is the best overall.</p>
+<figure>
+  <div class="seg-btns" role="group" aria-label="Solver" id="btn-errmap"></div>
+  <div class="chart" id="fig-errmap"></div>
+  <figcaption><b>Figure 6. Where the error is.</b> Each arrow runs from the mocap position of a hold to the device
+  position after registration (pooled fit, both runs), magnified &times;20. Most holds are within 1 mm. The largest errors sit at the edges of the grid, in the
+  near-left corner and the right-hand columns, where fewer tags are visible and they are seen most obliquely.</figcaption>
+</figure>
+<figure>
+  <div class="sm-grid">
+    <div class="sm" id="fig-err-z"></div>
+    <div class="sm" id="fig-err-x"></div>
+  </div>
+  <figcaption><b>Figure 7. Depth error has a slope.</b> Z error against Z, and X error against X, for Diwakar's poses (joint,
+  logged, pooled fit). The Z residual rises about 0.5 % of the distance travelled. This is the camera range scale error that
+  his free scale absorbs (&sect;6.3). X shows no comparable trend.</figcaption>
+</figure>
+
+<h3 id="res-his">6.3 His metric against ours</h3>
+<div class="tblwrap"><table class="tbl" id="tbl-his"></table></div>
+<p>Read across the logged row. In-sample with free scale (his protocol) gives 0.31 / 0.63 / 0.33 mm. Testing on the other run costs
+little (0.34&ndash;0.39 across). Fixing the scale at 1 doubles the across error to 0.73&ndash;0.80 mm, because a 0.77 %
+scale error over a 700 mm workspace is several millimetres. The fitted scale agrees between runs (0.9921 / 0.9937), so this
+is a real camera range bias. It most likely comes from the intrinsics or the stereo baseline, and recalibrating could remove it. His
+13-parameter model also fits orientation and averages the whole untrimmed hold, which lowers RMSE further. Our 9-parameter
+position-only model without scale is stricter, and that explains why the same poses score 1.0&ndash;1.4 mm XZ in &sect;6.2.</p>
+
+<h3 id="res-corners">6.4 Corner refinement</h3>
+<p>The saved crops allow re-detection with other corner methods, using the same frames, jig rebuild and solvers:</p>
+<ul>
+  <li><b>logged</b>: Diwakar's tracker (OpenCV CONTOUR, then his edge refinement: grey-level edge lines intersected).</li>
+  <li><b>april</b>: rapidtag &ge; 0.1.12 with <code>CORNER_REFINE_APRILTAG</code>.</li>
+  <li><b>none</b>: OpenCV quads, no refinement.</li>
+  <li><b>contour</b>: OpenCV <code>CORNER_REFINE_CONTOUR</code> alone.</li>
+</ul>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>T1 grid</span><span><i class="sw k-b"></i>T2 shapes</span><span><i class="sw k-c"></i>T3 reaching</span></div>
+  <div class="chart" id="fig-corners"></div>
+  <figcaption><b>Figure 8. XZ RMSE by corner source</b> (stereo, T0 jig rebuilt from each source's own corners, mean over
+  takes). T1 is held out across runs; T2/T3 use the frozen T1 registration. Edge and AprilTag refinement are tied, while
+  unrefined and CONTOUR corners are 0.6&ndash;1.4 mm worse.</figcaption>
+</figure>
+<div class="tblwrap"><table class="tbl" id="tbl-cornerpx"></table></div>
+<p>Re-detected corners differ from the logged ones by a median 0.75&ndash;0.93 px. The size difference is the more important one.
+Threshold corners (none, contour) make tags about 1.7&ndash;2.0 % smaller than edge-refined corners, while AprilTag corners
+match the edge-refined size (+0.04 %). A tag that looks smaller looks farther away, and with a jig built from the same
+corners this turns into the depth errors above.</p>
+
+<h3 id="res-jig">6.5 Rigid jig against one tag</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>T1 grid</span><span><i class="sw k-b"></i>T2 shapes</span><span><i class="sw k-c"></i>T3 reaching</span></div>
+  <div class="chart" id="fig-jig"></div>
+  <figcaption><b>Figure 9. XZ RMSE by jig model</b> (stereo, logged corners). <i>tag 12 only</i> uses the reference tag
+  alone; the others solve all visible tags as one rigid body. They are the shipped geometry, a T0 rebuild from the 10-03 takes,
+  and a rebuild from all T0 takes. The rigid jig halves the error. The rebuilt jigs have better held-out reprojection but
+  are not more accurate than the shipped one.</figcaption>
+</figure>
+<div class="tblwrap"><table class="tbl" id="tbl-jig"></table></div>
+<p>Tag 12 alone is visible in 87 % of samples; the jig gives a pose in 100 %. One 50 mm tag at 0.3&ndash;0.7 m constrains depth
+only through its apparent size. The jig spans about 160 &times; 230 mm, so depth comes from the spread between tags.</p>
+
+<h3 id="res-jitter">6.6 Static jitter</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>cam0</span><span><i class="sw k-b"></i>cam1</span><span><i class="sw k-c"></i>joint stereo</span><span><i class="sw ln k-n"></i>mocap floor</span></div>
+  <div class="chart" id="fig-jitter"></div>
+  <figcaption><b>Figure 10. Hold-still jitter</b>, median over holds of the 50-frame window SD (3D, mm, log scale). The bar
+  spans the 25&ndash;75 % range of holds for the joint solver. The dashed line is the mocap's own SD over the same windows. With edge-refined corners and the jig,
+  the tracker is at the mocap floor. Diwakar's logged poses (shipped jig) give 0.059 mm.</figcaption>
+</figure>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>edge refine (logged)</span><span><i class="sw k-b"></i>AprilTag refine</span><span><i class="sw k-c"></i>no refine</span><span><i class="sw ln k-n"></i>mocap</span></div>
+  <div class="chart" id="fig-jit-depth"></div>
+  <figcaption><b>Figure 11. Jitter against distance</b> (joint, rigid jig, holds binned by camera depth). Unrefined corners sit
+  near 0.2&ndash;0.35 mm everywhere. Edge and AprilTag refinement are at or below the mocap line up to about 450 mm and rise to
+  0.13&ndash;0.16 mm at the far end of the grid, where the tags are smallest.</figcaption>
+</figure>
+<p>The SD over a whole hold is 2&ndash;3&times; the window SD, so a slow drift of 0.1&ndash;0.15 mm sits on top of the jitter. Part of
+it is the device settling (&sect;6.1), and part is the estimator.</p>
+
+<h3 id="res-paths">6.7 Undistort the image, or only the corners?</h3>
+<p>The tracker remaps every frame from fisheye to pinhole and then detects tags. The alternative is to detect on the fisheye image and
+undistort only the corner points (<code>cv2.fisheye.undistortPoints</code>), which is cheaper. <code>detect_paths.py</code> ran both
+paths with identical detector settings and four refiners. Each combination got its own T0 jig.</p>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>edge</span><span><i class="sw k-b"></i>AprilTag</span><span><i class="sw k-c"></i>none</span><span><i class="sw k-d"></i>contour</span></div>
+  <div class="chart" id="fig-paths-radius"></div>
+  <figcaption><b>Figure 12. Corner gap between the two paths</b>, the median distance in the pinhole image for the same tag seen
+  both ways, against distance from the principal point. The gap grows outward, where the fisheye resampling bends the
+  tag edges most. Edge refinement starts lowest (0.09 px) but reaches 0.79 px at the rim.</figcaption>
+</figure>
+<div class="tblwrap"><table class="tbl" id="tbl-paths"></table></div>
+<p><b>Accuracy is a tie</b>: within 0.04 mm for edge and AprilTag refinement. Undistorting first lowers jitter by
+5&ndash;20 % for the threshold refiners (none, contour) and about 5 % for AprilTag. For edge refinement it changes nothing. Detecting on the fisheye image is a
+safe way to save the per-frame remap.</p>
+
+<h3 id="res-dyn">6.8 Moving tasks</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-a"></i>shipped jig</span><span><i class="sw k-n"></i>tag 12 only</span></div>
+  <div class="chart" id="fig-dyn"></div>
+  <figcaption><b>Figure 13. Per-take XZ RMSE while moving</b> (stereo, logged corners, registration frozen from T1).
+  Error grows with speed in both shape and reaching tasks.</figcaption>
+</figure>
+<div class="tblwrap"><table class="tbl" id="tbl-speed"></table></div>
+<figure class="wide">
+  <img id="img-t2c" alt="Circle take: paths, error over time, RMSE by method">
+  <figcaption><b>Figure 14. T2 circle, comfortable, run 1.</b> Top: device path (colour) over mocap (black) for four jig
+  models. Middle: X and Z error over time; error peaks where the motion reverses. Bottom: RMSE by solver and the error
+  distribution. Tag 12 alone (blue) has repeated 5&ndash;9 mm Z spikes where the tag turns away.</figcaption>
+</figure>
+<figure class="wide">
+  <img id="img-t3" alt="Reaching take: paths and errors">
+  <figcaption><b>Figure 15. T3 reaching, comfortable, run 1.</b> Same layout. The shipped jig stays within about 3 mm through
+  the whole take.</figcaption>
+</figure>
+<p>A constant lag would show up as error proportional to velocity. The lag scan found 0 ms in every take, so the speed
+dependence is not a timing offset. Likely sources are motion blur at 5 ms exposure (about 2 mm of travel at 0.4 m/s), the
+up-to-5 ms skew between the two cameras' exposures, and steeper tag angles during fast turns.</p>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="discussion">
+<h2>7. Discussion and limits</h2>
+<ul>
+  <li><b>What the sub-millimetre number means.</b> It is correct for what it measures: in-sample agreement after
+  fitting a scale. As a deployment claim, the honest figure is about 1.1&ndash;1.4 mm static and 1.2&ndash;2.8 mm moving. The game
+  needs centimetre-level positions, so either figure is ample.</li>
+  <li><b>The 0.7 % range error is the largest fixable error.</b> It is consistent between runs and shows up as a
+  depth-proportional Z residual. Rechecking the stereo baseline and focal lengths, for example against a measured bar on the table, should
+  bring the no-scale error close to the free-scale figure.</li>
+  <li><b>The reference is good enough.</b> The mocap rigid body was still to 0.05 mm and its jitter is the same as the
+  tracker's. Below about 0.05 mm the validation cannot separate tracker from mocap.</li>
+  <li><b>Only one device and one session.</b> All takes are one jig, one camera pair, one day (plus the 10-05 T0). The
+  numbers do not cover a recalibrated or rebuilt device.</li>
+  <li><b>Height (Y) and orientation are not scored.</b> The device slides on a flat table, so Y and tilt barely vary.</li>
+  <li><b>Moving-task registration depends on T1.</b> T2/T3 errors include any registration error carried over from the grid. That
+  error is small (held-out T1 &asymp; in-sample T1) but not zero.</li>
+</ul>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="next">
+<h2>8. Next steps</h2>
+<ol>
+  <li>Recalibrate or verify the stereo scale (a known-length bar, or a checkerboard at several depths), then re-score T1 without scale.</li>
+  <li>Use the stereo + jig + edge/AprilTag configuration as the reference tracker. If the remap costs CPU on the Radxa, switch to
+  fisheye-space detection, since &sect;6.7 found no accuracy cost.</li>
+  <li>For fast motion, test a shorter exposure (2&ndash;3 ms with more gain) and per-camera timestamp interpolation in the stereo solve.</li>
+  <li>Report validation numbers with held-out registration and no free scale. Report the free-scale figure only alongside it.</li>
+</ol>
+</section>
+
+<!-- ============================================================ A -->
+<section id="appendix">
+<h2>Appendix</h2>
+<h3>Scripts (<code>diwakar_validation/</code>)</h3>
+<div class="tblwrap"><table class="tbl text">
+<thead><tr><th>Script</th><th>Does</th><th>Writes</th></tr></thead>
+<tbody>
+<tr><td><code>common.py</code></td><td>loaders, jig model, single and joint stereo solvers, GPIO sync</td><td>&mdash;</td></tr>
+<tr><td><code>rerun_tracker.py</code></td><td>his tracker corner pipeline on the saved crops</td><td><code>out/corners/*_bkd.csv</code></td></tr>
+<tr><td><code>reproduce_diwakar.py</code></td><td>his 13-parameter T1 mocap fit</td><td>stdout</td></tr>
+<tr><td><code>detect_corners.py</code>, <code>detect_paths.py</code></td><td>re-detect corners: none / contour / april; ud vs raw paths</td><td><code>out/corners/</code></td></tr>
+<tr><td><code>build_jig_T0.py</code></td><td>stereo bundle adjustment of the jig on T0 (alternating 5 s blocks held out)</td><td><code>out/jig_T0*.json</code></td></tr>
+<tr><td><code>compute_poses.py</code></td><td>cam0 / cam1 / joint poses per corner source and jig</td><td><code>out/poses/</code></td></tr>
+<tr><td><code>analyze_T1.py</code>, <code>plot_T1.py</code></td><td>hold table, 9-parameter registration, held-out errors</td><td><code>out/T1_*.csv/json/png</code></td></tr>
+<tr><td><code>analyze_all.py</code></td><td>all takes &times; sources &times; solvers, lag scan, per-take plots (<code>corners</code>, <code>jig</code>, <code>jig_april</code> studies)</td><td><code>out/summary_errors*.csv</code>, <code>out/plots*/</code></td></tr>
+<tr><td><code>compare_raw_detect.py</code></td><td>re-detected corners scored in his metric</td><td><code>out/compare_raw_detect.txt</code></td></tr>
+<tr><td><code>static_jitter_T1.py</code></td><td>hold-window jitter, by condition and by distance</td><td><code>out/static_jitter/</code></td></tr>
+<tr><td><code>compare_paths.py</code></td><td>ud vs raw: corner gap, jitter, accuracy</td><td><code>out/paths/</code></td></tr>
+</tbody></table></div>
+<h3>Rebuild this page</h3>
+<pre><code>.venv/Scripts/python docs/results/diwakar_validation/build_data.py     # from the NOARK_backbone root</code></pre>
+<p>The page reads <code>diwakar_validation/data.js</code> and <code>diwakar_validation/img/</code>. The builder reads only finished outputs
+and the recordings, and computes the mocap stillness table itself. rapidtag must be 0.1.12 for the AprilTag corners: <code>uv sync</code> reverts it
+to 0.1.4. <code>edge_refine.py</code> comes from Diwakar's tracker clone (set <code>BKD_TRACKER</code>).</p>
+</section>
+</article>
+</div>
+
+<script src="diwakar_validation/data.js"></script>
+<script>
+(function () {
+  "use strict";
+  const root = document.documentElement;
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+  const D = window.REPORT_DATA;
+  if (!D) { document.getElementById("nodata").hidden = false; return; }
+  const NS = "http://www.w3.org/2000/svg";
+  const IMG = "diwakar_validation/img/";
+
+  // ---------------------------------------------------------------- dom helpers
+  function s(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function h(tag, attrs, parent, txt) {
+    const e = document.createElement(tag);
+    if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (txt !== undefined) e.textContent = txt;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function t(parent, x, y, str, cls, anchor) {
+    const e = s("text", { x: x, y: y, class: cls || "tk", "text-anchor": anchor || "start" }, parent);
+    e.textContent = str;
+    return e;
+  }
+  const f = (v, n) => (v === null || v === undefined) ? "—" : (+v).toFixed(n === undefined ? 2 : n);
+
+  // ---------------------------------------------------------------- tooltip
+  const tip = h("div", { id: "tip", role: "tooltip" }, document.body);
+  tip.hidden = true;
+  function showTip(lines, x, y) {
+    tip.replaceChildren();
+    for (const l of lines) {
+      const r = h("div", { class: "tip-row" }, tip);
+      h("strong", null, r, l[0]);
+      if (l[1]) h("span", { class: "tip-label" }, r, l[1]);
+    }
+    tip.hidden = false;
+    const W = tip.offsetWidth, H = tip.offsetHeight;
+    let px = x + 14, py = y + 14;
+    if (px + W > innerWidth - 8) px = x - W - 14;
+    if (py + H > innerHeight - 8) py = y - H - 14;
+    tip.style.left = Math.max(8, px) + "px";
+    tip.style.top = Math.max(8, py) + "px";
+  }
+  function bind(node, lines) {
+    node.setAttribute("tabindex", "0");
+    node.classList.add("mark");
+    node.addEventListener("pointermove", e => { showTip(lines(), e.clientX, e.clientY); node.classList.add("hot"); });
+    node.addEventListener("pointerleave", () => { tip.hidden = true; node.classList.remove("hot"); });
+    node.addEventListener("focus", () => { const r = node.getBoundingClientRect(); showTip(lines(), r.right, r.top); node.classList.add("hot"); });
+    node.addEventListener("blur", () => { tip.hidden = true; node.classList.remove("hot"); });
+  }
+
+  // ---------------------------------------------------------------- scales
+  function nice(lo, hi, n) {
+    const step0 = (hi - lo) / (n || 4);
+    const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const r = step0 / mag;
+    const step = (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10) * mag;
+    const out = [];
+    for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+    return out;
+  }
+  function lin(d0, d1, r0, r1) { return v => r0 + (v - d0) / (d1 - d0) * (r1 - r0); }
+  function logs(d0, d1, r0, r1) { const a = Math.log10(d0), b = Math.log10(d1); return v => r0 + (Math.log10(v) - a) / (b - a) * (r1 - r0); }
+  function ext(vals, pad, include) {
+    let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (include !== undefined) { lo = Math.min(lo, include); hi = Math.max(hi, include); }
+    const sp = (hi - lo) || 1;
+    return [lo - sp * (pad || 0.06), hi + sp * (pad || 0.06)];
+  }
+
+  // generic XY frame: returns {g, x, y, W, H}
+  function frame(el, o) {
+    const W = o.W || 820, H = o.H || 300, m = Object.assign({ l: 52, r: 16, t: o.title ? 26 : 10, b: 40 }, o.m || {});
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": o.aria || o.title || "chart" }, el);
+    const x = (o.xlog ? logs : lin)(o.xd[0], o.xd[1], m.l, W - m.r);
+    const y = (o.ylog ? logs : lin)(o.yd[0], o.yd[1], H - m.b, m.t);
+    if (o.title) t(svg, m.l, 15, o.title, "ptitle");
+    const xt = o.xticks || (o.xlog ? [0.01, 0.03, 0.1, 0.3, 1, 3, 10].filter(v => v >= o.xd[0] && v <= o.xd[1]) : nice(o.xd[0], o.xd[1], o.xn || 6));
+    const yt = o.yticks || (o.ylog ? [0.01, 0.03, 0.1, 0.3, 1, 3, 10].filter(v => v >= o.yd[0] && v <= o.yd[1]) : nice(o.yd[0], o.yd[1], o.yn || 4));
+    for (const v of yt) { s("line", { class: "grid", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }, svg); t(svg, m.l - 6, y(v) + 4, String(v), "tk", "end"); }
+    for (const v of xt) { if (o.xgrid) s("line", { class: "grid", x1: x(v), x2: x(v), y1: m.t, y2: H - m.b }, svg); t(svg, x(v), H - m.b + 15, String(v), "tk", "middle"); }
+    s("line", { class: "axisline", x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b }, svg);
+    if (o.xlabel) t(svg, (m.l + W - m.r) / 2, H - 6, o.xlabel, "tk strong", "middle");
+    if (o.ylabel) { const e = t(svg, 0, 0, o.ylabel, "tk strong", "middle"); e.setAttribute("transform", `translate(12,${(m.t + H - m.b) / 2}) rotate(-90)`); }
+    return { svg: svg, x: x, y: y, W: W, H: H, m: m };
+  }
+  function path(pts) { return pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(""); }
+
+  // horizontal dot chart: rows [{label, vals: {key: v}}], series [{key, label, cls}]
+  function dotChart(el, rows, series, o) {
+    const rowH = o.rowH || 26, W = 820, ml = o.ml || 210, top = 10, H = top + rows.length * rowH + 40;
+    const all = [];
+    rows.forEach(r => series.forEach(se => { const v = r.vals[se.key]; if (v != null) all.push(v); if (r.rng && r.rng[se.key]) all.push.apply(all, r.rng[se.key]); }));
+    if (o.ref != null) all.push(o.ref);
+    const xd = o.xd || (o.xlog ? [Math.min.apply(null, all) / 1.3, Math.max.apply(null, all) * 1.3] : [0, Math.max.apply(null, all) * 1.08]);
+    const F = frame(el, { W: W, H: H, xd: xd, yd: [0, 1], yticks: [], xlog: o.xlog, xgrid: true, xlabel: o.xlabel, m: { l: ml, r: 20, t: top, b: 34 } });
+    if (o.ref != null) s("line", { class: "refline", x1: F.x(o.ref), x2: F.x(o.ref), y1: top, y2: H - 34 }, F.svg);
+    rows.forEach((r, i) => {
+      const cy = top + i * rowH + rowH / 2;
+      if (r.sep) s("line", { class: "grid", x1: 0, x2: W - 20, y1: cy - rowH / 2, y2: cy - rowH / 2 }, F.svg);
+      t(F.svg, ml - 10, cy + 4, r.label, "rlabel", "end");
+      series.forEach((se, j) => {
+        const v = r.vals[se.key];
+        if (v == null) return;
+        const off = series.length > 1 && o.dodge ? (j - (series.length - 1) / 2) * 5 : 0;
+        const g = s("g", {}, F.svg);
+        if (r.rng && r.rng[se.key]) s("line", { class: "rng c-" + se.cls, x1: F.x(r.rng[se.key][0]), x2: F.x(r.rng[se.key][1]), y1: cy + off, y2: cy + off }, g);
+        s("circle", { class: "dot c-" + se.cls, cx: F.x(v), cy: cy + off, r: 5.5 }, g);
+        s("circle", { class: "hit", cx: F.x(v), cy: cy + off, r: 10 }, g);
+        bind(g, () => [[f(v, o.digits || 2) + " " + (o.unit || "mm"), se.label + " · " + r.label]]);
+      });
+    });
+    return F;
+  }
+
+  function seg(container, options, onPick, initial) {
+    options.forEach(op => {
+      const b = h("button", { type: "button", "aria-pressed": op.key === initial ? "true" : "false" }, container, op.label);
+      b.addEventListener("click", () => {
+        container.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", "false"));
+        b.setAttribute("aria-pressed", "true");
+        onPick(op.key);
+      });
+    });
+    onPick(initial);
+  }
+
+  function table(id, head, rows, caption) {
+    const tb = document.getElementById(id);
+    if (caption) h("caption", null, tb, caption);
+    const th = h("thead", null, tb), tr = h("tr", null, th);
+    head.forEach(c => h("th", null, tr, c));
+    const body = h("tbody", null, tb);
+    rows.forEach(r => { const row = h("tr", null, body); r.forEach(c => { const td = h("td", null, row); if (c && c.best) { td.className = "best"; td.textContent = c.v; } else td.textContent = c; }); });
+  }
+
+  // ---------------------------------------------------------------- images, small facts
+  document.getElementById("img-c0").src = IMG + D.img.t1_centre[0];
+  document.getElementById("img-c1").src = IMG + D.img.t1_centre[1];
+  document.getElementById("img-c2").src = IMG + D.img.t1_corner[0];
+  document.getElementById("img-c3").src = IMG + D.img.t1_corner[1];
+  document.getElementById("img-t2c").src = IMG + D.img.plots.T2_circle_comfortable_r1;
+  document.getElementById("img-t3").src = IMG + D.img.plots.T3_comfortable_r1;
+  document.getElementById("baseline").textContent = f(D.jig.baseline_mm, 0) + " mm";
+
+  // ---------------------------------------------------------------- takes table
+  table("tbl-takes", ["Take", "Task", "Length (s)", "Camera samples", "Pose found", "GPIO edges", "Mocap frames", "Holds"],
+    D.takes.map(r => [r.take.replace("2026-", ""), r.task, f(r.dur_s, 0), r.samples.toLocaleString(), f(r.pose_frac * 100, 1) + " %",
+      r.edges.toLocaleString(), r.mocap_frames ? r.mocap_frames.toLocaleString() : "—", r.holds || "—"]),
+    "All 23 takes. Mocap runs longer than the camera recording in T2 (more frames than edges); edges cover the recording only.");
+
+  // ---------------------------------------------------------------- jig drawings
+  (function () {
+    const J = D.jig.shipped, ids = Object.keys(J.tags);
+    function draw(el, ax, ay, title, xl, yl, normals) {
+      const pts = [];
+      ids.forEach(k => J.tags[k].corners_mm.forEach(c => pts.push(c)));
+      pts.push(J.grip_mm);
+      const xs = pts.map(p => p[ax]), ys = pts.map(p => p[ay]);
+      const xd = ext(xs, 0.12), yd = ext(ys, 0.12);
+      const sx = xd[1] - xd[0], sy = yd[1] - yd[0];
+      const W = 400, Hh = Math.max(220, Math.min(460, 40 + (W - 70) * sy / sx));
+      const F = frame(el, { W: W, H: Hh, xd: xd, yd: yd, title: title, xlabel: xl, ylabel: yl, xn: 4, yn: 4, m: { l: 48, r: 10, b: 36 } });
+      ids.forEach(k => {
+        const T = J.tags[k];
+        const poly = T.corners_mm.map(c => [F.x(c[ax]), F.y(c[ay])]);
+        const g = s("g", {}, F.svg);
+        s("path", { class: "tagface" + (k === "12" ? " ref" : ""), d: path(poly) + "Z" }, g);
+        const c = T.t_mm;
+        if (normals) {
+          const n = T.n, L = 22;
+          s("line", { class: "thin c-n", x1: F.x(c[ax]), y1: F.y(c[ay]), x2: F.x(c[ax] + n[ax] * L), y2: F.y(c[ay] + n[ay] * L), "stroke-width": 1.5 }, g);
+        }
+        if (normals || Math.abs(T.n[2]) > 0.3) t(g, F.x(c[ax]), F.y(c[ay]) + (normals ? -8 : 4), k, "tk strong", "middle");
+        bind(g, () => [["tag " + k, `centre ${c.map(v => f(v, 1)).join(", ")} mm`]]);
+      });
+      const gp = J.grip_mm, gx = F.x(gp[ax]), gy = F.y(gp[ay]);
+      s("path", { class: "c-b", d: `M${gx},${gy - 6}L${gx + 6},${gy}L${gx},${gy + 6}L${gx - 6},${gy}Z` }, F.svg);
+    }
+    draw(document.getElementById("fig-jig-top"), 0, 2, "Top view", "x (mm)", "z (mm)", true);
+    draw(document.getElementById("fig-jig-front"), 0, 1, "Camera view", "x (mm)", "y (mm)", false);
+  })();
+
+  // ---------------------------------------------------------------- 6.1 timeline
+  (function () {
+    const T = D.still.timeline.r1;
+    const all = T.x.concat(T.z);
+    const F = frame(document.getElementById("fig-timeline"), { H: 260, xd: [T.t[0], T.t[T.t.length - 1]], yd: ext(all, 0.05), xlabel: "mocap time (s)", ylabel: "position (mm)", xn: 8 });
+    T.holds.forEach(hh => s("rect", { class: "band", x: F.x(hh[0]), width: Math.max(1, F.x(hh[1]) - F.x(hh[0])), y: F.m.t, height: F.H - F.m.b - F.m.t }, F.svg));
+    s("path", { class: "line c-a", d: path(T.t.map((v, i) => [F.x(v), F.y(T.x[i])])), fill: "none" }, F.svg).style.fill = "none";
+    s("path", { class: "line c-b", d: path(T.t.map((v, i) => [F.x(v), F.y(T.z[i])])) }, F.svg).style.fill = "none";
+    const lg = h("div", { class: "legend" }, null);
+    lg.innerHTML = '<span><i class="sw ln k-a"></i>X across</span><span><i class="sw ln k-b"></i>Z depth</span><span><i class="sw band"></i>hold</span>';
+    document.getElementById("fig-timeline").prepend(lg);
+  })();
+
+  // ---------------------------------------------------------------- 6.1 still
+  (function () {
+    const R = D.still.holds;
+    const flag = r => r.drift > 0.2 || r.maxdev > 0.5 || r.rot_max > 0.5;
+    const nStill = R.filter(r => !flag(r)).length;
+    document.getElementById("n-still").textContent = `${nStill} of ${R.length}`;
+    const tipL = r => [[`run ${r.take} hold ${r.hold}`, `target ${r.tx}, ${r.ty}`],
+      [f(r.sd3, 3) + " mm", "3D SD"], [f(r.noise, 3) + " mm", "frame noise"], [f(r.drift, 2) + " mm", "drift"],
+      [f(r.maxdev, 2) + " mm", "max deviation"], [f(r.rot_max, 2) + "°", "max rotation"]];
+    let F = frame(document.getElementById("fig-still-map"), { W: 400, H: 300, xd: ext(R.map(r => r.x), 0.06), yd: ext(R.map(r => r.z), 0.08), title: "Hold positions", xlabel: "mocap X (mm)", ylabel: "mocap Z (mm)", xn: 4 });
+    R.slice().sort((a, b) => flag(a) - flag(b)).forEach(r => {
+      const g = s("g", {}, F.svg);
+      s("circle", { class: "dot " + (flag(r) ? "c-bad" : "c-a"), cx: F.x(r.x) + (r.take === "r2" ? 2 : -2), cy: F.y(r.z), r: flag(r) ? 5 : 3.5 }, g);
+      bind(g, () => tipL(r));
+    });
+    const mx = Math.max.apply(null, R.map(r => Math.max(r.sd3, r.noise))) * 1.1;
+    F = frame(document.getElementById("fig-still-noise"), { W: 400, H: 300, xd: [0.01, 0.5], yd: [0.01, 0.5], xlog: true, ylog: true, xgrid: true, title: "Hold SD vs frame noise", xlabel: "frame-to-frame noise (mm)", ylabel: "hold 3D SD (mm)" });
+    s("line", { class: "refline", x1: F.x(0.01), y1: F.y(0.01), x2: F.x(0.5), y2: F.y(0.5) }, F.svg);
+    R.forEach(r => {
+      const g = s("g", {}, F.svg);
+      s("circle", { class: "dot " + (flag(r) ? "c-bad" : "c-a"), cx: F.x(Math.max(r.noise, 0.011)), cy: F.y(Math.max(r.sd3, 0.011)), r: flag(r) ? 5 : 3.5 }, g);
+      bind(g, () => tipL(r));
+    });
+    const q = (a, p) => { const b = a.slice().sort((x, y) => x - y); return b[Math.floor(p * (b.length - 1))]; };
+    const rows = [["3D SD", "sd3"], ["frame noise", "noise"], ["max deviation", "maxdev"], ["drift over hold", "drift"], ["max rotation (°)", "rot_max"]];
+    table("tbl-still", ["Per hold (mm)", "r1 median", "r1 90 %", "r1 max", "r2 median", "r2 90 %", "r2 max"],
+      rows.map(([lab, k]) => [lab].concat(["r1", "r2"].flatMap(tk => { const v = R.filter(r => r.take === tk).map(r => r[k]); return [f(q(v, 0.5), 3), f(q(v, 0.9), 3), f(Math.max.apply(null, v), 2)]; }))),
+      "Mocap rigid body inside each hold (untrimmed, about 3 s).");
+  })();
+
+  // ---------------------------------------------------------------- 6.2 T1 table
+  (function () {
+    const E = D.t1.errors, L = { cam0: "cam0 (T0 jig)", cam1: "cam1 (T0 jig)", joint: "joint (T0 jig)", joint_logged: "joint (logged, Diwakar)" };
+    const g = (m, fit, ev) => E.find(e => e.method === m && e.fit_on === fit && e.eval === ev);
+    const rows = Object.keys(L).map(m => {
+      const a = g(m, "r1", "r2"), b = g(m, "r2", "r1"), c = g(m, "r1", "r1"), d = g(m, "r2", "r2");
+      return [L[m], f(a.x_rmse_mm), f(a.z_rmse_mm), f(a.xz_rmse_mm), f(b.x_rmse_mm), f(b.z_rmse_mm), f(b.xz_rmse_mm), f((c.xz_rmse_mm + d.xz_rmse_mm) / 2)];
+    });
+    table("tbl-t1", ["Solver", "r1→r2 X", "Z", "XZ", "r2→r1 X", "Z", "XZ", "in-sample XZ"], rows,
+      "T1 hold error (mm RMSE), 9-parameter registration fitted on one run and tested on the other; no scale.");
+  })();
+
+  // ---------------------------------------------------------------- 6.2 error map
+  (function () {
+    const Hs = D.t1.holds, box = document.getElementById("fig-errmap");
+    const xs = Hs.map(r => r.mc_x), zs = Hs.map(r => r.mc_z);
+    const L = { joint_logged: "joint, Diwakar", joint: "joint, T0 jig", cam0: "cam0", cam1: "cam1" };
+    function render(m) {
+      box.replaceChildren();
+      const F = frame(box, { H: 380, xd: ext(xs, 0.07), yd: ext(zs, 0.12), xlabel: "mocap X (mm)", ylabel: "mocap Z (mm)", xn: 8, xgrid: true });
+      Hs.forEach(r => {
+        const e = r[m], ex = e[0] * 20, ez = e[1] * 20, mag = Math.hypot(e[0], e[1]);
+        const cls = mag > 2 ? "c-bad" : mag > 1 ? "c-b" : "c-a";
+        const g = s("g", {}, F.svg);
+        const x0 = F.x(r.mc_x), y0 = F.y(r.mc_z), x1 = F.x(r.mc_x + ex), y1 = F.y(r.mc_z + ez);
+        s("line", { class: "arrow " + cls, x1: x0, y1: y0, x2: x1, y2: y1 }, g);
+        s("circle", { class: cls, cx: x1, cy: y1, r: 2.2 }, g);
+        s("circle", { class: "hit", cx: x0, cy: y0, r: 9 }, g);
+        bind(g, () => [[`run ${r.take} hold ${r.hold}`, `target ${r.target_x}, ${r.target_y}`], [f(e[0]) + " mm", "X error"], [f(e[1]) + " mm", "Z error"], [f(e[2], 3) + " mm", "device SD in hold"]]);
+      });
+      const lg = h("div", { class: "legend" }, null);
+      lg.innerHTML = '<span><i class="sw k-a"></i>&lt; 1 mm</span><span><i class="sw k-b"></i>1&ndash;2 mm</span><span><i class="sw k-bad"></i>&gt; 2 mm</span><span>arrows &times;20</span>';
+      box.prepend(lg);
+    }
+    seg(document.getElementById("btn-errmap"), Object.keys(L).map(k => ({ key: k, label: L[k] })), render, "joint_logged");
+
+    function sc(el, key, idx, title, xl) {
+      const pts = Hs.map(r => [r[key], r.joint_logged[idx]]);
+      const F = frame(el, { W: 400, H: 280, xd: ext(pts.map(p => p[0]), 0.05), yd: [-4, 4], title: title, xlabel: xl, ylabel: "error (mm)", xn: 4, yticks: [-4, -2, 0, 2, 4] });
+      s("line", { class: "axisline", x1: F.m.l, x2: F.W - F.m.r, y1: F.y(0), y2: F.y(0) }, F.svg);
+      pts.forEach(p => s("circle", { class: "c-a", cx: F.x(p[0]), cy: F.y(Math.max(-4, Math.min(4, p[1]))), r: 2.6, opacity: 0.55 }, F.svg));
+      // least-squares line
+      const n = pts.length, mx = pts.reduce((a, p) => a + p[0], 0) / n, my = pts.reduce((a, p) => a + p[1], 0) / n;
+      const b = pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+      const x0 = Math.min.apply(null, pts.map(p => p[0])), x1 = Math.max.apply(null, pts.map(p => p[0]));
+      s("line", { class: "line c-b", x1: F.x(x0), y1: F.y(my + b * (x0 - mx)), x2: F.x(x1), y2: F.y(my + b * (x1 - mx)) }, F.svg);
+      t(F.svg, F.W - F.m.r, F.m.t + 12, `slope ${f(b * 100, 2)} mm / 100 mm`, "tk strong", "end");
+    }
+    sc(document.getElementById("fig-err-z"), "mc_z", 1, "Z error vs Z", "mocap Z (mm)");
+    sc(document.getElementById("fig-err-x"), "mc_x", 0, "X error vs X", "mocap X (mm)");
+  })();
+
+  // ---------------------------------------------------------------- 6.3 his metric
+  (function () {
+    const rows = D.his.fit.map(r => [r.source + (r.scale === 1 ? " (scale = 1)" : ""), r.scale === 1 ? "fixed" : f(r.scale, 4),
+      r.r1_in.map(v => f(v)).join(" / "), r.r1_r2.map(v => f(v)).join(" / "), r.r2_r1.map(v => f(v)).join(" / ")]);
+    table("tbl-his", ["Corners", "Scale", "r1 in-sample", "fit r1 → r2", "fit r2 → r1"], rows,
+      "Diwakar's 13-parameter fit, RMSE across / depth / height (mm), his table frame. logged = his pipeline exactly.");
+  })();
+
+  // ---------------------------------------------------------------- 6.4 corners
+  const BT = D.byTake;
+  function meanBy(filter) { const v = BT.filter(filter).map(r => r.xz); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }
+  (function () {
+    const L = { logged: "edge refine (logged)", april: "AprilTag refine", none: "no refine", contour: "OpenCV CONTOUR" };
+    const rows = Object.keys(L).map(src => ({ label: L[src], vals: { T1: meanBy(r => r.study === "corners" && r.source === src && r.method === "joint" && r.task === "T1"), T2: meanBy(r => r.study === "corners" && r.source === src && r.method === "joint" && r.task === "T2"), T3: meanBy(r => r.study === "corners" && r.source === src && r.method === "joint" && r.task === "T3") } }));
+    dotChart(document.getElementById("fig-corners"), rows, [{ key: "T1", label: "T1", cls: "a" }, { key: "T2", label: "T2", cls: "b" }, { key: "T3", label: "T3", cls: "c" }], { xlabel: "XZ RMSE (mm)", xd: [0, 3.5], rowH: 30 });
+    const C = D.his.corners;
+    table("tbl-cornerpx", ["Re-detected", "r1 median px", "r1 p95 px", "r1 tag size", "r2 median px", "r2 p95 px", "r2 tag size"],
+      ["none", "contour", "april"].map(src => { const a = C.find(c => c.run === "r1" && c.source === src), b = C.find(c => c.run === "r2" && c.source === src);
+        return [src, f(a.med_px, 3), f(a.p95_px, 2), (a.side_pct > 0 ? "+" : "") + f(a.side_pct) + " %", f(b.med_px, 3), f(b.p95_px, 2), (b.side_pct > 0 ? "+" : "") + f(b.side_pct) + " %"]; }),
+      "Re-detected corners vs the logged (edge-refined) corners on the same tags, T1. Tag size = side length relative to logged.");
+  })();
+
+  // ---------------------------------------------------------------- 6.5 jig
+  (function () {
+    const L = { tag12only: "tag 12 only", shipped: "shipped jig", logged: "T0 jig (10-03)", T0all: "T0 jig (all T0)" };
+    const rows = Object.keys(L).map(src => ({ label: L[src], vals: { T1: meanBy(r => r.study === "jig" && r.source === src && r.method === "joint" && r.task === "T1"), T2: meanBy(r => r.study === "jig" && r.source === src && r.method === "joint" && r.task === "T2"), T3: meanBy(r => r.study === "jig" && r.source === src && r.method === "joint" && r.task === "T3") } }));
+    dotChart(document.getElementById("fig-jig"), rows, [{ key: "T1", label: "T1", cls: "a" }, { key: "T2", label: "T2", cls: "b" }, { key: "T3", label: "T3", cls: "c" }], { xlabel: "XZ RMSE (mm)", xd: [0, 4], rowH: 30 });
+    const tr = [];
+    Object.keys(L).forEach(src => {
+      const row = [L[src]];
+      ["T1", "T2", "T3"].forEach(tk => ["cam0", "cam1", "joint"].forEach(m => row.push(f(meanBy(r => r.study === "jig" && r.source === src && r.method === m && r.task === tk)))));
+      tr.push(row);
+    });
+    table("tbl-jig", ["Jig", "T1 cam0", "cam1", "joint", "T2 cam0", "cam1", "joint", "T3 cam0", "cam1", "joint"], tr, "XZ RMSE (mm), logged corners, mean over takes.");
+  })();
+
+  // ---------------------------------------------------------------- 6.6 jitter
+  (function () {
+    const S = D.jitter.summary;
+    const g = (c, rb, sv) => S.find(r => r.corners === c && r.rb === rb && r.solver === sv);
+    const conds = [["logged", "jig", "edge refine + jig"], ["april", "jig", "AprilTag + jig"], ["none", "jig", "no refine + jig"],
+      ["logged", "tag12", "edge refine, tag 12"], ["april", "tag12", "AprilTag, tag 12"], ["none", "tag12", "no refine, tag 12"]];
+    const rows = conds.map(([c, rb, lab], i) => {
+      const j = g(c, rb, "joint");
+      return { label: lab, sep: i === 3, vals: { cam0: g(c, rb, "cam0").jitter_3d_med_mm, cam1: g(c, rb, "cam1").jitter_3d_med_mm, joint: j.jitter_3d_med_mm }, rng: { joint: [j.jitter_3d_p25_mm, j.jitter_3d_p75_mm] } };
+    });
+    const ref = g("diwakar", "shipped", "joint");
+    rows.unshift({ label: "Diwakar (samples.csv)", vals: { joint: ref.jitter_3d_med_mm }, rng: { joint: [ref.jitter_3d_p25_mm, ref.jitter_3d_p75_mm] } });
+    dotChart(document.getElementById("fig-jitter"), rows, [{ key: "cam0", label: "cam0", cls: "a" }, { key: "cam1", label: "cam1", cls: "b" }, { key: "joint", label: "joint", cls: "c" }],
+      { xlog: true, xd: [0.02, 8], ref: ref.mocap_3d_med_mm, xlabel: "jitter, 3D SD in 50-frame windows (mm, log)", digits: 3, rowH: 30, dodge: true });
+
+    const V = D.jitter.distance.filter(r => r.solver === "joint" && r.rb === "jig");
+    const cs = [["logged", "a"], ["april", "b"], ["none", "c"]];
+    const ys = V.map(r => r.jitter_3d_med_mm).concat(V.map(r => r.mocap_3d_med_mm)).filter(v => v != null);
+    const F = frame(document.getElementById("fig-jit-depth"), { H: 280, xd: ext(V.map(r => r.depth_mid_m * 1000), 0.05), yd: [0.02, 1], ylog: true, xlabel: "camera depth (mm)", ylabel: "jitter (mm, log)", xn: 6 });
+    cs.forEach(([c, cl]) => {
+      const pts = V.filter(r => r.corners === c && r.jitter_3d_med_mm != null).sort((a, b) => a.depth_mid_m - b.depth_mid_m);
+      s("path", { class: "line c-" + cl, d: path(pts.map(r => [F.x(r.depth_mid_m * 1000), F.y(r.jitter_3d_med_mm)])) }, F.svg).style.fill = "none";
+      pts.forEach(r => { const gg = s("g", {}, F.svg); s("circle", { class: "dot c-" + cl, cx: F.x(r.depth_mid_m * 1000), cy: F.y(r.jitter_3d_med_mm), r: 4 }, gg); bind(gg, () => [[f(r.jitter_3d_med_mm, 3) + " mm", `${c}, ${f(r.depth_mid_m * 1000, 0)} mm depth, ${r.n_holds} holds`]]); });
+    });
+    const mp = V.filter(r => r.corners === "logged" && r.mocap_3d_med_mm != null).sort((a, b) => a.depth_mid_m - b.depth_mid_m);
+    s("path", { class: "line c-n", "stroke-dasharray": "4 3", d: path(mp.map(r => [F.x(r.depth_mid_m * 1000), F.y(r.mocap_3d_med_mm)])) }, F.svg).style.fill = "none";
+  })();
+
+  // ---------------------------------------------------------------- 6.7 paths
+  (function () {
+    const R = D.paths.radius, cs = [["edge", "a"], ["april", "b"], ["none", "c"], ["contour", "d"]];
+    const F = frame(document.getElementById("fig-paths-radius"), { H: 280, xd: [0, 600], yd: [0, 1.2], xlabel: "distance from principal point (px, bin centre)", ylabel: "ud vs raw corner gap (px)", xn: 6 });
+    const mid = r => r.hi === 800 ? 525 : (r.lo + r.hi) / 2;
+    cs.forEach(([c, cl]) => {
+      const pts = R.filter(r => r.refine === c).sort((a, b) => a.lo - b.lo);
+      s("path", { class: "line c-" + cl, d: path(pts.map(r => [F.x(mid(r)), F.y(r.gap)])) }, F.svg).style.fill = "none";
+      pts.forEach(r => { const g = s("g", {}, F.svg); s("circle", { class: "dot c-" + cl, cx: F.x(mid(r)), cy: F.y(r.gap), r: 4 }, g); bind(g, () => [[f(r.gap, 3) + " px", `${c}, radius ${r.lo}–${r.hi} px`], [f(r.side_pct, 2) + " %", "tag size ud vs raw"], [r.n.toLocaleString(), "tags"]]); });
+    });
+    const S = D.paths.summary, g = (c, sv) => S.find(r => r.corners === c && r.rb === "jig" && r.solver === sv);
+    const L = { edge: "edge", april: "AprilTag", none: "none", contour: "contour" };
+    table("tbl-paths", ["Refine", "ud XZ RMSE", "raw XZ RMSE", "ud jitter", "raw jitter", "jitter ratio raw/ud"],
+      Object.keys(L).map(k => { const a = g("ud_" + k, "joint"), b = g("raw_" + k, "joint");
+        return [L[k], f(a.xz_rmse_mm), f(b.xz_rmse_mm), f(a.jitter_3d_med_mm, 3), f(b.jitter_3d_med_mm, 3), f(b.jitter_3d_med_mm / a.jitter_3d_med_mm, 2)]; }),
+      "Joint stereo, rigid jig (each source's own T0 jig). XZ RMSE = T1 held out (mm); jitter = median 50-frame 3D SD (mm).");
+  })();
+
+  // ---------------------------------------------------------------- 6.8 dynamic
+  (function () {
+    const rows = [];
+    const takes = Array.from(new Set(BT.filter(r => r.task !== "T1").map(r => r.take)));
+    takes.forEach((tk, i) => {
+      const a = BT.find(r => r.study === "jig" && r.take === tk && r.source === "shipped" && r.method === "joint");
+      const b = BT.find(r => r.study === "jig" && r.take === tk && r.source === "tag12only" && r.method === "joint");
+      rows.push({ label: tk.replace(/_/g, " "), sep: i > 0 && tk.slice(0, 2) !== takes[i - 1].slice(0, 2), vals: { s: a && a.xz, t: b && b.xz } });
+    });
+    dotChart(document.getElementById("fig-dyn"), rows, [{ key: "t", label: "tag 12 only", cls: "n" }, { key: "s", label: "shipped jig", cls: "a" }], { xlabel: "XZ RMSE (mm)", xd: [0, 5], rowH: 22, ml: 230 });
+    const sp = ["slow", "comfortable", "fast"], src = [["shipped", "shipped jig"], ["T0all", "T0 jig (all)"], ["tag12only", "tag 12 only"]];
+    const out = [];
+    ["T2", "T3"].forEach(task => src.forEach(([k, lab]) => {
+      out.push([task + ", " + lab].concat(sp.map(v => { const m = meanBy(r => r.study === "jig" && r.task === task && r.source === k && r.method === "joint" && r.take.indexOf("_" + v + "_") >= 0); return m == null ? "—" : f(m); })));
+    }));
+    table("tbl-speed", ["Task, jig", "slow", "comfortable", "fast"], out, "Joint stereo, logged corners: mean XZ RMSE (mm) by speed. T3 has no slow takes.");
+  })();
+})();
+</script>
+</body>
+</html>

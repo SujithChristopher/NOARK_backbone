@@ -1,0 +1,1253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synthetic Humans Results</title>
+<meta name="description" content="miniSAM3D student: synthetic people for unseen-subject trunk tracking. Results log, 16-19 Oct 2026.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --code: #f0efec;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --neutral-fill: #c3c2b7;
+  --band: rgba(42, 120, 214, 0.12);
+  --zone: rgba(42, 120, 214, 0.07);
+  --good: #006300;
+  --bad: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --code: #232321;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --neutral-fill: #52514e;
+    --band: rgba(57, 135, 229, 0.18);
+    --zone: rgba(57, 135, 229, 0.10);
+    --good: #0ca30c;
+    --bad: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --code: #232321;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --neutral-fill: #52514e;
+  --band: rgba(57, 135, 229, 0.18);
+  --zone: rgba(57, 135, 229, 0.10);
+  --good: #0ca30c;
+  --bad: #e66767;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.layout { display: grid; grid-template-columns: 240px minmax(0, 860px); gap: 48px; justify-content: center; padding: 40px 24px 96px; }
+nav.toc { position: sticky; top: 24px; align-self: start; font-size: 14px; max-height: calc(100vh - 48px); overflow: auto; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li { margin: 2px 0; }
+nav.toc ol ol { padding-left: 14px; }
+nav.toc a { color: var(--ink-2); text-decoration: none; display: block; padding: 2px 0; }
+nav.toc a:hover { color: var(--ink); }
+nav.toc .toc-title { font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+.theme-btn { margin-top: 16px; font: inherit; font-size: 13px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+article { min-width: 0; }
+header.doc { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 28px; }
+header.doc .kicker { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: 34px; line-height: 1.2; margin: 6px 0 10px; letter-spacing: -0.01em; }
+h2 { font-size: 24px; line-height: 1.3; margin: 56px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+h3 { font-size: 18px; margin: 32px 0 8px; }
+h4 { font-size: 15px; margin: 22px 0 6px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .03em; }
+p, li { color: var(--ink); }
+.lede { font-size: 18px; color: var(--ink-2); margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 14px; color: var(--ink-2); margin-top: 14px; }
+.meta b { color: var(--ink); font-weight: 600; }
+code, .mono { font: 13.5px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 8px; overflow: auto; font-size: 13px; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+a { color: var(--s1); }
+.key { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin: 20px 0; }
+.key h3 { margin-top: 0; }
+.key ol { padding-left: 22px; margin: 8px 0 0; }
+.key li { margin: 8px 0; }
+.callout { border-left: 3px solid var(--s1); background: var(--surface); padding: 10px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+.callout.warn { border-left-color: var(--s2); }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); white-space: nowrap; }
+.tag.pos::before { content: "\2191  "; color: var(--good); }
+.tag.neg::before { content: "\2193  "; color: var(--bad); }
+.tag.flat::before { content: "\2192  "; color: var(--muted); }
+
+figure { margin: 24px 0 28px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 16px 12px; }
+figcaption { font-size: 14px; color: var(--ink-2); margin-top: 10px; line-height: 1.5; }
+figcaption b { color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.sw.sq { border-radius: 3px; }
+.sw.k-student { background: var(--s1); } .sw.k-teacher { background: var(--s2); } .sw.k-icp { background: var(--s3); }
+.sw.k-coco { background: var(--neutral-fill); } .sw.k-real { background: var(--s1); } .sw.k-synth { background: var(--s3); }
+.sw.band { background: var(--band); border-radius: 2px; width: 16px; }
+.sm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.sm-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sm-grid.cols-1 { grid-template-columns: minmax(0, 1fr); }
+.sm svg { width: 100%; height: auto; display: block; overflow: visible; }
+svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.tk { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.tk.small { font-size: 10px; }
+.tk.strong { fill: var(--ink-2); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.ptitle { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+.rlabel { font-size: 11.5px; fill: var(--ink-2); }
+.muted { fill: var(--muted); }
+.grid { stroke: var(--grid); stroke-width: 1; }
+.rowrule { stroke: var(--grid); stroke-width: 1; opacity: .6; }
+.axisline { stroke: var(--axis); stroke-width: 1; }
+.refline { stroke: var(--axis); stroke-width: 1.5; }
+.band { fill: var(--band); }
+.zone { fill: var(--zone); }
+.dot { stroke: var(--surface); stroke-width: 2; }
+.dot.k-student { fill: var(--s1); } .dot.k-teacher { fill: var(--s2); } .dot.k-icp { fill: var(--s3); }
+.hit { fill: transparent; }
+.mark { cursor: default; outline: none; }
+.mark.hot .dot, .mark:focus .dot { stroke: var(--ink); stroke-width: 1.5; }
+.bar { fill: var(--s1); }
+.bar.hot, .bar:focus { fill: var(--ink-2); outline: none; }
+.seg { outline: none; }
+.seg.k-coco { fill: var(--neutral-fill); } .seg.k-real { fill: var(--s1); } .seg.k-synth { fill: var(--s3); }
+.seg.hot, .seg:focus { opacity: .8; }
+.inlab { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; pointer-events: none; }
+.inlab.on-dark { fill: #fff; } .inlab.on-light { fill: #0b0b0b; }
+.pt { fill: var(--s1); opacity: .35; }
+.idline { stroke: var(--muted); stroke-width: 1; }
+.fitline { stroke: var(--s1); stroke-width: 2; stroke-linecap: round; }
+#tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.12); font-size: 13px; max-width: 320px; }
+.tip-row { display: flex; align-items: baseline; gap: 8px; }
+.tip-row strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.tip-label { color: var(--ink-2); }
+.tip-key { width: 12px; height: 2px; align-self: center; border-radius: 1px; background: var(--s1); }
+.tip-key.k-teacher { background: var(--s2); } .tip-key.k-icp { background: var(--s3); }
+.tip-key.k-coco { background: var(--neutral-fill); } .tip-key.k-synth { background: var(--s3); }
+
+details.tv { margin-top: 10px; font-size: 13px; }
+details.tv summary { cursor: pointer; color: var(--ink-2); }
+.tblwrap { overflow-x: auto; }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 10px 0; font-variant-numeric: tabular-nums; }
+table.tbl caption { text-align: left; color: var(--ink-2); font-size: 13px; padding-bottom: 6px; }
+table.tbl th, table.tbl td { border-bottom: 1px solid var(--grid); padding: 6px 8px; text-align: right; vertical-align: top; }
+table.tbl th:first-child, table.tbl td:first-child { text-align: left; }
+table.tbl thead th { color: var(--ink-2); font-weight: 600; border-bottom: 1px solid var(--axis); }
+table.tbl tbody th { font-weight: 500; }
+table.tbl.text td, table.tbl.text th { text-align: left; }
+table.tbl td.best { font-weight: 700; }
+
+.imgs { display: grid; gap: 10px; }
+.imgs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.imgs.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.imgs figure, .imgs .cell { margin: 0; padding: 0; border: 0; background: none; }
+.imgs img { width: 100%; height: auto; display: block; border-radius: 6px; border: 1px solid var(--border); }
+.imgs .cap { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; text-align: center; }
+.diagram svg { width: 100%; height: auto; display: block; }
+.dg-box { fill: var(--page); stroke: var(--axis); stroke-width: 1; }
+.dg-box.accent { stroke: var(--s1); stroke-width: 1.5; }
+.dg-box.accent3 { stroke: var(--s3); stroke-width: 1.5; }
+.dg-t { font-size: 12.5px; fill: var(--ink); font-weight: 600; }
+.dg-s { font-size: 11px; fill: var(--ink-2); }
+.dg-lane { font-size: 11px; fill: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.dg-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+#nodata { background: var(--surface); border: 1px solid var(--s2); padding: 12px; border-radius: 8px; }
+
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 24px 16px 64px; }
+  nav.toc { position: static; max-height: none; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 24px; background: var(--surface); }
+}
+@media (max-width: 640px) {
+  h1 { font-size: 27px; }
+  .sm-grid, .sm-grid.cols-3 { grid-template-columns: minmax(0, 1fr); }
+  .imgs.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .imgs.two { grid-template-columns: minmax(0, 1fr); }
+  figure { padding: 12px 10px 10px; }
+}
+@media print {
+  nav.toc, .theme-btn { display: none; }
+  .layout { display: block; padding: 0; }
+  figure { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li><a href="#summary">1. Summary</a></li>
+    <li><a href="#background">2. Background</a></li>
+    <li><a href="#data">3. Data and conventions</a></li>
+    <li><a href="#method">4. Evaluation method</a></li>
+    <li><a href="#synth">5. Synthetic people</a></li>
+    <li><a href="#versions">6. Versions: why and what</a>
+      <ol>
+        <li><a href="#v2">r18_v2_all</a></li>
+        <li><a href="#v3">r18_v3_all</a></li>
+        <li><a href="#v3mix">r18_v3mix_all</a></li>
+        <li><a href="#v4mix">r18_v4mix_all</a></li>
+        <li><a href="#rep2">r18_v3mix_all_rep2</a></li>
+      </ol>
+    </li>
+    <li><a href="#results">7. Results</a>
+      <ol>
+        <li><a href="#res-mocap">Against mocap</a></li>
+        <li><a href="#res-teacher">Against the teacher</a></li>
+        <li><a href="#res-shrink">Shrinkage</a></li>
+        <li><a href="#res-subject">Per subject</a></li>
+        <li><a href="#res-noise">Run-to-run noise</a></li>
+      </ol>
+    </li>
+    <li><a href="#discussion">8. Discussion</a></li>
+    <li><a href="#next">9. Next steps</a></li>
+    <li><a href="#appendix">Appendix</a></li>
+  </ol>
+  <button class="theme-btn" type="button" id="themeBtn">Toggle dark / light</button>
+</nav>
+
+<article>
+<header class="doc">
+  <div class="kicker">miniSAM3D student &middot; results log</div>
+  <h1>Synthetic people for unseen-subject trunk tracking</h1>
+  <p class="lede">Can rendered people teach a small on-device pose model to read the trunk of people it has never
+  seen? Five model versions, 30,000 synthetic frames, scored against the teacher model and against motion capture.</p>
+  <div class="meta">
+    <span><b>Period</b> 16&ndash;19 Oct 2026</span>
+    <span><b>Repos</b> NOARK_backbone (branch diwakar_val), minisam3d</span>
+    <span><b>Test subjects</b> arjun, jerome, lee (never trained on)</span>
+    <span><b>Status</b> complete; v3mix recipe is the current best</span>
+  </div>
+</header>
+
+<p id="nodata" hidden>The figure data did not load. Keep this page next to its folder
+<code>minisam3d_synthetic_humans/</code> (it holds <code>data.js</code> and the images), or rebuild it with
+<code>build_data.py</code>.</p>
+
+<!-- ============================================================ 1 -->
+<section id="summary">
+<h2>1. Summary</h2>
+<div class="key">
+<h3>Key findings</h3>
+<ol>
+  <li><b>The problem was generalisation, not capacity.</b> Against the teacher (per-take zeroed), the
+  baseline student is at 1.1&deg; on its training people and 3.2&deg; on new people. On new people it also
+  under-reads forward/back lean (flexion gain 0.74 instead of 0.95).</li>
+  <li><b>The teacher reads synthetic flexion badly.</b> On rendered people SAM 3D Body recovers only 54&ndash;58 % of
+  the true forward/back lean. Twist and side-bend are fine (gain 0.92&ndash;0.98), and on real people it reads lean
+  correctly against mocap. So synthetic trunk labels use the <em>rendered truth</em>, not the teacher.</li>
+  <li><b>Synthetic people help forward/back lean, robustly.</b> Flexion error against mocap fell from 2.45&deg;
+  (no synthetic data) to 1.82&ndash;2.02&deg; in all four synthetic runs. Overall trunk angle error fell from
+  2.85&deg; to 2.49&ndash;2.76&deg;.</li>
+  <li><b>Synthetic people also reduced the shrinkage of large lean, but only part-way.</b> On new people, the
+  baseline reads 5&ndash;20&deg; of lean at 0.67&ndash;0.72 of the teacher's value; the synthetic runs at
+  0.76&ndash;0.84.</li>
+  <li><b>Beyond that, re-weighting the mix and balancing lean added little or nothing.</b> Raising synthetic frames
+  to 40 % of each batch (v3mix) gained 0.1&ndash;0.3&deg; against mocap, about the run-to-run noise. A second set with
+  lean spread evenly from &minus;10&deg; to +40&deg; (v4mix) changed nothing: shrinkage stayed at about 0.82.</li>
+  <li><b>Two runs of one recipe differ by up to 0.18&deg;</b> on the six-take averages and by about 0.5&deg; per person.
+  With one run per arm, differences below about 0.2&deg; are not results.</li>
+  <li><b>The remaining gap to the teacher sits in two places.</b> Every student under-reads Jerome's movement
+  (overall 2.4&ndash;3.0&deg; vs the teacher's 1.35&deg;), and every student reads Lee's twist 4&ndash;6&deg; too high
+  in the <code>lee_wc</code> take (teacher: +1.8&deg;). Arjun is at teacher level.</li>
+  <li><b>Arms improved a little with synthetic data:</b> wrist error 60.7 &rarr; 55&ndash;58 mm, keypoints
+  4.61 &rarr; 4.2&ndash;4.5 px.</li>
+</ol>
+</div>
+<p><b>Current best:</b> the <b>v3mix recipe</b> (<code>r18_v3mix_all</code> and its repeat
+<code>r18_v3mix_all_rep2</code>). Against mocap it averages 1.8&deg; flexion and 2.5&ndash;2.7&deg; overall trunk angle
+on the three unseen people. The teacher reaches 1.5&deg; and 2.1&deg;, depth ICP 1.4&deg; and 1.9&deg;.</p>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="background">
+<h2>2. Background</h2>
+<h3>The student</h3>
+<p>NOARK measures trunk compensation while a person plays a reaching game at a table. A camera on the table looks at
+the seated person. The reference perception model is <b>SAM 3D Body</b> (the <em>teacher</em>, ViT-H backbone,
+MHR body model). It reads the trunk well but takes about 0.26 s per frame on a laptop GPU. The <b>miniSAM3D
+student</b> is a ResNet-18 distilled from it. Its input is a 256&times;256 grey crop from the mono OV9281 camera, and
+it outputs 14 upper-body keypoints (2D and 3D) plus the global rotations of 9 joints (trunk, clavicles, upper arms,
+forearms, wrists) as 6D rotations. It runs in about 4 ms on the Radxa NPU (W8A16).</p>
+<p>The <b>trunk</b> is the global rotation of MHR joint <code>c_spine3</code>, the upper-thoracic segment where the
+mocap sternum rigid body sits.</p>
+
+<h3>The problem: it learned the people, not the pose</h3>
+<p>The baseline student, <code>r18_v2_all</code>, matches the teacher closely on the five people it was trained on,
+and much less on new people. The gap is not a capacity limit: on its training takes the same network agrees with the
+teacher to about 1&deg;. It is identity: 5 real people supply 63 % of training frames, and the network partly
+memorises them.</p>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>student r18_v2_all</span></div>
+  <div id="fig-seen"></div>
+  <figcaption><b>Figure 1. Seen vs unseen people, student against the teacher.</b> Six training takes (seen) vs the
+  nine test takes (unseen). Error = median angle after each side is zeroed on its own take mean. Flex / axial /
+  lateral are the rotation-vector components in camera axes; gain is the least-squares slope student vs teacher on
+  flexion (1 = right amplitude). Source: eval_trunk_zeroed.py on <code>r18_v2_all</code>.</figcaption>
+</figure>
+<p>The obvious fix is more people, and recording enough real people is slow. Rendering them is cheap. This log
+covers that attempt.</p>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="data">
+<h2>3. Data and conventions</h2>
+<h3>Recordings and split</h3>
+<div class="tblwrap"><table class="tbl text">
+<thead><tr><th>Set</th><th>Recorded</th><th>Subjects</th><th>Takes</th><th>Frames</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td>sep23</td><td>23 Sep 2026</td><td>diwakar, gokul, js, kabil, ram</td><td>woc, wc, game</td><td>27,355</td><td>train</td></tr>
+<tr><td>oct (overlap)</td><td>9&ndash;10 Oct 2026</td><td>diwakar, gokul, js, ram (prefix s3_)</td><td>woc, wc, game</td><td>24,637</td><td>train</td></tr>
+<tr><td><b>oct (new)</b></td><td>9&ndash;10 Oct 2026</td><td><b>arjun, jerome, lee</b></td><td>woc, wc, game</td><td>19,305</td><td><b>test only</b></td></tr>
+<tr><td>COCO 2014</td><td>&mdash;</td><td>generic people</td><td>photos</td><td>15,021</td><td>train</td></tr>
+<tr><td>syn15k</td><td>rendered 16 Oct</td><td>1,500 synthetic</td><td>10 poses each</td><td>15,000</td><td>train (v3 on)</td></tr>
+<tr><td>synflex15k</td><td>rendered 17 Oct</td><td>1,500 synthetic</td><td>10 poses each</td><td>15,000</td><td>train (v4 only)</td></tr>
+</tbody></table></div>
+<p><code>woc</code> and <code>wc</code> are the two variants of the standard-movement protocol (bends and twists in
+each direction). <code>game</code> is free play with the robot, sampled every 6th frame. Every real and COCO frame
+is labelled by the teacher. The test people never appear in training, in any form: the synthetic poses come only
+from training-subject takes.</p>
+
+<h3>Axis convention</h3>
+<p>Rotations are compared in OpenCV camera axes (x right, y down, z away from the camera). A trunk rotation
+relative to a reference is written as a rotation vector. Its components are:</p>
+<ul>
+  <li><b>flexion</b> = x: forward/back lean. Positive leans toward the camera, which is forward over the table.</li>
+  <li><b>axial</b> = y: twist about the vertical axis.</li>
+  <li><b>lateral</b> = z: side bend, in the image plane.</li>
+</ul>
+<p>MHR's global rotations use the body model's y-up axes, and are conjugated by diag(1, &minus;1, &minus;1) into
+camera axes. Relative rotations in camera axes do not depend on how a skeleton defines its bone frames, so student,
+teacher, render and mocap can be compared directly once each is zeroed.</p>
+<div class="callout">Forward/back lean is the hard axis for a single camera: it moves the chest <em>toward</em> the
+lens, so the image changes mainly through scale and foreshortening. Side bend is an in-plane rotation and easy to
+see.</div>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="method">
+<h2>4. Evaluation method</h2>
+<p>Two independent references, each with its own blind spot.</p>
+
+<h3>4.1 Against the teacher (all 9 test takes, 19,305 frames)</h3>
+<p>This shows how well the student imitates its teacher on new people. It covers game takes too, which have no mocap
+match.</p>
+<ul>
+  <li><b>abs</b>: median angle between student and teacher trunk rotations.</li>
+  <li><b>zeroed</b>: each side is first made relative to its own take mean (chordal mean), then the median angle
+  between them. This removes the constant per-take offset, which live use removes anyway because a session starts
+  from a neutral pose. About half of <em>abs</em> on new people is such an offset.</li>
+  <li><b>flex / axial / lat</b>: median |difference| of the zeroed rotation-vector components.</li>
+  <li><b>gain</b>: least-squares slope of student on teacher for each component. A gain below 1 means the student
+  reads smaller movements than the teacher.</li>
+  <li><b>Keypoints and arms</b> (eval_teacher.py, frame-weighted):
+    <ul>
+      <li><b>px</b>: 2D keypoint error in the 256-px crop.</li>
+      <li><b>mm</b>: mean 3D keypoint error.</li>
+      <li><b>wrist / elbow</b>: 3D error of those joints, left and right averaged.</li>
+      <li><b>forearm</b>: geodesic rotation error.</li>
+    </ul>
+  </li>
+</ul>
+<p>Takes are averaged with equal weight ("mean per take").</p>
+
+<h3>4.2 Against motion capture (6 standard-movement takes)</h3>
+<p>This is the ground truth that matters. Scoring is NOARK's <code>21_sam3d_score.py</code>, run unchanged through
+<code>score_student_noark.py</code>. The protocol, per take:</p>
+<ol>
+  <li><b>Hardware sync:</b> a GPIO pulse ties camera frames to mocap time; no cross-correlation guessing.</li>
+  <li>Only the longest mocap segment without rigid-body "teleports" (Motive re-lock jumps) is used.</li>
+  <li>Both systems are <b>zeroed</b> on the mean of their first 15 common valid frames.</li>
+  <li>The residual rotation between the camera and mocap frames (<b>S</b>) is fitted per method against mocap.</li>
+  <li>Only frames where depth ICP also solved are scored, so every method sees exactly the same frames.</li>
+  <li>For each take, the median |error| per axis and for the total angle (<b>magnitude</b>) is computed. The summary
+  is the mean of the six per-take medians.</li>
+</ol>
+<p>The teacher's and ICP's numbers use the same frames and the same protocol.</p>
+<div class="callout warn"><b>Caveats.</b>
+<ul>
+  <li>S and the zeroing use mocap, which live use doesn't have. Absolute numbers are therefore optimistic for every
+  method alike, and comparisons between methods remain fair.</li>
+  <li>Game takes are not scored against mocap.</li>
+  <li>Six takes from three people is a small test set (see <a href="#res-noise">run-to-run noise</a>).</li>
+</ul>
+</div>
+
+<h3>4.3 Shrinkage analysis</h3>
+<p>On the unseen standard-movement takes, frames are binned by the teacher's |zeroed flexion| (0&ndash;5, 5&ndash;10,
+10&ndash;20, &ge;20&deg;). Per bin, the median of student/teacher is the <b>ratio</b>: 1 means right amplitude, below 1
+means the student shrinks the movement toward upright. Lateral bend is the control axis.</p>
+
+<h3>4.4 Run-to-run noise</h3>
+<p><code>train.py</code> seeds only the 2 % validation split. Batch sampling, augmentation and the new rotation head's
+initialisation are not seeded, so rerunning an identical command gives an independent run on identical data. One
+such repeat was trained (<a href="#rep2">&sect;6.5</a>).</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="synth">
+<h2>5. Synthetic people</h2>
+<p>Code in <code>minisam3d/synth/</code> (README there). Two sets were made, each 1,500 people &times; 10 poses.</p>
+<figure class="diagram">
+  <div id="fig-pipeline"></div>
+  <figcaption><b>Figure 2. Data and label flow.</b> Real frames get teacher labels. Synthetic frames get teacher
+  labels for keypoints and arms, and the rendered truth for the trunk (&sect;5.4).</figcaption>
+</figure>
+
+<h3>5.1 Poses: real, from training people only</h3>
+<p><code>build_pose_pool.py</code> collects the teacher's fits on all training-subject takes: <b>51,992 seated poses</b>.
+Each pose is stored as joint-rotation deltas from that take's neutral (pelvis, spine, neck, head, clavicles) plus the
+arm keypoints. A seated range-of-motion filter drops implausible fits: spine vs pelvis flexion &minus;25&hellip;70&deg;,
+|twist| and |side bend| &le; 45&deg;.</p>
+<p>Retargeting onto a synthetic body works as follows:</p>
+<ul>
+  <li>The pelvis turns the whole body and the chair, since the office chair swivels.</li>
+  <li>Spine, neck, head and clavicles copy the deltas.</li>
+  <li>The arms aim along the real shoulder&rarr;elbow&rarr;wrist&rarr;knuckle keypoints, with the elbow hinge rolled
+  into the real arm plane and the forearm twist taken from the real palm.</li>
+</ul>
+<p>The rendered trunk then equals the teacher's delta to &lt; 0.06&deg;.</p>
+
+<h3>5.2 People, scenes, camera</h3>
+<ul>
+  <li><b>People:</b> random adult MPFB2 (MakeHuman) humans: build, age (about 19&ndash;63), sex, skin, hair, outfit.
+  All assets are CC0. The outfit pack has only about 10 full-body outfits, so clothing diversity is the weakest
+  axis.</li>
+  <li><b>Scenes:</b>
+    <ul>
+      <li>Background: an indoor HDRI (half the time) or a box room with photo-textured or painted walls and a
+      window.</li>
+      <li>Table: laminate or wood veneer.</li>
+      <li>Extras: clutter; a bystander (20 %); the AprilTag robot (always for game poses, otherwise 40 %).</li>
+    </ul>
+  </li>
+  <li><b>Camera:</b> the oct rig's upright pinhole at half size (640&times;400), 3&ndash;6 cm above the table, pitch
+  &minus;3&hellip;6&deg;, yaw &plusmn;3&deg;.</li>
+  <li><b>Render:</b> Blender 5.1 Cycles, 16 samples with OptiX denoising, 3 Blender processes in parallel on the RTX 4060
+  laptop. Throughput was 2.7&ndash;3.0 frames/s: 1.4&ndash;1.6 h per 15k set.</li>
+</ul>
+
+<h3>5.3 The camera look</h3>
+<p>Renders are clean RGB, and the rig is a noisy, fisheye-undistorted near-infrared mono camera.
+<code>export_sam3d.py</code> applies the look once, so the teacher labels the same grey image the student trains on.
+The steps, with per-person or per-frame random parameters:</p>
+<ol>
+  <li><b>Grey:</b> luma blended toward a red-heavy, NIR-like mix.</li>
+  <li><b>Tone:</b> gain and offset put the person box at the real takes' mean (100&ndash;155) and spread
+  (45&ndash;65).</li>
+  <li><b>Highlights:</b> a soft tanh shoulder, because renders clip the white table and real frames rarely do.</li>
+  <li><b>Finish:</b> vignette, Gaussian blur (&sigma; 0.3&ndash;1.0) and sensor noise (&sigma; 1.5&ndash;4).</li>
+</ol>
+<p>Histogram-matching to real frames was tried and rejected: it posterised the person into a flat silhouette.</p>
+<figure>
+  <div class="imgs two" id="img-look"></div>
+  <figcaption><b>Figure 3. Render (left) and the camera look the networks see (right)</b>, three syn15k people.
+  </figcaption>
+</figure>
+
+<h3>5.4 The teacher under-reads synthetic lean</h3>
+<p>Each synthetic frame went through the teacher, like a real take: 15,000 of 15,000 frames solved, at
+0.26&ndash;0.37 s/frame. The renders carry the exact trunk rotation, so the teacher can be scored directly. Each side is
+zeroed per person (the 10 poses of one group).</p>
+<figure>
+  <div class="imgs two" id="img-overlay"></div>
+  <figcaption><b>Figure 4. Teacher keypoints on synthetic frames</b> (syn15k left, synflex15k right). The box is the
+  fixed per-person crop. The teacher also predicts legs under the table, which it cannot see.</figcaption>
+</figure>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>one synthetic frame</span><span><svg width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" style="stroke:var(--s1);stroke-width:2"/></svg>least-squares fit</span><span><svg width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" style="stroke:var(--muted);stroke-width:1"/></svg>y = x (perfect)</span></div>
+  <div id="fig-scatter"></div>
+  <figcaption><b>Figure 5. Teacher vs rendered truth, syn15k.</b> 1,500 random frames of 15,000. Forward/back lean
+  (left) is compressed to about half; side bend (right) is read nearly in full. Hover a point for its values.
+  </figcaption>
+</figure>
+<div id="tbl-synth"></div>
+<p>Three checks say the render is right and the teacher is wrong:</p>
+<ul>
+  <li>On the rendered body itself, the neck&ndash;pelvis line follows the label at gain 0.86&ndash;0.94.</li>
+  <li>Twist and side bend are read nearly perfectly.</li>
+  <li>On real people the teacher's flexion matches mocap at gain about 0.9.</li>
+</ul>
+<p>This is a domain effect of the teacher on rendered people. So the synthetic <b>trunk label is the rendered
+truth</b>, aligned per person to the teacher's convention. <code>gt_trunk.py</code> sets label = R<sub>bone</sub>&middot;X,
+where X is the per-person chordal mean of R<sub>bone</sub><sup>T</sup>R<sub>teacher</sub>. Relative motion therefore
+follows the render, and the absolute frame stays the teacher's. Keypoints and arm rotations keep the teacher labels.
+Label vs teacher: median 5.3&deg;.</p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="versions">
+<h2>6. Versions: why and what</h2>
+<p>All runs use one recipe unless stated (<a href="#app-recipe">Appendix A</a>): ResNet-18, 256&times;256 grey, init from
+the COCO pre-train <code>r18b_coco2014</code>, 30 epochs, batch 64, learning rate 10<sup>&minus;3</sup> one-cycle, bf16.
+Each takes about 2.2 h on the laptop.</p>
+<div class="tblwrap"><table class="tbl text">
+<thead><tr><th>Run</th><th>Date</th><th>Data</th><th>Change</th><th>Why</th><th>Outcome</th></tr></thead>
+<tbody>
+<tr><td><code>r18_v2_all</code></td><td>13 Oct</td><td>noark_v2</td><td>baseline: all real train takes + COCO</td><td>reference</td><td>&mdash;</td></tr>
+<tr><td><code>r18_v3_all</code></td><td>16&ndash;17 Oct</td><td>noark_v3</td><td>+ syn15k (1,500 people), natural mix</td><td>more identities</td><td><span class="tag pos">flexion vs mocap 2.45&rarr;2.02</span></td></tr>
+<tr><td><code>r18_v3mix_all</code></td><td>17 Oct</td><td>noark_v3</td><td>batches 15 % COCO / 45 % real / 40 % synthetic</td><td>5 real people still 63 % of batches</td><td><span class="tag pos">best on most metrics</span></td></tr>
+<tr><td><code>r18_v4mix_all</code></td><td>17 Oct</td><td>noark_v4</td><td>+ synflex15k: lean even &minus;10&hellip;40&deg;, half mirrored</td><td>large lean still shrunk</td><td><span class="tag flat">no change</span></td></tr>
+<tr><td><code>r18_v3mix_all_rep2</code></td><td>17&ndash;19 Oct</td><td>noark_v3</td><td>identical rerun of v3mix</td><td>measure run-to-run noise</td><td><span class="tag flat">&plusmn;0.2&deg; on means</span></td></tr>
+</tbody></table></div>
+
+<h3 id="v2">6.1 r18_v2_all &mdash; baseline</h3>
+<p><b>Data:</b> <code>noark_v2</code>, 28 roots. It has every training-subject take from both sessions, including
+<code>wc</code> and game, plus COCO 2014: 67k frames from 5 real people.</p>
+<p><b>Why it is the baseline:</b> it was the best deployable model before this work. Against mocap it averages
+flexion 2.45&deg;, overall 2.85&deg;, with constant offsets on some takes (Lee's <code>wc</code> twist +5.8&deg;,
+Jerome's <code>wc</code> flexion &minus;4.5&deg;).</p>
+
+<h3 id="v3">6.2 r18_v3_all &mdash; add 1,500 synthetic people</h3>
+<p><b>Why:</b> &sect;2. New identities are the lever.</p>
+<p><b>Change:</b> <code>noark_v3</code> = v2 + <code>syn15k</code> (15,000 frames). Synthetic frames are drawn at
+their natural share (18 % of batches).</p>
+<p><b>Result:</b> against mocap, flexion improved 2.45 &rarr; 2.02&deg; and twist 2.82 &rarr; 2.33&deg;; side bend got
+worse (2.07 &rarr; 2.64&deg;). Against the teacher almost nothing moved (zeroed 3.15 &rarr; 3.08&deg;). Keypoints and
+arms improved about 3 %.</p>
+
+<h3 id="v3mix">6.3 r18_v3mix_all &mdash; give the synthetic people more weight</h3>
+<p><b>Why:</b> with natural sampling, the 5 real people still filled 63 % of every batch and the 1,500 synthetic people
+only 18 %. If identity memorisation is the problem, the batches should be dominated by many identities.</p>
+<p><b>Change:</b> a new <code>--mix</code> option in <code>train.py</code> fixes each group's share of the draws
+(weighted sampling with replacement, same epoch length): COCO 15 %, real 45 %, synthetic 40 %. Each synthetic frame
+is then seen 2.2&times; per epoch and each real frame 0.71&times;.</p>
+<figure>
+  <div class="legend"><span><i class="sw sq k-coco"></i>COCO 2014</span><span><i class="sw sq k-real"></i>real NOARK (5 people)</span><span><i class="sw sq k-synth"></i>synthetic</span></div>
+  <div id="fig-mix"></div>
+  <figcaption><b>Figure 6. Share of each epoch's training draws.</b> v2 and v3 sample frames uniformly. v3mix and
+  v4mix fix the shares; v4mix spreads its 40 % over twice as many synthetic frames (30k).</figcaption>
+</figure>
+<p><b>Result:</b> best on most metrics. Against the teacher, zeroed 2.84&deg; and flexion 1.57&deg;. Against mocap,
+flexion 1.85&deg; and overall 2.67&deg;. The second run (&sect;6.5) shows that part of the step over v3 is within
+noise.</p>
+
+<h3 id="v4mix">6.4 r18_v4mix_all &mdash; spread the lean evenly</h3>
+<p><b>Why:</b> on new people the student shrinks large lean toward upright. The ratio to the teacher was about 1.0
+below 5&deg; and about 0.8 at 5&ndash;20&deg;, while side bend was never shrunk. The training lean is also mostly
+near-upright: 72&ndash;85 % of real frames and 71 % of syn15k are within &plusmn;5&deg;, against only 51 % in the test
+protocol takes. A model unsure on a new person falls back to that prior.</p>
+<figure>
+  <div id="fig-flex"></div>
+  <figcaption><b>Figure 7. Forward/back lean in each data source</b>, zeroed per take (real) or per person
+  (synthetic), 2.5&deg; bins. The shaded band is &plusmn;5&deg;. syn15k copies the near-upright real distribution;
+  synflex15k spreads it out.</figcaption>
+</figure>
+<p><b>Change:</b> <code>synflex15k</code>, 15,000 more frames with 1,500 new people (seed 1).</p>
+<ul>
+  <li><b>Pose weighting:</b> <code>flex_pool.py</code> re-weights the same real pose pool so that lean is even over
+  &minus;10&hellip;40&deg; in 5&deg; bins. No pose is used more than 10&times; on average. The pool has only 114
+  poses at 30&ndash;35&deg; and 22 at 35&ndash;40&deg;, so those bins got 1,106 and 234 frames.</li>
+  <li><b>Mirroring:</b> half the poses are mirrored left&harr;right. The student's flip augmentation carries no
+  rotation loss, so mirrored renders add labelled variety.</li>
+  <li><b>Training:</b> <code>noark_v4</code> with the v3mix shares and <code>--epoch-len 80386</code>, so the step
+  count matches v3mix exactly and only the synthetic content differs.</li>
+</ul>
+<figure>
+  <div class="imgs four" id="img-lean"></div>
+  <figcaption><b>Figure 8. One synflex15k person across its lean range</b> (camera look, per-person crop).
+  Leaning toward the camera lowers the head and enlarges it. M = mirrored pose. Each frame's distance comes from
+  its source take, so scale also varies.</figcaption>
+</figure>
+<p><b>Result:</b> no measurable change. Against mocap, flexion 1.84&deg; vs 1.85&deg;. Shrinkage at 5&ndash;20&deg;
+stayed at about 0.82, and side bend got 0.25&deg; worse. Against the teacher it was 0.2&deg; worse, which is within
+noise. The teacher again under-read this set's lean (gain 0.58).</p>
+
+<h3 id="rep2">6.5 r18_v3mix_all_rep2 &mdash; how noisy is one run?</h3>
+<p><b>Why:</b> every comparison so far was one run per arm, and differences of 0.1&ndash;0.3&deg; could be chance.</p>
+<p><b>Change:</b> none. The v3mix command was rerun as-is. Claude Code's low-memory guard killed the run three times;
+it was resumed from <code>last.pt</code> each time (optimizer and schedule state restored). The loader workers were cut
+10 &rarr; 6 &rarr; 4, which changes speed only.</p>
+<p><b>Result:</b> &sect;7.5. The two runs differ by up to 0.18&deg; on the six-take means and about 0.5&deg; per person.</p>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="results">
+<h2>7. Results</h2>
+
+<h3 id="res-mocap">7.1 Against motion capture</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>student runs</span><span><i class="sw k-teacher"></i>teacher (SAM 3D Body)</span><span><i class="sw k-icp"></i>depth ICP</span><span><i class="sw band"></i>range of the two v3mix runs</span></div>
+  <div id="fig-mocap"></div>
+  <figcaption><b>Figure 9. Trunk angle error against mocap</b>, mean over the 6 unseen standard-movement takes of
+  the per-take median |error| (degrees, lower is better). The shaded band spans the two identical v3mix runs: it is
+  the size of run-to-run noise.</figcaption>
+</figure>
+<p>Every synthetic run beats v2 on flexion by 0.4&ndash;0.6&deg;, well outside the noise band. On the other axes,
+everything synthetic lies within about one band-width of v3mix. The teacher is still ahead on every axis, and depth
+ICP is best on frames where it solves.</p>
+<div id="tbl-mocap"></div>
+
+<h3 id="res-teacher">7.2 Against the teacher</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>student runs</span><span><i class="sw band"></i>range of the two v3mix runs</span></div>
+  <div id="fig-teacher"></div>
+  <figcaption><b>Figure 10. Trunk agreement with the teacher</b> on all 9 test takes, including game (mean per take,
+  degrees; gain unitless, 1 = right amplitude).</figcaption>
+</figure>
+<div id="tbl-kp"></div>
+
+<h3 id="res-shrink">7.3 Shrinkage of large lean</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>student runs</span><span><i class="sw band"></i>range of the two v3mix runs</span></div>
+  <div id="fig-shrink"></div>
+  <figcaption><b>Figure 11. Student / teacher ratio by size of the teacher's lean</b>, unseen standard-movement
+  takes. 1.0 = no shrinkage (vertical rule). First four panels: forward/back lean. Last four: side bend, for
+  comparison. At 5&ndash;20&deg; of lean, synthetic data lifted the ratio from 0.67&ndash;0.72 (v2) to about 0.82.
+  Lean-balanced synthetic data (v4mix) did not lift it further. Side bend is not shrunk by any version.
+  </figcaption>
+</figure>
+
+<h3 id="res-subject">7.4 Per subject</h3>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>student runs</span><span><i class="sw k-teacher"></i>teacher</span><span><i class="sw k-icp"></i>depth ICP</span><span><i class="sw band"></i>range of the two v3mix runs</span></div>
+  <div id="fig-subject"></div>
+  <figcaption><b>Figure 12. Overall trunk angle error against mocap, per unseen person</b> (mean of the woc and wc
+  per-take medians, degrees). Arjun: students at or below the teacher. Jerome: every student well above it. Lee:
+  close to it.</figcaption>
+</figure>
+<figure>
+  <div class="legend"><span><i class="sw k-student"></i>student runs</span><span><i class="sw k-teacher"></i>teacher</span><span><i class="sw k-icp"></i>depth ICP</span></div>
+  <div id="fig-bias"></div>
+  <figcaption><b>Figure 13. The two systematic errors: mean signed error (bias) against mocap.</b> Left: Lee's twist
+  in <code>lee_wc</code>. Every student is 4&ndash;6&deg; high; the teacher +1.8&deg;. Right: Jerome's forward/back
+  lean, both takes averaged. Every student reads less lean than mocap. Same in both runs of one recipe, so not
+  noise.</figcaption>
+</figure>
+<p>Possible cause for Lee: the <code>wc</code> and game recordings differ in brightness by 2.3&times; (torso mean
+intensity 74 vs 168). The student sees only the grey image, and the teacher handles it. For Jerome the student
+shrinks his movement, the same failure as &sect;7.3, concentrated on one person.</p>
+
+<h3 id="res-noise">7.5 Run-to-run noise</h3>
+<div class="tblwrap"><table class="tbl" id="tbl-noise"></table></div>
+<p>Single takes move by up to about 1&deg; between the two runs (<code>arjun_woc</code> overall 2.8 vs 1.7&deg;). The
+practical rule: with one run per arm, treat six-take differences below about 0.2&deg;, and per-person differences below
+about 0.5&deg;, as noise. To rank recipes closer than that, run each at least twice.</p>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="discussion">
+<h2>8. Discussion</h2>
+<h3>What the synthetic people fixed</h3>
+<p>Forward/back lean against mocap improved by 0.4&ndash;0.6&deg; in every synthetic run. That is the axis a single
+camera finds hardest, and the gain exceeds the noise by a wide margin. Arms and keypoints also improved slightly. It
+worked even though the teacher cannot label synthetic lean, because the trunk label came from the render.</p>
+
+<h3>What they did not fix</h3>
+<p>Shrinkage of 5&ndash;20&deg; lean on new people improved from about 0.7 to about 0.82, then stopped. In v4mix,
+75 % of the synthetic frames were outside &plusmn;5&deg;, and it still did not move past 0.82. So beyond that point, a
+shortage of leaning examples is not the cause. The likely explanations, none of them tested yet:</p>
+<ul>
+  <li><b>Domain gap.</b> The model may learn lean on synthetic appearance and fall back on the real-data prior for
+  real appearance.</li>
+  <li><b>Weak depth cue.</b> Lean shows mainly as scale and foreshortening, which a grey crop shows poorly and which
+  varies with distance between people.</li>
+  <li><b>Identity variety is still narrow where it matters:</b> about 10 outfits.</li>
+</ul>
+
+<h3>Where the remaining gap is</h3>
+<p>The gap to the teacher is not spread evenly; it is concentrated in Jerome (under-read movement) and Lee's
+<code>wc</code> take (twist offset). Both are consistent across all students and both repeat runs, so they are real
+properties of the student, and good targets.</p>
+
+<h3>Limits of this study</h3>
+<ul>
+  <li><b>Small test set:</b> three test people and six mocap-scored takes. One unusual person can move a mean.</li>
+  <li><b>Few repeats:</b> one or two runs per recipe.</li>
+  <li><b>Mocap protocol fits S and zeroing with mocap,</b> which live use cannot.</li>
+  <li><b>Game takes are scored only against the teacher.</b></li>
+</ul>
+</section>
+
+<!-- ============================================================ 9 -->
+<section id="next">
+<h2>9. Next steps</h2>
+<ol>
+  <li><b>Lee's twist bias:</b> a cheap test first. Run the student on <code>lee_wc</code> with the frames brightened
+  to game level. If the +5&deg; twist offset moves, add a stronger brightness and gain augmentation to training.</li>
+  <li><b>Jerome:</b> compare his crops with the training people (clothing, build, distance). Find what the student
+  keys on before adding data.</li>
+  <li><b>Clothing variety</b> in the renders, the weakest randomised axis (about 10 outfits), if the Jerome check
+  points to appearance.</li>
+  <li><b>Any further recipe comparison:</b> at least two runs per arm, launched detached (Appendix D).</li>
+</ol>
+</section>
+
+<!-- ============================================================ A -->
+<section id="appendix">
+<h2>Appendix</h2>
+<h3 id="app-recipe">A. Training recipe</h3>
+<div class="tblwrap"><table class="tbl text">
+<tbody>
+<tr><th>Backbone</th><td>ResNet-18, 1-channel input, 256&times;256 crop</td></tr>
+<tr><th>Heads</th><td>14 keypoints: heatmaps + 2D + 3D; 9 joint rotations, 6D (<code>--rot</code>)</td></tr>
+<tr><th>Init</th><td><code>runs/r18b_coco2014/best.pt</code> (stage 1, COCO 2014 teacher labels); rotation head random</td></tr>
+<tr><th>Optimiser</th><td>lr 10<sup>&minus;3</sup>, one-cycle (5 % warm-up), 30 epochs, batch 64, bf16 autocast</td></tr>
+<tr><th>Sampling</th><td>uniform (v2, v3) or <code>--mix</code> shares via WeightedRandomSampler; <code>--epoch-len</code> fixes draws per epoch</td></tr>
+<tr><th>Speed</th><td><code>--channels-last</code> (NHWC + cudnn.benchmark): +17 % steps/s. No torch.compile: no Triton on Windows.</td></tr>
+<tr><th>Hardware</th><td>RTX 4060 laptop, 8 GB; 220&ndash;330 s per epoch</td></tr>
+</tbody></table></div>
+
+<h3>B. Reproduce</h3>
+<p>From <code>E:/NOARK_CV/minisam3d</code> (minisam3d venv), the v3mix run and its scoring:</p>
+<pre><code>python -u scripts/train.py --dataset noark_v3 --map coco2014_vith=E:/NOARK_CV/msam_labels/coco2014_vith \
+  --data-root data --image-dirs data --gray --rot --amp --backbone resnet18 --init runs/r18b_coco2014/best.pt \
+  --lr 1e-3 --epochs 30 --bs 64 --workers 4 --channels-last \
+  --mix coco2014_vith=0.15 noark_pack_synth=0.40 noark_pack=0.45 --out runs/r18_v3mix_all
+python scripts/eval_trunk_zeroed.py --dataset noark_v3 --ckpt runs/r18_v3mix_all/best.pt --out test_trunk_zeroed.json
+python scripts/eval_teacher.py      --dataset noark_v3 --ckpt runs/r18_v3mix_all/best.pt --out test_eval.json</code></pre>
+<p>Against mocap, per take, from the NOARK_backbone root:</p>
+<pre><code>&lt;sam-3d-body venv&gt;/python E:/NOARK_CV/minisam3d/scripts/infer_frames.py --ckpt &lt;best.pt&gt; \
+  --frames data/trunk_take_oct/&lt;day&gt;/std_movement/&lt;take&gt;/sam3d --out &lt;dir&gt; --device cuda
+.venv/Scripts/python E:/NOARK_CV/minisam3d/scripts/score_student_noark.py --student &lt;dir&gt;/student_out.npz \
+  --save-dir &lt;dir&gt;/student -- --session data/trunk_take_oct/&lt;day&gt; --subject &lt;take&gt;</code></pre>
+<p>Synthetic set (minisam3d <code>synth/README.md</code> has every step):</p>
+<pre><code>python synth/generate.py --n 15000 --out E:/NOARK_CV/synth_data/synflex15k --seed 1 --mirror 0.5 \
+    --pool E:/NOARK_CV/synth_data/pose_pool_flex.npz
+python synth/export_sam3d.py --src E:/NOARK_CV/synth_data/synflex15k
+&lt;sam-3d-body venv&gt;/python trunkpose/dual_notebooks/20_sam3d_infer.py --dir E:/NOARK_CV/synth_data/synflex15k/sam3d
+python scripts/pack_noark.py --out data/noark_pack_synth --dir synflex15k=E:/NOARK_CV/synth_data/synflex15k/sam3d
+python synth/gt_trunk.py --pack data/noark_pack_synth/synflex15k --gt E:/NOARK_CV/synth_data/synflex15k/sam3d/synth_gt.npz</code></pre>
+<p>This page: <code>.venv/Scripts/python docs/results/minisam3d_synthetic_humans/build_data.py</code> rebuilds
+<code>data.js</code> and the images. <code>shrinkage.py</code> (GPU) rebuilds <code>data/shrinkage.json</code>.</p>
+
+<h3>C. Files and identifiers</h3>
+<div class="tblwrap"><table class="tbl text">
+<thead><tr><th>Item</th><th>Where</th></tr></thead>
+<tbody>
+<tr><td>Datasets</td><td><code>noark_v2@65c0cf7c</code>, <code>noark_v3@f13ac324</code>, <code>noark_v4@013394a0</code> (minisam3d <code>datasets/*.json</code>, pinned by sha256)</td></tr>
+<tr><td>Checkpoints</td><td><code>E:/NOARK_CV/minisam3d/runs/&lt;run&gt;/best.pt</code>, with <code>test_trunk_zeroed.*</code>, <code>test_eval.*</code>, <code>train.log</code></td></tr>
+<tr><td>Mocap scoring</td><td><code>trunkpose/runs/minisam3d/&lt;run&gt;_octtest/</code> (README.md + compare.py per run)</td></tr>
+<tr><td>Synthetic data</td><td><code>E:/NOARK_CV/synth_data/{syn15k,synflex15k}</code>; pools <code>pose_pool.npz</code>, <code>pose_pool_flex.npz</code></td></tr>
+<tr><td>Synthetic code</td><td>minisam3d <code>synth/</code>: get_assets, build_pose_pool, flex_pool, render_synth, generate, export_sam3d, check_teacher, gt_trunk</td></tr>
+<tr><td>Training changes</td><td>minisam3d <code>scripts/train.py</code>: <code>--mix</code>, <code>--epoch-len</code>, <code>--channels-last</code>; <code>scripts/eval_trunk_zeroed.py</code> (new)</td></tr>
+</tbody></table></div>
+
+<h3>D. Engineering notes</h3>
+<ul>
+  <li><b>Rendering:</b> 3 parallel Blender processes beat one. The GPU part of a 640&times;400, 16-sample frame is
+  small, and the rest of the work is single-threaded. OptiX denoising and uncompressed PNG halved the per-frame
+  time.</li>
+  <li><b>Windows DataLoader:</b> workers are spawned, so analysis scripts piped through stdin hang. Use a script file
+  with <code>if __name__ == "__main__"</code>. Workers re-spawn every epoch, about 30 s.</li>
+  <li><b>Memory:</b> each training worker holds about 2 GB, the main process about 6.5 GB. Claude Code's low-memory
+  guard killed background training three times on the 32 GB laptop. Long runs are now launched as a detached process
+  with 4 workers.</li>
+  <li><b>Sleep:</b> the laptop slept for 2 h mid-run once. The process paused and continued correctly.</li>
+</ul>
+</section>
+</article>
+</div>
+
+<script src="minisam3d_synthetic_humans/data.js"></script>
+<script>
+(function () {
+  "use strict";
+  const root = document.documentElement;
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+
+  const D = window.REPORT_DATA;
+  if (!D) { document.getElementById("nodata").hidden = false; return; }
+  const NS = "http://www.w3.org/2000/svg";
+  const IMG = "minisam3d_synthetic_humans/img/";
+
+  function s(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function h(tag, attrs, parent, txt) {
+    const e = document.createElement(tag);
+    if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (txt !== undefined) e.textContent = txt;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function t(parent, x, y, str, cls, anchor) {
+    const e = s("text", { x: x, y: y, class: cls || "tk", "text-anchor": anchor || "start" }, parent);
+    e.textContent = str;
+    return e;
+  }
+
+  // ---------------------------------------------------------------- tooltip
+  const tip = h("div", { id: "tip", role: "tooltip" }, document.body);
+  tip.hidden = true;
+  function showTip(lines, x, y) {
+    tip.replaceChildren();
+    for (const l of lines) {
+      const r = h("div", { class: "tip-row" }, tip);
+      if (l.kind) h("span", { class: "tip-key k-" + l.kind }, r);
+      h("strong", null, r, l.value);
+      if (l.label) h("span", { class: "tip-label" }, r, l.label);
+    }
+    tip.hidden = false;
+    const W = tip.offsetWidth, H = tip.offsetHeight;
+    let px = x + 14, py = y + 14;
+    if (px + W > innerWidth - 8) px = x - W - 14;
+    if (py + H > innerHeight - 8) py = y - H - 14;
+    tip.style.left = Math.max(8, px) + "px";
+    tip.style.top = Math.max(8, py) + "px";
+  }
+  function hideTip() { tip.hidden = true; }
+  function bind(node, lines) {
+    node.setAttribute("tabindex", "0");
+    node.addEventListener("pointermove", e => { showTip(lines(), e.clientX, e.clientY); node.classList.add("hot"); });
+    node.addEventListener("pointerleave", () => { hideTip(); node.classList.remove("hot"); });
+    node.addEventListener("focus", () => { const r = node.getBoundingClientRect(); showTip(lines(), r.right, r.top); node.classList.add("hot"); });
+    node.addEventListener("blur", () => { hideTip(); node.classList.remove("hot"); });
+  }
+
+  // ---------------------------------------------------------------- scales, tables
+  function ticks(lo, hi, n) {
+    const step0 = (hi - lo) / (n || 4);
+    const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const f = step0 / mag;
+    const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+    const out = [];
+    for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+    return { ticks: out, step: step };
+  }
+  function niceDomain(vals, include) {
+    let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (include !== undefined) { lo = Math.min(lo, include); hi = Math.max(hi, include); }
+    const sp = (hi - lo) || 1;
+    lo -= sp * 0.12; hi += sp * 0.12;
+    const step = ticks(lo, hi, 4).step;
+    return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
+  }
+  function fmtTick(v) { return Math.abs(v) >= 10 || Number.isInteger(v) ? String(Math.round(v * 10) / 10) : v.toFixed(1); }
+  function tableView(host, header, rows, caption, open) {
+    const d = h("details", { class: "tv" }, host);
+    if (open) d.open = true;
+    h("summary", null, d, "Table view");
+    const wrap = h("div", { class: "tblwrap" }, d);
+    const tb = h("table", { class: "tbl" }, wrap);
+    if (caption) h("caption", null, tb, caption);
+    const hr = h("tr", null, h("thead", null, tb));
+    for (const c of header) h("th", null, hr, c);
+    const body = h("tbody", null, tb);
+    for (const r of rows) {
+      const row = h("tr", null, body);
+      r.forEach((c, i) => h(i ? "td" : "th", i ? null : { scope: "row" }, row, c));
+    }
+    return d;
+  }
+
+  // ---------------------------------------------------------------- dot plot (small multiples)
+  function dotPlot(host, o) {
+    const grid = h("div", { class: "sm-grid" + (o.cols ? " cols-" + o.cols : "") }, host);
+    const LW = o.labelW || 112, PW = 236, RH = 24, TOP = 30, BOT = 26, W = LW + PW + 14;
+    const fmt = o.fmt || (v => v.toFixed(2) + "\u00b0");
+    for (const p of o.panels) {
+      const vals = [];
+      for (const r of o.rows) { if (r.kind === "gap") continue; const v = o.get(r.key, p.key); if (v != null && isFinite(v)) vals.push(v); }
+      const dom = p.domain || o.domain || niceDomain(vals, p.ref);
+      const n = o.rows.length, H = TOP + n * RH + BOT;
+      const box = h("div", { class: "sm" }, grid);
+      const svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": (o.aria || "") + " " + p.title }, box);
+      t(svg, LW + 8, 16, p.title, "ptitle");
+      const x = v => LW + 8 + (v - dom[0]) / (dom[1] - dom[0]) * (PW - 10);
+      for (const v of ticks(dom[0], dom[1], 4).ticks) {
+        s("line", { x1: x(v), x2: x(v), y1: TOP - 4, y2: TOP + n * RH, class: "grid" }, svg);
+        t(svg, x(v), H - 8, fmtTick(v), "tk", "middle");
+      }
+      if (o.band) {
+        const bv = o.band.rows.map(k => o.get(k, p.key)).filter(v => v != null && isFinite(v));
+        if (bv.length === 2) {
+          const a = Math.min(bv[0], bv[1]), b = Math.max(bv[0], bv[1]);
+          const r = s("rect", { x: x(a) - 1, y: TOP - 4, width: Math.max(2, x(b) - x(a) + 2), height: n * RH + 4, class: "band" }, svg);
+          bind(r, () => [{ value: fmt(a) + " \u2013 " + fmt(b), label: o.band.label + " \u00b7 " + p.title }]);
+        }
+      }
+      if (p.ref !== undefined) {
+        s("line", { x1: x(p.ref), x2: x(p.ref), y1: TOP - 4, y2: TOP + n * RH, class: "refline" }, svg);
+        if (p.refLabel) t(svg, x(p.ref) + 4, TOP - 8, p.refLabel, "tk small");
+      }
+      o.rows.forEach((r, i) => {
+        const cy = TOP + i * RH + RH / 2;
+        if (r.kind === "gap") { if (r.label) t(svg, LW - 6, cy + 4, r.label, "tk small", "end"); return; }
+        t(svg, LW - 6, cy + 4, r.label, "rlabel", "end");
+        s("line", { x1: LW + 8, x2: LW + PW - 2, y1: cy, y2: cy, class: "rowrule" }, svg);
+        const v = o.get(r.key, p.key);
+        if (v == null || !isFinite(v)) return;
+        const g = s("g", { class: "mark" }, svg);
+        s("circle", { cx: x(v), cy: cy, r: 12, class: "hit" }, g);
+        s("circle", { cx: x(v), cy: cy, r: 5, class: "dot k-" + r.kind }, g);
+        bind(g, () => [{ value: fmt(v), label: r.label + " \u00b7 " + p.title, kind: r.kind }]);
+      });
+    }
+    if (o.noTable) return;
+    const rows = o.rows.filter(r => r.kind !== "gap").map(r => [r.label].concat(o.panels.map(p => {
+      const v = o.get(r.key, p.key); return v == null || !isFinite(v) ? "\u2013" : fmt(v);
+    })));
+    tableView(host, [""].concat(o.panels.map(p => p.title)), rows, o.caption);
+  }
+
+  // ---------------------------------------------------------------- data helpers
+  const RUNS = [
+    { key: "v2", label: "v2 (no synth)", kind: "student" },
+    { key: "v3", label: "v3 +syn15k", kind: "student" },
+    { key: "v3mix", label: "v3mix", kind: "student" },
+    { key: "v3mix_rep2", label: "v3mix, run 2", kind: "student" },
+    { key: "v4mix", label: "v4mix +synflex", kind: "student" },
+  ];
+  const REFS = [{ key: "gap", kind: "gap", label: "references" }, { key: "teacher", label: "teacher", kind: "teacher" }, { key: "icp", label: "depth ICP", kind: "icp" }];
+  const BAND = { rows: ["v3mix", "v3mix_rep2"], label: "two runs of the v3mix recipe" };
+  const AXES = ["flexion", "lateral", "axial", "magnitude"];
+  const AXNAME = { flexion: "Flexion (forward/back)", lateral: "Lateral (side bend)", axial: "Axial (twist)", magnitude: "Overall angle" };
+  const TAKES = Object.keys(D.mocap);
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const mocapMean = (m, ax, takes) => mean((takes || TAKES).map(tk => D.mocap[tk][m][ax].med));
+  const zeroMean = (m, col) => { const z = D.zeroed[m]; return z ? mean(Object.values(z).map(r => r[col])) : null; };
+
+  // ---------------------------------------------------------------- figure 1: seen vs unseen (r18_v2_all)
+  (function () {
+    const SEEN = { abs: 1.14, zeroed: 1.12, flex: 0.58, axial: 0.57, lat: 0.36, flex_gain: 0.95 };
+    const un = {}; for (const c of ["abs", "zeroed", "flex", "axial", "lat", "flex_gain"]) un[c] = zeroMean("v2", c);
+    const vals = { seen: SEEN, unseen: un };
+    dotPlot(document.getElementById("fig-seen"), {
+      panels: [
+        { key: "zeroed", title: "Zeroed angle" }, { key: "flex", title: "Flexion" },
+        { key: "axial", title: "Axial" }, { key: "lat", title: "Lateral" },
+        { key: "flex_gain", title: "Flexion gain (1 = right)", ref: 1, refLabel: "ideal", domain: [0.6, 1.1] },
+        { key: "abs", title: "Absolute angle (not zeroed)" }],
+      rows: [{ key: "seen", label: "seen: 6 train takes", kind: "student" }, { key: "unseen", label: "unseen: 9 test takes", kind: "student" }],
+      labelW: 128, domain: [0, 5], get: (r, p) => vals[r][p],
+      fmt: v => v.toFixed(2), caption: "Student vs teacher; degrees except gain.",
+    });
+  })();
+
+  // ---------------------------------------------------------------- figure 2: pipeline diagram
+  (function () {
+    const host = document.getElementById("fig-pipeline");
+    const W = 880, H = 330;
+    const svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Data and label flow for real and synthetic frames into the student and its evaluation" }, host);
+    const defs = s("defs", {}, svg);
+    const mk = s("marker", { id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, defs);
+    s("path", { d: "M0,0 L10,5 L0,10 z", style: "fill: var(--muted)" }, mk);
+    function box(x, y, w, hh, title, sub, cls) {
+      s("rect", { x: x, y: y, width: w, height: hh, rx: 8, class: "dg-box " + (cls || "") }, svg);
+      t(svg, x + 10, y + 20, title, "dg-t");
+      (sub || []).forEach((line, i) => t(svg, x + 10, y + 37 + i * 14, line, "dg-s"));
+    }
+    function arrow(x1, y1, x2, y2) { s("path", { d: "M" + x1 + "," + y1 + " L" + x2 + "," + y2, class: "dg-arrow" }, svg); }
+    t(svg, 8, 18, "Real", "dg-lane");
+    box(8, 26, 180, 62, "Recorded takes", ["OV9281 mono, 1280\u00d7800", "+ COCO 2014 photos"]);
+    box(228, 26, 190, 62, "Teacher: SAM 3D Body", ["ViT-H, ~0.26 s/frame", "14 keypoints + 9 rotations"]);
+    arrow(188, 57, 226, 57);
+    t(svg, 8, 120, "Synthetic", "dg-lane");
+    box(8, 128, 180, 76, "Pose pool", ["51,992 teacher fits,", "training people only", "(flex_pool.py re-weights)"]);
+    box(228, 128, 190, 76, "Blender + MPFB render", ["1,500 people \u00d7 10 poses", "rooms, table, robot", "640\u00d7400, Cycles 16 spp"]);
+    box(458, 128, 150, 76, "Camera look", ["NIR-like grey, tone,", "highlights, blur, noise"]);
+    arrow(188, 166, 226, 166); arrow(418, 166, 456, 166);
+    box(648, 128, 204, 76, "Synthetic label packs", ["keypoints, arms: teacher", "trunk: rendered truth", "(gt_trunk.py)"], "accent3");
+    arrow(608, 166, 646, 166);
+    s("path", { d: "M380,88 C430,112 640,104 700,126", class: "dg-arrow" }, svg);
+    t(svg, 712, 112, "teacher labels these too", "dg-s");
+    box(648, 26, 204, 62, "Real label packs", ["pack.bin + shards per take", "+ COCO labels"]);
+    arrow(418, 57, 646, 57);
+    // both label sets feed the mix through the empty band between the lanes (versioned dataset manifest)
+    s("path", { d: "M852,57 H868 V226 H133 V244", class: "dg-arrow" }, svg);
+    s("path", { d: "M750,204 V226", class: "dg-arrow", style: "marker-end: none" }, svg);
+    t(svg, 300, 220, "versioned dataset manifest (noark_v2 / v3 / v4)", "dg-s");
+    t(svg, 8, 238, "Train + evaluate", "dg-lane");
+    box(8, 246, 250, 70, "Mix (WeightedRandomSampler)", ["COCO / real / synthetic shares", "--mix, --epoch-len"]);
+    box(298, 246, 220, 70, "Student: ResNet-18", ["256\u00d7256 grey crop", "~4 ms on Radxa NPU"], "accent");
+    box(558, 246, 294, 70, "Evaluation", ["vs teacher: 9 unseen takes (zeroed)", "vs mocap: 6 unseen takes (ICP frames)"]);
+    arrow(258, 281, 296, 281); arrow(518, 281, 556, 281);
+  })();
+
+  // ---------------------------------------------------------------- images
+  (function () {
+    const look = document.getElementById("img-look");
+    for (const n of D.images.look) {
+      for (const [kind, cap] of [["render", "render (RGB)"], ["look", "camera look (grey)"]]) {
+        const c = h("div", { class: "cell" }, look);
+        h("img", { src: IMG + "syn15k_" + n + "_" + kind + ".jpg", alt: "synthetic person " + n + ", " + cap, loading: "lazy" }, c);
+        h("div", { class: "cap" }, c, n + " \u00b7 " + cap);
+      }
+    }
+    const ov = document.getElementById("img-overlay");
+    for (const sset of ["syn15k", "synflex15k"]) {
+      const c = h("div", { class: "cell" }, ov);
+      h("img", { src: IMG + sset + "_overlay_3.jpg", alt: "teacher keypoints on a " + sset + " frame", loading: "lazy" }, c);
+      h("div", { class: "cap" }, c, sset);
+    }
+    const lean = document.getElementById("img-lean");
+    for (const f of D.images.lean.slice().sort((a, b) => a.flex - b.flex)) {
+      const c = h("div", { class: "cell" }, lean);
+      h("img", { src: IMG + "synflex15k_" + f.name + "_crop.jpg", alt: "lean " + f.flex + " degrees", loading: "lazy" }, c);
+      h("div", { class: "cap" }, c, (f.flex > 0 ? "+" : "") + f.flex.toFixed(1) + "\u00b0" + (f.mirrored ? " \u00b7 M" : ""));
+    }
+  })();
+
+  // ---------------------------------------------------------------- figure 5: teacher vs truth scatter
+  (function () {
+    const host = document.getElementById("fig-scatter");
+    const grid = h("div", { class: "sm-grid" }, host);
+    const st = D.synth_teacher.syn15k;
+    const panels = [{ k: 0, ax: "flexion", title: "Flexion (forward/back)", lim: 25 }, { k: 2, ax: "lateral", title: "Lateral (side bend)", lim: 25 }];
+    for (const p of panels) {
+      const S = 300, L = 44, T = 26, B = 40, W = L + S + 12, H = T + S + B;
+      const box = h("div", { class: "sm" }, grid);
+      const svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "teacher vs rendered truth, " + p.title }, box);
+      const x = v => L + (v + p.lim) / (2 * p.lim) * S, y = v => T + S - (v + p.lim) / (2 * p.lim) * S;
+      t(svg, L, 16, p.title, "ptitle");
+      for (const v of ticks(-p.lim, p.lim, 4).ticks) {
+        s("line", { x1: x(v), x2: x(v), y1: T, y2: T + S, class: "grid" }, svg);
+        s("line", { x1: L, x2: L + S, y1: y(v), y2: y(v), class: "grid" }, svg);
+        t(svg, x(v), T + S + 15, fmtTick(v), "tk", "middle");
+        t(svg, L - 6, y(v) + 4, fmtTick(v), "tk", "end");
+      }
+      t(svg, L + S / 2, H - 4, "rendered truth (\u00b0)", "tk", "middle");
+      const yl = t(svg, 12, T + S / 2, "teacher (\u00b0)", "tk", "middle");
+      yl.setAttribute("transform", "rotate(-90 12 " + (T + S / 2) + ")");
+      const pts = st.truth.map((tr, i) => [tr[p.k], st.teacher[i][p.k]]).filter(q => Math.abs(q[0]) <= p.lim && Math.abs(q[1]) <= p.lim);
+      const g = s("g", {}, svg);
+      for (const q of pts) s("circle", { cx: x(q[0]), cy: y(q[1]), r: 2.2, class: "pt" }, g);
+      s("line", { x1: x(-p.lim), y1: y(-p.lim), x2: x(p.lim), y2: y(p.lim), class: "idline" }, svg);
+      const gain = st.stats[p.ax].gain, r = st.stats[p.ax].r;
+      s("line", { x1: x(-p.lim), y1: y(-p.lim * gain), x2: x(p.lim), y2: y(p.lim * gain), class: "fitline" }, svg);
+      t(svg, x(p.lim) - 4, y(p.lim * gain) + 18, "gain " + gain.toFixed(2) + ", r " + r.toFixed(2), "tk strong", "end");
+      svg.addEventListener("pointermove", e => {
+        const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+        const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+        let best = null, bd = 1e9;
+        for (const a of pts) { const d = (x(a[0]) - q.x) ** 2 + (y(a[1]) - q.y) ** 2; if (d < bd) { bd = d; best = a; } }
+        if (best && bd < 150) showTip([{ value: "teacher " + best[1].toFixed(1) + "\u00b0", label: "truth " + best[0].toFixed(1) + "\u00b0", kind: "student" }], e.clientX, e.clientY);
+        else hideTip();
+      });
+      svg.addEventListener("pointerleave", hideTip);
+    }
+    const rows = [];
+    for (const name of ["syn15k", "synflex15k"]) {
+      const v = D.synth_teacher[name];
+      for (const ax of ["flexion", "axial", "lateral"]) rows.push([name + " \u00b7 " + ax, v.stats[ax].gain.toFixed(2), v.stats[ax].r.toFixed(2), v.stats[ax].med.toFixed(2) + "\u00b0"]);
+    }
+    tableView(host, ["set \u00b7 axis", "gain", "r", "median |error|"], rows, "Teacher vs rendered truth, all frames, zeroed per person (1,500 people per set).");
+  })();
+
+  // ---------------------------------------------------------------- figure 6: training mix
+  (function () {
+    const host = document.getElementById("fig-mix");
+    const c = D.composition;
+    const share = ver => { const g = c[ver].train; const tot = g["COCO 2014 (teacher labels)"] + g["real NOARK, sep23"] + g["real NOARK, oct"] + g["synthetic"];
+      return [100 * g["COCO 2014 (teacher labels)"] / tot, 100 * (g["real NOARK, sep23"] + g["real NOARK, oct"]) / tot, 100 * g["synthetic"] / tot]; };
+    const rows = [
+      { label: "v2 (uniform)", vals: share("noark_v2"), note: "67k frames, no synthetic" },
+      { label: "v3 (uniform)", vals: share("noark_v3"), note: "82k frames, syn15k" },
+      { label: "v3mix", vals: [15, 45, 40], note: "each synthetic frame 2.2\u00d7 per epoch" },
+      { label: "v4mix", vals: [15, 45, 40], note: "over 30k synthetic frames: 1.1\u00d7 each" },
+    ];
+    const segs = [{ name: "COCO 2014", kind: "coco", ink: "on-light" }, { name: "real NOARK", kind: "real", ink: "on-dark" }, { name: "synthetic", kind: "synth", ink: "on-light" }];
+    const W = 760, LW = 104, BW = W - LW - 20, RH = 40, T = 8, H = T + rows.length * RH + 24;
+    const svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "share of training draws per run" }, h("div", { class: "sm" }, host));
+    rows.forEach((r, i) => {
+      const y0 = T + i * RH + 4;
+      t(svg, LW - 8, y0 + 15, r.label, "rlabel", "end");
+      let x0 = LW;
+      r.vals.forEach((v, j) => {
+        if (v <= 0) return;
+        const w = v / 100 * BW;
+        const rect = s("rect", { x: x0 + (j ? 1 : 0), y: y0, width: Math.max(0, w - (j ? 2 : 1)), height: 20, rx: 0, class: "seg k-" + segs[j].kind }, svg);
+        bind(rect, () => [{ value: v.toFixed(1) + "%", label: segs[j].name + " \u00b7 " + r.label, kind: segs[j].kind }]);
+        if (w > 44) t(svg, x0 + w / 2, y0 + 14.5, v.toFixed(0) + "%", "inlab " + segs[j].ink, "middle");
+        x0 += w;
+      });
+      t(svg, LW, y0 + 33, r.note, "tk");
+    });
+    tableView(host, ["run", "COCO %", "real %", "synthetic %", "note"], rows.map(r => [r.label].concat(r.vals.map(v => v.toFixed(1)), [r.note])), "Share of each epoch's draws.");
+  })();
+
+  // ---------------------------------------------------------------- figure 7: flexion distributions
+  (function () {
+    const host = document.getElementById("fig-flex");
+    const grid = h("div", { class: "sm-grid cols-3" }, host);
+    const F = D.flexion, edges = F.edges;
+    const order = ["real train, wc + woc", "real train, game", "syn15k", "test, wc + woc", "test, game", "synflex15k"];
+    const sets = order.map(n => F.sets.find(q => q.name === n)).filter(Boolean);
+    const yTop = Math.ceil(Math.max.apply(null, sets.flatMap(q => q.pct)) / 10) * 10;
+    for (const st of sets) {
+      const W = 300, H = 178, L = 34, B = 24, T = 30;
+      const svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "lean histogram " + st.name }, h("div", { class: "sm" }, grid));
+      t(svg, L, 14, st.name, "ptitle");
+      t(svg, W - 4, 14, st.within5.toFixed(0) + "% within \u00b15\u00b0", "tk strong", "end");
+      const x = v => L + (v - edges[0]) / (edges[edges.length - 1] - edges[0]) * (W - L - 6);
+      const y = v => T + (1 - v / yTop) * (H - T - B);
+      s("rect", { x: x(-5), y: T, width: x(5) - x(-5), height: H - T - B, class: "zone" }, svg);
+      for (const v of [0, yTop / 2, yTop]) { s("line", { x1: L, x2: W - 6, y1: y(v), y2: y(v), class: "grid" }, svg); t(svg, L - 4, y(v) + 4, v + "%", "tk", "end"); }
+      for (const v of [-20, 0, 20, 40]) t(svg, x(v), H - 6, (v > 0 ? "+" : "") + v + "\u00b0", "tk", "middle");
+      st.pct.forEach((p, i) => {
+        if (p <= 0) return;
+        const x0 = x(edges[i]) + 1, w = x(edges[i + 1]) - x(edges[i]) - 2, top = y(p), base = y(0), r = Math.min(2, w / 2, base - top);
+        const d = "M" + x0 + "," + base + " V" + (top + r) + " Q" + x0 + "," + top + " " + (x0 + r) + "," + top + " H" + (x0 + w - r) + " Q" + (x0 + w) + "," + top + " " + (x0 + w) + "," + (top + r) + " V" + base + " Z";
+        const bar = s("path", { d: d, class: "bar" }, svg);
+        bind(bar, () => [{ value: p.toFixed(1) + "%", label: edges[i] + "\u00b0 to " + edges[i + 1] + "\u00b0 \u00b7 " + st.name, kind: "student" }]);
+      });
+    }
+    tableView(host, ["source", "frames", "within \u00b15\u00b0", "beyond \u00b115\u00b0", "p5", "p95"],
+      sets.map(q => [q.name, q.n.toLocaleString(), q.within5 + "%", q.over15 + "%", q.p5 + "\u00b0", q.p95 + "\u00b0"]),
+      "Forward/back lean (+ toward the camera), zeroed per take or per synthetic person.");
+  })();
+
+  // ---------------------------------------------------------------- figure 9: vs mocap
+  dotPlot(document.getElementById("fig-mocap"), {
+    panels: AXES.map(a => ({ key: a, title: AXNAME[a] })),
+    rows: RUNS.concat(REFS), band: BAND, domain: [1, 3],
+    get: (m, ax) => mocapMean(m, ax),
+    caption: "Mean over 6 unseen standard-movement takes of the per-take median |error| vs mocap (degrees).",
+  });
+  (function () {
+    const host = document.getElementById("tbl-mocap");
+    const models = RUNS.concat(REFS.filter(r => r.kind !== "gap"));
+    const rows = [];
+    for (const tk of TAKES) for (const ax of AXES) {
+      rows.push([tk.replace("s3_", "") + " \u00b7 " + ax].concat(models.map(m => {
+        const c = D.mocap[tk][m.key][ax];
+        return c.med.toFixed(1) + " (" + (c.bias >= 0 ? "+" : "") + c.bias.toFixed(1) + "\u00b1" + c.sd.toFixed(1) + ")";
+      })));
+    }
+    const d = tableView(host, ["take \u00b7 axis"].concat(models.map(m => m.label)), rows,
+      "Per take: median |error| (bias \u00b1 SD), degrees, vs mocap on ICP-solved frames.");
+    d.querySelector("summary").textContent = "Per-take table (all 24 take \u00d7 axis cells)";
+  })();
+
+  // ---------------------------------------------------------------- figure 10: vs teacher + arms
+  dotPlot(document.getElementById("fig-teacher"), {
+    panels: [{ key: "zeroed", title: "Zeroed angle" }, { key: "flex", title: "Flexion" }, { key: "axial", title: "Axial" },
+      { key: "lat", title: "Lateral" }, { key: "flex_gain", title: "Flexion gain", ref: 1, refLabel: "ideal", domain: [0.6, 1.1] },
+      { key: "abs", title: "Absolute angle (not zeroed)" }],
+    rows: RUNS, band: BAND, domain: [0, 5], get: (m, c) => zeroMean(m, c),
+    fmt: v => v.toFixed(2), caption: "Student vs teacher, 9 unseen test takes, mean per take (degrees; gain unitless).",
+  });
+  (function () {
+    const host = document.getElementById("tbl-kp");
+    const cols = [["px", "keypoints (px)"], ["mm", "3D keypoints (mm)"], ["wrist", "wrist (mm)"], ["elbow", "elbow (mm)"], ["forearm", "forearm (\u00b0)"], ["trunk", "trunk abs (\u00b0)"]];
+    const fw = (m, c) => { const z = D.kp[m]; if (!z) return null; let s1 = 0, n = 0; for (const r of Object.values(z)) { s1 += r[c] * r.n; n += r.n; } return s1 / n; };
+    const vals = RUNS.map(r => cols.map(c => fw(r.key, c[0])));
+    const best = cols.map((c, j) => Math.min.apply(null, vals.map(v => v[j])));
+    const wrap = h("div", { class: "tblwrap" }, host);
+    const tb = h("table", { class: "tbl" }, wrap);
+    h("caption", null, tb, "Keypoints and arms vs the teacher, 9 unseen test takes, frame-weighted (lower is better; bold = best).");
+    const hr = h("tr", null, h("thead", null, tb));
+    h("th", null, hr, "run"); for (const c of cols) h("th", null, hr, c[1]);
+    const body = h("tbody", null, tb);
+    RUNS.forEach((r, i) => {
+      const tr = h("tr", null, body); h("th", { scope: "row" }, tr, r.label);
+      vals[i].forEach((v, j) => h("td", v === best[j] ? { class: "best" } : null, tr, v == null ? "\u2013" : v.toFixed(cols[j][0] === "px" ? 2 : 1)));
+    });
+  })();
+
+  // ---------------------------------------------------------------- figure 11: shrinkage
+  (function () {
+    const host = document.getElementById("fig-shrink");
+    const S = D.shrinkage;
+    if (!S) { h("p", null, host, "Shrinkage data missing: run shrinkage.py, then build_data.py."); return; }
+    const runKey = { v2: "r18_v2_all", v3: "r18_v3_all", v3mix: "r18_v3mix_all", v3mix_rep2: "r18_v3mix_all_rep2", v4mix: "r18_v4mix_all" };
+    const bins = [[0, 5], [5, 10], [10, 20], [20, 90]];
+    const name = b => b[1] > 60 ? "\u2265" + b[0] + "\u00b0" : b[0] + "\u2013" + b[1] + "\u00b0";
+    for (const ax of ["flexion", "lateral"]) {
+      const sub = h("div", null, host);
+      dotPlot(sub, {
+        panels: bins.map((b, i) => ({ key: i, title: (ax === "flexion" ? "Flexion " : "Lateral ") + name(b), ref: 1, refLabel: i ? undefined : "no shrinkage", domain: [0.6, 1.2] })),
+        rows: RUNS, band: BAND, cols: 2, noTable: true,
+        get: (m, i) => { const r = S[runKey[m]]; return r ? r[ax][i].ratio : null; },
+        fmt: v => v.toFixed(2) + "\u00d7",
+        caption: (ax === "flexion" ? "Flexion" : "Lateral") + ": median student / teacher by |teacher angle| bin, unseen standard-movement takes.",
+      });
+    }
+    const rows = [];
+    for (const r of RUNS) { const q = S[runKey[r.key]]; if (!q) continue;
+      for (const ax of ["flexion", "axial", "lateral"]) rows.push([r.label + " \u00b7 " + ax].concat(q[ax].map(b => b.ratio.toFixed(2) + " / " + b.err.toFixed(2) + "\u00b0 (n " + b.n + ")"))); }
+    tableView(host, ["run \u00b7 axis"].concat(bins.map(name)), rows, "Ratio / median |error| vs teacher (frames per bin).");
+  })();
+
+  // ---------------------------------------------------------------- figures 12-13: per subject, bias
+  (function () {
+    const subj = ["arjun", "jerome", "lee"];
+    const takesOf = p => TAKES.filter(tk => tk.indexOf("_" + p + "_") >= 0);
+    const host = document.getElementById("fig-subject");
+    dotPlot(host, {
+      panels: subj.map(p => ({ key: p, title: p.charAt(0).toUpperCase() + p.slice(1) + " \u00b7 overall angle" })),
+      rows: RUNS.concat(REFS), band: BAND, domain: [1, 3.5], noTable: true,
+      get: (m, p) => mocapMean(m, "magnitude", takesOf(p)),
+    });
+    const models = RUNS.concat(REFS.filter(r => r.kind !== "gap"));
+    const head = ["model"];
+    for (const p of subj) for (const ax of ["magnitude", "flexion", "lateral", "axial"]) head.push(p + " \u00b7 " + (ax === "magnitude" ? "overall" : ax));
+    tableView(host, head, models.map(m => [m.label].concat(subj.flatMap(p => ["magnitude", "flexion", "lateral", "axial"].map(ax => mocapMean(m.key, ax, takesOf(p)).toFixed(2))))),
+      "Per subject: mean of the woc and wc per-take median |error| vs mocap (degrees).");
+    dotPlot(document.getElementById("fig-bias"), {
+      panels: [{ key: "lee", title: "lee_wc \u00b7 axial bias", ref: 0 }, { key: "jerome", title: "Jerome \u00b7 flexion bias (woc, wc)", ref: 0 }],
+      rows: RUNS.concat(REFS),
+      get: (m, p) => p === "lee" ? D.mocap.s3_lee_wc[m].axial.bias : mean(takesOf("jerome").map(tk => D.mocap[tk][m].flexion.bias)),
+      fmt: v => (v >= 0 ? "+" : "") + v.toFixed(2) + "\u00b0",
+      caption: "Mean signed error vs mocap (degrees; + = reads more than mocap).",
+    });
+  })();
+
+  // ---------------------------------------------------------------- 7.5 noise table
+  (function () {
+    const tb = document.getElementById("tbl-noise");
+    h("caption", null, tb, "The same recipe trained twice (degrees). \u0394 = run 2 \u2212 run 1.");
+    const hr = h("tr", null, h("thead", null, tb));
+    for (const c of ["metric", "v3mix run 1", "v3mix run 2", "\u0394"]) h("th", null, hr, c);
+    const body = h("tbody", null, tb);
+    const rows = [];
+    for (const ax of AXES) rows.push(["mocap \u00b7 " + AXNAME[ax].toLowerCase(), mocapMean("v3mix", ax), mocapMean("v3mix_rep2", ax)]);
+    for (const p of ["arjun", "jerome", "lee"]) {
+      const tk = TAKES.filter(x => x.indexOf("_" + p + "_") >= 0);
+      rows.push(["mocap \u00b7 " + p + " overall", mocapMean("v3mix", "magnitude", tk), mocapMean("v3mix_rep2", "magnitude", tk)]);
+    }
+    for (const [c, n] of [["zeroed", "zeroed angle"], ["flex", "flexion"], ["axial", "axial"], ["lat", "lateral"]]) rows.push(["teacher \u00b7 " + n, zeroMean("v3mix", c), zeroMean("v3mix_rep2", c)]);
+    for (const r of rows) {
+      const tr = h("tr", null, body);
+      h("th", { scope: "row" }, tr, r[0]); h("td", null, tr, r[1].toFixed(2)); h("td", null, tr, r[2].toFixed(2));
+      const dlt = r[2] - r[1]; h("td", null, tr, (dlt >= 0 ? "+" : "") + dlt.toFixed(2));
+    }
+  })();
+})();
+</script>
+</body>
+</html>

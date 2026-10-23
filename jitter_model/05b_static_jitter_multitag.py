@@ -95,7 +95,10 @@ SESSION_TOML = RECORDING_DIR.parent / "session.toml"
 # tag 4 corner 2 in cam0). Kept in its own folder and cache so the first
 # iteration in static_jitter/ stays as it was.
 # Corner refinement: "NONE" keeps the detector's raw quad corners, "APRILTAG"
-# uses its edge line fit. Each choice has its own folder and detection cache, so
+# uses its edge line fit, "EDGE" is CONTOUR followed by Diwakar's edge_refine.py
+# (halfway-grey edge lines, from the NOARKGames_BKD tracker clone; BKD_TRACKER
+# overrides its folder, as in diwakar_validation/detect_paths.py).
+# Each choice has its own folder and detection cache, so
 # results from different refinements never overwrite one another.
 # The CORNER_REFINEMENT environment variable overrides the default, so several
 # modes can be run in a row without editing the file.
@@ -105,6 +108,7 @@ REFINEMENT_TAGS = {
     "CONTOUR": "contour_refine",
     "SUBPIX": "subpix_refine",
     "APRILTAG": "april_refine",
+    "EDGE": "edge_refine",
 }
 REFINEMENT_TAG = REFINEMENT_TAGS[CORNER_REFINEMENT]
 OUTPUT_DIR = RECORDING_DIR / "static_jitter_{}_multitag".format(REFINEMENT_TAG)
@@ -136,7 +140,7 @@ MAX_FRAMES = None
 # counts stay comparable. Left as None the sets are chosen from this take's own
 # co-visibility ranking, printed below; set a tuple of four ids to pin them.
 # None: derive from the visibility count below. An int pins it.
-MAX_TAGS = None
+MAX_TAGS = int(os.environ["MAX_TAGS"]) if "MAX_TAGS" in os.environ else None
 # Largest tag count whose two-camera condition still solves at least this many
 # bursts. Every condition is compared on the bursts all of them solved, so this
 # is also the floor for the common set.
@@ -223,10 +227,22 @@ marker_to_reference = rig.marker_to_reference
 
 dictionary = aruco.getPredefinedDictionary(aruco.DICT_APRILTAG_36h11)
 detector_parameters = aruco.DetectorParameters()
-# Refinement method set by CORNER_REFINEMENT above.
+# Refinement method set by CORNER_REFINEMENT above. EDGE starts from the contour
+# corners, as Diwakar's tracker does, and refines them after detection.
 detector_parameters.cornerRefinementMethod = getattr(
-    aruco, f"CORNER_REFINE_{CORNER_REFINEMENT}"
+    aruco, "CORNER_REFINE_CONTOUR" if CORNER_REFINEMENT == "EDGE" else f"CORNER_REFINE_{CORNER_REFINEMENT}"
 )
+if CORNER_REFINEMENT == "EDGE":
+    import sys
+
+    sys.path.insert(
+        0,
+        os.environ.get(
+            "BKD_TRACKER",
+            os.path.expandvars(r"%LOCALAPPDATA%\Temp\bkd_repo\NOARKGames_BKD\tracker"),
+        ),
+    )
+    from edge_refine import refine_tags
 detector =aruco.ArucoDetector(dictionary, detector_parameters)
 
 
@@ -281,6 +297,8 @@ def detect_camera(camera_name, max_frames=None):
                 )
             gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             corners, ids, _rejected = detector.detectMarkers(gray)
+            if CORNER_REFINEMENT == "EDGE" and ids is not None:
+                corners = refine_tags(gray, corners)
             frame_detections = {}
             if ids is not None:
                 for marker_id, marker_corners in zip(ids.ravel(), corners):

@@ -31,6 +31,15 @@ for _p in ("ud", "raw"):
     for _r in ("none", "contour", "edge", "april"):
         VARIANTS[f"{_p}_{_r}"] = (f"{_p}_{_r}", OUT / f"jig_T0_{_p}_{_r}.json")
         VARIANTS[f"{_p}_{_r}_tag12"] = (f"{_p}_{_r}", OUT / "jig_tag12_only.json")
+# refinement layers on edge refinement, corners from detect_grid.py
+for _s in ("ud_edge_trk", "ud_grid", "ud_grid_trk"):
+    VARIANTS[_s] = (_s, OUT / f"jig_T0_{_s}.json")
+# failed edge refinements left out; same jig as the source they come from, so only those tags differ
+VARIANTS["ud_edge_drop"] = ("ud_edge_drop", OUT / "jig_T0_ud_edge.json")
+VARIANTS["ud_grid_drop"] = ("ud_grid_drop", OUT / "jig_T0_ud_grid.json")
+# jig fitted on T1 run 1 (build_jig_T0.py with JIG_TAKES), scored on run 2: how much a better jig buys
+for _s in ("ud_edge", "ud_grid_trk"):
+    VARIANTS[f"{_s}_jT1r1"] = (_s, OUT / f"jig_T1r1_{_s}.json")
 
 
 def run(args):
